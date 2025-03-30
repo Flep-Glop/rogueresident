@@ -1,26 +1,86 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
-@theme inline {
+  /* Dark theme by default */
+  --background: #1A1E26;
+  --foreground: #E0E2E8;
+  --surface: #262B36;
+  --border: #3A4055;
+  --text-primary: #E0E2E8;
+  --text-secondary: #A0A8B8;
+  --accent-primary: #4A90E2;
+  --accent-secondary: #26A69A;
+  --success: #48BB78;
+  --warning: #F4D03F;
+  --danger: #E53E3E;
+  
+  /* Font variables */
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  --color-surface: var(--surface);
+  --color-border: var(--border);
+  --font-sans: var(--font-geist-sans, Arial, Helvetica, sans-serif);
+  --font-mono: var(--font-geist-mono, monospace);
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans);
+}
+
+/* Custom classes for themed components */
+.themed-card {
+  background-color: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text-primary);
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3), 0 2px 4px -1px rgba(0, 0, 0, 0.2);
+}
+
+.themed-button {
+  background-color: var(--accent-primary);
+  color: white;
+  transition: all 0.2s ease;
+}
+
+.themed-button:hover {
+  filter: brightness(110%);
+  transform: translateY(-1px);
+}
+
+/* Node type specific themes */
+.clinical-theme {
+  --node-color: #4A90E2;
+  --node-color-dark: #3A7BC9;
+  --node-color-light: #6BA5E9;
+}
+
+.qa-theme {
+  --node-color: #5A6978;
+  --node-color-dark: #485460;
+  --node-color-light: #6B7A89;
+}
+
+.educational-theme {
+  --node-color: #26A69A;
+  --node-color-dark: #1D8C82;
+  --node-color-light: #39B9AD;
+}
+
+.storage-theme {
+  --node-color: #D8CCA3;
+  --node-color-dark: #BDB387;
+  --node-color-light: #E4DAB9;
+}
+
+.vendor-theme {
+  --node-color: #2C3E50;
+  --node-color-dark: #1E2A36;
+  --node-color-light: #3A5269;
+}
+
+.boss-theme {
+  --node-color: #E53E3E;
+  --node-color-dark: #C53030;
+  --node-color-light: #F56565;
 }
