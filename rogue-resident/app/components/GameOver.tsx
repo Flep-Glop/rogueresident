@@ -3,10 +3,11 @@ import { useGameStore } from '../store/gameStore';
 import { Item } from '../data/items';
 
 export default function GameOver() {
-  const { resetGame, inventory, completedNodeIds } = useGameStore();
+  const { resetGame, startGame, inventory, completedNodeIds } = useGameStore();
   
   const startNewGame = () => {
     resetGame();
+    startGame();
   };
   
   return (

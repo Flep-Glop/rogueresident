@@ -73,6 +73,10 @@ export default function BossNode() {
     if (currentNodeId) {
       completeNode(currentNodeId);
       updateInsight(200); // Big reward for boss completion
+      
+      // Set game state to victory
+      useGameStore.getState().gameState = 'victory';
+      
       setGameCompleted(true);
     }
   };

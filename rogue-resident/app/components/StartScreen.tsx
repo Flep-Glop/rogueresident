@@ -2,10 +2,11 @@
 import { useGameStore } from '../store/gameStore';
 
 export default function StartScreen() {
-  const { resetGame } = useGameStore();
+  const { resetGame, startGame } = useGameStore();
   
-  const startNewGame = () => {
-    resetGame();
+  const handleStartNewGame = () => {
+    resetGame(); // Reset to initial state
+    startGame(); // Update gameState to 'in_progress'
   };
   
   return (
@@ -37,7 +38,7 @@ export default function StartScreen() {
       
       <button
         className="px-8 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-xl"
-        onClick={startNewGame}
+        onClick={handleStartNewGame}
       >
         Start New Run
       </button>

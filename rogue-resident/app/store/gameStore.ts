@@ -3,6 +3,7 @@ import { create } from 'zustand';
 import { Item } from '../data/items';
 
 type GameState = {
+  gameState: 'not_started' | 'in_progress' | 'game_over' | 'victory';
   player: {
     health: number;
     insight: number;
@@ -12,6 +13,7 @@ type GameState = {
   inventory: Item[];
   
   // Actions
+  startGame: () => void;
   setCurrentNode: (nodeId: string) => void;
   completeNode: (nodeId: string) => void;
   updateHealth: (amount: number) => void;
@@ -24,6 +26,7 @@ type GameState = {
 
 // Initial state for reuse in resetGame
 const initialState = {
+  gameState: 'not_started' as const,
   player: {
     health: 4, // Starting health
     insight: 100, // Starting insight
@@ -36,18 +39,28 @@ const initialState = {
 export const useGameStore = create<GameState>((set) => ({
   ...initialState,
   
+  startGame: () => set(state => ({ 
+    ...state, 
+    gameState: 'in_progress' 
+  })),
+  
   setCurrentNode: (nodeId) => set({ currentNodeId: nodeId }),
   
   completeNode: (nodeId) => set((state) => ({ 
     completedNodeIds: [...state.completedNodeIds, nodeId] 
   })),
   
-  updateHealth: (amount) => set((state) => ({
-    player: {
-      ...state.player,
-      health: Math.max(0, state.player.health + amount),
-    }
-  })),
+  updateHealth: (amount) => set((state) => {
+    const newHealth = Math.max(0, state.player.health + amount);
+    return {
+      player: {
+        ...state.player,
+        health: newHealth,
+      },
+      // If health reaches 0, update gameState
+      ...(newHealth <= 0 ? { gameState: 'game_over' } : {})
+    };
+  }),
   
   updateInsight: (amount) => set((state) => ({
     player: {
