@@ -21,7 +21,7 @@ interface ChallengeState {
   resetChallenge: () => void;
 }
 
-export const useChallengeStore = create<ChallengeState>((set) => ({
+export const useChallengeStore = create<ChallengeState>((set, get) => ({
   currentChallenge: null,
   
   startChallenge: (challenge) => set({
@@ -38,6 +38,8 @@ export const useChallengeStore = create<ChallengeState>((set) => ({
   })),
   
   completeChallenge: (grade) => {
+    console.log("Challenge completed with grade:", grade);
+    
     // Calculate rewards based on grade
     const rewards = {
       'C': 25,
@@ -48,11 +50,23 @@ export const useChallengeStore = create<ChallengeState>((set) => ({
     
     // Get the current node ID, checking if it exists
     const currentNodeId = useGameStore.getState().currentNodeId;
+    console.log("Current node ID when completing challenge:", currentNodeId);
     
     // Update player stats if we have a current node
     if (currentNodeId) {
-      useGameStore.getState().updateInsight(rewards[grade]);
-      useGameStore.getState().completeNode(currentNodeId);
+      console.log("Updating insight and completing node:", currentNodeId);
+      const gameStore = useGameStore.getState();
+      
+      // First update insight
+      gameStore.updateInsight(rewards[grade]);
+      
+      // Then mark the node as completed
+      gameStore.completeNode(currentNodeId);
+      
+      console.log("After completion, completed nodes:", 
+        useGameStore.getState().completedNodeIds);
+    } else {
+      console.warn("No current node ID found when completing challenge!");
     }
     
     // Move to outcome stage
@@ -63,5 +77,11 @@ export const useChallengeStore = create<ChallengeState>((set) => ({
     }));
   },
   
-  resetChallenge: () => set({ currentChallenge: null }),
+  resetChallenge: () => {
+    console.log("Resetting challenge. Current state:", get().currentChallenge);
+    console.log("Current completed nodes:", 
+      useGameStore.getState().completedNodeIds);
+    
+    set({ currentChallenge: null });
+  },
 }));

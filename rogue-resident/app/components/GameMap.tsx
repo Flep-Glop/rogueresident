@@ -1,21 +1,18 @@
 // app/components/GameMap.tsx
 'use client';
 import { useGameStore } from '../store/gameStore';
-import { generateMap } from '../utils/mapGenerator';
 import NodeComponent from './NodeComponent';
 import { useState, useEffect } from 'react';
-import { GameMap as GameMapType } from '../types/map';
 
 export default function GameMap() {
-  const { currentNodeId, completedNodeIds, setCurrentNode } = useGameStore();
-  const [map, setMap] = useState<GameMapType | null>(null);
+  const { currentNodeId, completedNodeIds, setCurrentNode, map } = useGameStore();
   const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
   
-  // Generate map only on client side
+  // Log for debugging
   useEffect(() => {
-    setMap(generateMap());
-  }, []);
-  
+    console.log("GameMap - completedNodeIds updated:", completedNodeIds);
+  }, [completedNodeIds]);
+
   if (!map) {
     return (
       <div className="flex items-center justify-center h-full">
@@ -43,8 +40,14 @@ export default function GameMap() {
     const node = map.nodes.find(n => n.id === nodeId);
     if (node) {
       node.connections.forEach(connId => availableNodeIds.add(connId));
+    } else {
+      console.warn(`Node ${nodeId} in completedNodeIds not found in current map!`);
     }
   });
+  
+  console.log("Map - Start node:", map.startNodeId);
+  console.log("Map - Completed nodes:", completedNodeIds);
+  console.log("Map - Available nodes:", Array.from(availableNodeIds));
   
   // Get node position for label placement
   const getNodeConnectionLine = (nodeId1: string, nodeId2: string) => {
@@ -83,6 +86,13 @@ export default function GameMap() {
       <div className="absolute top-4 left-0 right-0 text-center">
         <h2 className="text-2xl font-bold text-white">Medical Physics Department</h2>
         <p className="text-blue-300 text-sm">Navigate through challenges to reach the final encounter</p>
+      </div>
+      
+      {/* Debug info for development */}
+      <div className="absolute bottom-20 left-4 bg-black bg-opacity-80 p-2 rounded text-green-400 text-xs font-mono z-50">
+        <div>Completed: {completedNodeIds.length} nodes</div>
+        <div>Available: {availableNodeIds.size} nodes</div>
+        <div>Selected: {currentNodeId || 'none'}</div>
       </div>
       
       {/* Draw connections between nodes */}
@@ -150,7 +160,10 @@ export default function GameMap() {
             isSelected={isSelected}
             isHovered={isHovered}
             onClick={() => {
-              if (isAvailable) setCurrentNode(node.id);
+              if (isAvailable) {
+                console.log(`Selecting node: ${node.id} (type: ${node.type})`);
+                setCurrentNode(node.id);
+              }
             }}
             onMouseEnter={() => setHoveredNodeId(node.id)}
             onMouseLeave={() => setHoveredNodeId(null)}

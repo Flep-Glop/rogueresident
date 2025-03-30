@@ -1,6 +1,7 @@
 // app/store/gameStore.ts
 import { create } from 'zustand';
 import { Item } from '../data/items';
+import { generateMap, GameMap, Node } from '../utils/mapGenerator';
 
 type GameState = {
   gameState: 'not_started' | 'in_progress' | 'game_over' | 'victory';
@@ -11,6 +12,7 @@ type GameState = {
   currentNodeId: string | null;
   completedNodeIds: string[];
   inventory: Item[];
+  map: GameMap | null;
   
   // Actions
   startGame: () => void;
@@ -34,24 +36,53 @@ const initialState = {
   currentNodeId: null,
   completedNodeIds: [],
   inventory: [],
+  map: null,
 };
 
-export const useGameStore = create<GameState>((set) => ({
+export const useGameStore = create<GameState>((set, get) => ({
   ...initialState,
   
-  startGame: () => set(state => ({ 
-    ...state, 
-    gameState: 'in_progress' 
-  })),
+  startGame: () => {
+    // Generate a new map when starting the game
+    const newMap = generateMap();
+    console.log("Generated new map for game start:", newMap);
+    
+    set(state => ({ 
+      ...state, 
+      gameState: 'in_progress',
+      map: newMap,
+      // Set the current node to the start node
+      currentNodeId: newMap.startNodeId
+    }));
+  },
   
-  setCurrentNode: (nodeId) => set({ currentNodeId: nodeId }),
+  setCurrentNode: (nodeId) => {
+    console.log("Setting current node:", nodeId);
+    set({ currentNodeId: nodeId });
+  },
   
-  completeNode: (nodeId) => set((state) => ({ 
-    completedNodeIds: [...state.completedNodeIds, nodeId] 
-  })),
+  completeNode: (nodeId) => {
+    console.log("Before completion, completedNodeIds:", get().completedNodeIds);
+    
+    // Ensure we don't add the same node twice
+    if (get().completedNodeIds.includes(nodeId)) {
+      console.log("Node already completed, skipping:", nodeId);
+      return;
+    }
+    
+    console.log("Completing node:", nodeId);
+    set((state) => {
+      const newCompletedNodeIds = [...state.completedNodeIds, nodeId];
+      console.log("New completedNodeIds:", newCompletedNodeIds);
+      return { completedNodeIds: newCompletedNodeIds };
+    });
+    
+    console.log("After set, completedNodeIds:", get().completedNodeIds);
+  },
   
   updateHealth: (amount) => set((state) => {
     const newHealth = Math.max(0, state.player.health + amount);
+    console.log(`Updating health by ${amount} to ${newHealth}`);
     return {
       player: {
         ...state.player,
@@ -62,22 +93,35 @@ export const useGameStore = create<GameState>((set) => ({
     };
   }),
   
-  updateInsight: (amount) => set((state) => ({
-    player: {
-      ...state.player,
-      insight: Math.max(0, state.player.insight + amount),
-    }
-  })),
+  updateInsight: (amount) => set((state) => {
+    const newInsight = Math.max(0, state.player.insight + amount);
+    console.log(`Updating insight by ${amount} to ${newInsight}`);
+    return {
+      player: {
+        ...state.player,
+        insight: newInsight,
+      }
+    };
+  }),
   
-  addToInventory: (item) => set((state) => ({
-    inventory: [...state.inventory, item]
-  })),
+  addToInventory: (item) => {
+    console.log("Adding item to inventory:", item.name);
+    set((state) => ({
+      inventory: [...state.inventory, item]
+    }));
+  },
   
-  removeFromInventory: (itemId) => set((state) => ({
-    inventory: state.inventory.filter(item => item.id !== itemId)
-  })),
+  removeFromInventory: (itemId) => {
+    console.log("Removing item from inventory:", itemId);
+    set((state) => ({
+      inventory: state.inventory.filter(item => item.id !== itemId)
+    }));
+  },
   
-  resetGame: () => set({ ...initialState }),
+  resetGame: () => {
+    console.log("Resetting game to initial state");
+    set({ ...initialState });
+  },
 }));
 
 // Helper function to calculate bonuses from inventory

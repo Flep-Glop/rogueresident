@@ -48,6 +48,15 @@ const nodeColors = {
   },
 };
 
+// Completed node colors
+const completedColors = {
+  primary: 'bg-green-500',
+  secondary: 'bg-green-700',
+  ring: 'ring-green-300',
+  glow: '#10B981',
+  icon: '✓', // Add icon property to match the nodeColors structure
+};
+
 // Type descriptions for node tooltip
 const nodeDescriptions = {
   clinical: 'Clinical Scenario: Apply your medical physics knowledge to patient cases',
@@ -81,6 +90,16 @@ export default function NodeComponent({
 }: NodeComponentProps) {
   const [isPulsing, setIsPulsing] = useState(false);
   
+  // Log state for debugging
+  useEffect(() => {
+    if (isCompleted) {
+      console.log(`Node ${node.id} (${node.type}) is completed`);
+    }
+    if (isAvailable) {
+      console.log(`Node ${node.id} (${node.type}) is available`);
+    }
+  }, [isCompleted, isAvailable, node.id, node.type]);
+  
   // Pulse animation when a node becomes available
   useEffect(() => {
     if (isAvailable && !isCompleted && !isPulsing) {
@@ -90,8 +109,16 @@ export default function NodeComponent({
     }
   }, [isAvailable, isCompleted, isPulsing]);
 
-  // Get node style info
-  const nodeStyle = nodeColors[node.type];
+  // Get node style info - use completed style if completed
+  const nodeStyle = isCompleted ? completedColors : nodeColors[node.type];
+  
+  // Add data attributes for debug purposes
+  const dataAttributes = {
+    'data-node-id': node.id,
+    'data-node-type': node.type,
+    'data-completed': isCompleted ? 'true' : 'false',
+    'data-available': isAvailable ? 'true' : 'false',
+  };
   
   return (
     <>
@@ -113,9 +140,10 @@ export default function NodeComponent({
     
       {/* Main node */}
       <div
+        {...dataAttributes}
         className={`
           absolute w-24 h-24 rounded-full flex items-center justify-center transition-all duration-200
-          ${isCompleted ? 'bg-gray-600' : nodeStyle.primary}
+          ${isCompleted ? 'bg-green-500' : nodeStyle.primary}
           ${isAvailable && !isCompleted ? 'cursor-pointer' : 'cursor-default'}
           ${isAvailable && !isCompleted ? 'ring-4 ring-yellow-300' : ''}
           ${isSelected ? 'ring-4 ring-white' : ''}
@@ -135,18 +163,18 @@ export default function NodeComponent({
       >
         <div className={`
           absolute inset-0 rounded-full 
-          ${isCompleted ? 'bg-gray-700' : nodeStyle.secondary}
+          ${isCompleted ? 'bg-green-700' : nodeStyle.secondary}
           transform scale-90
         `}></div>
         
         <div className="flex flex-col items-center">
-          <span className="text-2xl mb-1">{nodeStyle.icon}</span>
+          <span className="text-2xl mb-1">{isCompleted ? '✓' : nodeStyle.icon}</span>
           <span className="text-white font-bold text-sm">
             {node.type === 'boss' ? 'IONIX' : node.type.charAt(0).toUpperCase() + node.type.slice(1)}
           </span>
         </div>
         
-        {/* Completion checkmark */}
+        {/* Completion checkmark - more prominent */}
         {isCompleted && (
           <div className="absolute -top-2 -right-2 bg-green-500 rounded-full w-8 h-8 flex items-center justify-center shadow-md">
             <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-white" viewBox="0 0 20 20" fill="currentColor">

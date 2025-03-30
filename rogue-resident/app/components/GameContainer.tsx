@@ -11,25 +11,27 @@ import StorageCloset from './challenges/StorageCloset';
 import BossNode from './challenges/BossNode';
 
 export default function GameContainer() {
-  const { currentNodeId, completedNodeIds } = useGameStore();
+  const { currentNodeId, completedNodeIds, map } = useGameStore();
   const { currentChallenge, startChallenge } = useChallengeStore();
   
   // Get current node details from map to determine node type
-  // Note: In a full implementation, you would retrieve this from your map state
   const getCurrentNodeType = () => {
-    // This is a placeholder implementation
-    // In reality, you would check currentNodeId against your actual map data
+    if (!currentNodeId || !map) return null;
     
-    // For prototype, assume fixed node types:
-    if (currentNodeId?.includes('storage')) return 'storage';
-    if (currentNodeId?.includes('boss')) return 'boss';
-    return 'clinical'; // Default to clinical for prototype
+    const currentNode = map.nodes.find(node => node.id === currentNodeId);
+    if (!currentNode) {
+      console.warn(`Current node ${currentNodeId} not found in map!`);
+      return null;
+    }
+    
+    return currentNode.type;
   };
   
   // Start challenge when node is selected
   useEffect(() => {
     if (currentNodeId && !currentChallenge && !completedNodeIds.includes(currentNodeId)) {
       const nodeType = getCurrentNodeType();
+      console.log(`Starting interaction with ${nodeType} node: ${currentNodeId}`);
       
       if (nodeType === 'clinical') {
         // For clinical nodes, start a challenge
@@ -44,7 +46,7 @@ export default function GameContainer() {
       }
       // Other node types are handled by their respective components
     }
-  }, [currentNodeId, currentChallenge, completedNodeIds, startChallenge]);
+  }, [currentNodeId, currentChallenge, completedNodeIds, startChallenge, map]);
   
   // Determine what to render in the main content area
   const renderMainContent = () => {
@@ -61,7 +63,6 @@ export default function GameContainer() {
         return <StorageCloset />;
       }
       
-      // Add other node type components here as you implement them
       if (nodeType === 'boss') return <BossNode />;
       // if (nodeType === 'vendor') return <VendorNode />;
     }

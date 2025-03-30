@@ -2,6 +2,7 @@
 'use client';
 import { useState, useEffect } from 'react';
 import { useChallengeStore, ChallengeGrade } from '../../store/challengeStore';
+import { useGameStore } from '../../store/gameStore';
 
 // Grade-specific messages
 const gradeMessages = {
@@ -21,11 +22,23 @@ const gradeAnimations = {
 
 export default function ChallengeOutcome() {
   const { currentChallenge, resetChallenge } = useChallengeStore();
+  const { currentNodeId, completedNodeIds } = useGameStore();
   const [showGrade, setShowGrade] = useState(false);
   const [showRewards, setShowRewards] = useState(false);
   const [showButton, setShowButton] = useState(false);
   
   useEffect(() => {
+    // Verify node is properly marked as completed
+    if (currentNodeId && !completedNodeIds.includes(currentNodeId)) {
+      console.warn(`Node ${currentNodeId} not marked as completed - forcing completion`);
+      useGameStore.getState().completeNode(currentNodeId);
+    }
+    
+    // Debug state when component mounts
+    console.log("ChallengeOutcome: Current challenge:", currentChallenge);
+    console.log("ChallengeOutcome: Current node ID:", currentNodeId);
+    console.log("ChallengeOutcome: Completed nodes:", completedNodeIds);
+    
     // Sequence of animations
     const gradeTimer = setTimeout(() => setShowGrade(true), 500);
     const rewardsTimer = setTimeout(() => setShowRewards(true), 1500);
@@ -36,7 +49,7 @@ export default function ChallengeOutcome() {
       clearTimeout(rewardsTimer);
       clearTimeout(buttonTimer);
     };
-  }, []);
+  }, [currentNodeId, completedNodeIds, currentChallenge]);
   
   if (!currentChallenge) return null;
   
@@ -80,6 +93,12 @@ export default function ChallengeOutcome() {
   };
   
   const colors = gradeColors[grade];
+  
+  const handleReturnToMap = () => {
+    console.log("Returning to map from challenge outcome");
+    console.log("Current completed nodes:", useGameStore.getState().completedNodeIds);
+    resetChallenge();
+  };
   
   return (
     <div className="p-6 max-w-4xl mx-auto bg-white rounded-lg shadow-lg text-center overflow-hidden">
@@ -156,7 +175,7 @@ export default function ChallengeOutcome() {
           hover:-translate-y-1
           ${showButton ? 'opacity-100' : 'opacity-0'}
         `}
-        onClick={resetChallenge}
+        onClick={handleReturnToMap}
       >
         Return to Map
       </button>
