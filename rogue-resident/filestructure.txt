@@ -1,0 +1,42 @@
+.
+├── README.md
+├── app
+│   ├── components
+│   │   ├── GameContainer.tsx
+│   │   ├── GameMap.tsx
+│   │   ├── GameOver.tsx
+│   │   ├── Inventory.tsx
+│   │   ├── NodeComponent.tsx
+│   │   ├── PlayerStats.tsx
+│   │   ├── StartScreen.tsx
+│   │   └── challenges
+│   │       ├── BossNode.tsx
+│   │       ├── ChallengeContainer.tsx
+│   │       ├── ChallengeOutcome.tsx
+│   │       ├── ClinicalChallenge.tsx
+│   │       ├── ClinicalChallengeIntro.tsx
+│   │       └── StorageCloset.tsx
+│   ├── data
+│   │   ├── clinicalChallenges.ts
+│   │   └── items.ts
+│   ├── favicon.ico
+│   ├── globals.css
+│   ├── layout.tsx
+│   ├── page.tsx
+│   ├── store
+│   │   ├── challengeStore.ts
+│   │   └── gameStore.ts
+│   ├── types
+│   │   └── map.ts
+│   └── utils
+│       └── mapGenerator.ts
+├── eslint.config.mjs
+├── filestructure.txt
+├── next-env.d.ts
+├── next.config.ts
+├── package-lock.json
+├── package.json
+├── postcss.config.mjs
+└── tsconfig.json
+
+7 directories, 32 files
