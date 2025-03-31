@@ -13,16 +13,27 @@ type GameState = {
   player: {
     health: number;
     insight: number;
+    maxHealth: number;
   };
   currentNodeId: string | null;
   completedNodeIds: string[];
   inventory: Item[];
   map: GameMap | null;
   
+  // Day tracking
+  currentDay: number;
+  
   // Tutorial & progression state
   hasPlayedBefore: boolean;
   tutorialStep: TutorialStep;
   showHints: boolean;
+  
+  // Permanent upgrades
+  bonuses: {
+    clinical: number;
+    qa: number;
+    educational: number;
+  };
   
   // Actions
   startGame: () => void;
@@ -40,6 +51,9 @@ type GameState = {
   markAsPlayed: () => void;
   toggleHints: (show?: boolean) => void;
   
+  // Bonus management
+  updateBonus: (type: 'clinical' | 'qa' | 'educational', amount: number) => void;
+  
   // Game phase management
   setGamePhase: (phase: GamePhase) => void;
   completeDay: () => void;
@@ -52,6 +66,7 @@ const initialState = {
   gamePhase: 'day' as GamePhase,
   player: {
     health: 4, // Starting health
+    maxHealth: 4, // Maximum health
     insight: 100, // Starting insight
   },
   currentNodeId: null,
@@ -59,10 +74,20 @@ const initialState = {
   inventory: [],
   map: null,
   
+  // Day tracking
+  currentDay: 1,
+  
   // Tutorial state
   hasPlayedBefore: false,
   tutorialStep: 0,
   showHints: true,
+  
+  // Bonuses
+  bonuses: {
+    clinical: 0,
+    qa: 0,
+    educational: 0,
+  },
 };
 
 export const useGameStore = create<GameState>((set, get) => ({
@@ -108,7 +133,7 @@ export const useGameStore = create<GameState>((set, get) => ({
   },
   
   updateHealth: (amount) => set((state) => {
-    const newHealth = Math.max(0, state.player.health + amount);
+    const newHealth = Math.min(state.player.maxHealth, Math.max(0, state.player.health + amount));
     console.log(`Updating health by ${amount} to ${newHealth}`);
     
     // If health reaches 0, update gameState
@@ -118,7 +143,8 @@ export const useGameStore = create<GameState>((set, get) => ({
           ...state.player,
           health: newHealth,
         },
-        gameState: 'game_over'
+        gameState: 'game_over',
+        gamePhase: 'game_over'
       };
     }
     
@@ -183,6 +209,17 @@ export const useGameStore = create<GameState>((set, get) => ({
     }));
   },
   
+  // Bonus management
+  updateBonus: (type, amount) => {
+    console.log(`Updating ${type} bonus by ${amount}`);
+    set((state) => ({
+      bonuses: {
+        ...state.bonuses,
+        [type]: state.bonuses[type] + amount
+      }
+    }));
+  },
+  
   // Game phase management
   setGamePhase: (phase: GamePhase) => {
     console.log(`Setting game phase to: ${phase}`);
@@ -229,7 +266,8 @@ export const useGameStore = create<GameState>((set, get) => ({
       return;
     }
     
-    if (allNodesCompleted || hasMinimumProgress) {
+    // If we have enough progress, transition to night phase
+    if (allNodesCompleted || hasMinimumProgress || completedNodeIds.length > 0) {
       console.log("Day complete, transitioning to night phase");
       set({ gamePhase: 'night' });
       return;
@@ -242,9 +280,29 @@ export const useGameStore = create<GameState>((set, get) => ({
   completeNight: () => {
     console.log("Night phase complete, starting new day");
     
-    // In a full implementation, this would apply upgrades and generate a new map
-    // For prototype, just return to day phase
-    set({ gamePhase: 'day' });
+    // Increment day counter
+    set((state) => ({ 
+      currentDay: state.currentDay + 1,
+      gamePhase: 'day'
+    }));
+    
+    // Generate a new map with more nodes/complexity based on current day
+    const newMap = generateMap();
+    console.log("Generated new map for day", get().currentDay + 1);
+    
+    // In a full implementation, this would apply upgrades and 
+    // possibly restore some health
+    set((state) => ({
+      map: newMap,
+      currentNodeId: newMap.startNodeId,
+      // Reset completedNodeIds for the new day
+      completedNodeIds: [],
+      // In a real implementation, would apply more sophisticated health restoration
+      player: {
+        ...state.player,
+        health: Math.min(state.player.maxHealth, state.player.health + 1) // Restore 1 health
+      }
+    }));
   },
 }));
 

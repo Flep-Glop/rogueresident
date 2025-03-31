@@ -8,9 +8,13 @@ import { useGameEffects } from './GameEffects';
 // Progress stages for hill home (visual evolution)
 type HomeStage = 'initial' | 'improving' | 'established';
 
-export default function HillHomeScene() {
-  const { player, startGame, completedNodeIds, inventory } = useGameStore();
-  const { playSound, flashScreen } = useGameEffects();
+interface HillHomeSceneProps {
+  onComplete: () => void;
+}
+
+export default function HillHomeScene({ onComplete }: HillHomeSceneProps) {
+  const { player, startGame, completedNodeIds, inventory, updateInsight } = useGameStore();
+  const { playSound, flashScreen, showRewardEffect } = useGameEffects();
   
   // Internal state
   const [activeArea, setActiveArea] = useState<string | null>(null);
@@ -18,6 +22,7 @@ export default function HillHomeScene() {
   const [showInventory, setShowInventory] = useState(false);
   const [timeOfDay, setTimeOfDay] = useState<'dawn' | 'dusk' | 'night'>('dusk');
   const [homeStage, setHomeStage] = useState<HomeStage>('initial');
+  const [skillsApplied, setSkillsApplied] = useState(false);
   
   // Simple skill upgrade system
   const [availablePoints, setAvailablePoints] = useState(3);
@@ -27,7 +32,7 @@ export default function HillHomeScene() {
     educational: 0,
     health: 0
   });
-
+  
   // Set home stage based on game progress
   useEffect(() => {
     if (completedNodeIds.length >= 10) {
@@ -37,7 +42,12 @@ export default function HillHomeScene() {
     } else {
       setHomeStage('initial');
     }
-  }, [completedNodeIds]);
+    
+    // Calculate available skill points based on insight
+    // This is a simple formula - in a full game, this would be more complex
+    const calculatedPoints = Math.floor(player.insight / 100);
+    setAvailablePoints(calculatedPoints);
+  }, [completedNodeIds, player.insight]);
   
   // Time of day cycle animation
   useEffect(() => {
@@ -50,17 +60,60 @@ export default function HillHomeScene() {
           default: return 'dusk';
         }
       });
-    }, 60000); // Change every minute for demo purposes
+    }, 20000); // Change every 20 seconds for demo purposes
     
     return () => clearInterval(interval);
   }, []);
   
-  // Transition to hospital/day phase
+  // Apply skills to game state
+  const applySkills = () => {
+    // Apply clinical skill bonus
+    if (skills.clinical > 0) {
+      // In a full implementation, this would update a permanent bonus in the game state
+      console.log(`Applied +${skills.clinical * 15}% Clinical bonus`);
+    }
+    
+    // Apply QA skill bonus
+    if (skills.qa > 0) {
+      // In a full implementation, this would update a permanent bonus in the game state
+      console.log(`Applied +${skills.qa * 15}% QA bonus`);
+    }
+    
+    // Apply educational skill bonus
+    if (skills.educational > 0) {
+      // In a full implementation, this would update a permanent bonus in the game state
+      console.log(`Applied +${skills.educational * 15}% Educational bonus`);
+    }
+    
+    // Apply health bonus (for prototype, just give extra insight)
+    if (skills.health > 0) {
+      const bonusInsight = skills.health * 50;
+      updateInsight(bonusInsight);
+      
+      if (showRewardEffect) {
+        showRewardEffect(bonusInsight, window.innerWidth / 2, window.innerHeight / 2);
+      }
+    }
+    
+    // Mark skills as applied
+    setSkillsApplied(true);
+    
+    // Close the skill panel
+    setShowSkillPanel(false);
+    
+    // Play success sound
+    if (playSound) playSound('success');
+    
+    // Show flash effect
+    if (flashScreen) flashScreen('green');
+  };
+  
+  // Start day phase
   const startDay = () => {
     if (playSound) playSound('click');
     if (flashScreen) flashScreen('white');
     setTimeout(() => {
-      startGame();
+      onComplete();
     }, 300);
   };
   
@@ -136,7 +189,7 @@ export default function HillHomeScene() {
   const homeDetails = getHomeDetails();
   
   return (
-    <div className="h-screen w-full overflow-hidden relative">
+    <div className="h-full w-full overflow-hidden relative">
       {/* Sky with stars - changes based on time of day */}
       <div className={`absolute inset-0 bg-gradient-to-b ${getSkyGradient()} transition-colors duration-1000`}>
         <div className="absolute inset-0 opacity-70" style={{
@@ -349,16 +402,16 @@ export default function HillHomeScene() {
            activeArea === 'study' ? 'Study Area - Upgrade Skills' : 
            activeArea === 'garden' ? 'Garden - Medicinal Plants' : 
            activeArea === 'telescope' ? 'Telescope - View Night Sky' : 
-           activeArea === 'hospital' ? 'Go to Hospital (Start Day)' : activeArea}
+           activeArea === 'hospital' ? 'Return to Hospital (Start Day)' : activeArea}
         </div>
       )}
       
       {/* Main UI Elements */}
       <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
         <div className="text-center text-white mb-8">
-          <h1 className="text-4xl font-pixel-heading mb-2">Rogue Resident</h1>
+          <h1 className="text-4xl font-pixel-heading mb-2">Night Phase</h1>
           <p className="text-xl font-pixel">
-            {timeOfDay === 'dawn' ? 'A new day begins' :
+            {timeOfDay === 'dawn' ? 'A new day approaches' :
              timeOfDay === 'dusk' ? 'Evening on the hillside' :
              'Under the stars'}
           </p>
@@ -366,7 +419,14 @@ export default function HillHomeScene() {
         
         {/* Stats panel */}
         <div className="bg-surface/80 p-4 pixel-borders max-w-sm pointer-events-auto">
-          <PixelText className="text-xl mb-3">Resident Status</PixelText>
+          <div className="flex justify-between items-center mb-3">
+            <PixelText className="text-xl">Resident Status</PixelText>
+            {skillsApplied && (
+              <span className="text-sm bg-success text-white px-2 py-1">
+                Skills Applied
+              </span>
+            )}
+          </div>
           
           <div className="grid grid-cols-2 gap-4 mb-4">
             <div>
@@ -389,14 +449,14 @@ export default function HillHomeScene() {
               className="bg-blue-600 hover:bg-blue-500 text-white"
               onClick={() => setShowSkillPanel(true)}
             >
-              Study & Improve Skills
+              {availablePoints > 0 ? `Study (${availablePoints} Points)` : 'Review Skills'}
             </PixelButton>
             
             <PixelButton
               className="bg-green-600 hover:bg-green-500 text-white"
               onClick={startDay}
             >
-              Head to Hospital
+              Return to Hospital
             </PixelButton>
           </div>
         </div>
@@ -476,13 +536,21 @@ export default function HillHomeScene() {
               </div>
             </div>
             
-            {/* Study progress */}
-            <div className="mt-6 pt-4 border-t border-border">
-              <PixelText className="mb-2">Study Progress</PixelText>
-              <div className="w-full bg-dark-gray h-4 pixel-borders-thin mb-2">
-                <div className="h-full bg-educational" style={{ width: '65%' }}></div>
-              </div>
-              <PixelText className="text-xs text-text-secondary">Complete more challenges to unlock advanced skills</PixelText>
+            {/* Apply skills button */}
+            <div className="mt-6 pt-4 border-t border-border flex justify-between items-center">
+              <PixelText className="text-sm text-text-secondary">
+                {skillsApplied 
+                  ? "Skills already applied to this run" 
+                  : "Apply your skills to gain benefits for your next day"}
+              </PixelText>
+              
+              <PixelButton
+                className="bg-success hover:bg-green-600 text-white"
+                onClick={applySkills}
+                disabled={skillsApplied || (skills.clinical === 0 && skills.qa === 0 && skills.educational === 0 && skills.health === 0)}
+              >
+                Apply Skills
+              </PixelButton>
             </div>
           </div>
         </div>

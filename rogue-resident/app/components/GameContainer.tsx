@@ -1,5 +1,6 @@
 // app/components/GameContainer.tsx
-import { useEffect } from 'react';
+'use client';
+import { useEffect, useState } from 'react';
 import { useGameStore } from '../store/gameStore';
 import { useChallengeStore } from '../store/challengeStore';
 import { clinicalChallenges } from '../data/clinicalChallenges';
@@ -9,11 +10,15 @@ import PlayerStats from './PlayerStats';
 import Inventory from './Inventory';
 import StorageCloset from './challenges/StorageCloset';
 import BossNode from './challenges/BossNode';
-import { PixelText } from './PixelThemeProvider';
+import HillHomeScene from './HillHomeScene';
+import { PixelText, PixelButton } from './PixelThemeProvider';
+import { useGameEffects } from './GameEffects';
 
 export default function GameContainer() {
-  const { currentNodeId, completedNodeIds, map } = useGameStore();
+  const { currentNodeId, completedNodeIds, map, gamePhase, setGamePhase, player, completeDay } = useGameStore();
   const { currentChallenge, startChallenge } = useChallengeStore();
+  const { flashScreen, playSound } = useGameEffects();
+  const [isTransitioning, setIsTransitioning] = useState(false);
   
   // Get current node details from map to determine node type
   const getCurrentNodeType = () => {
@@ -49,78 +54,116 @@ export default function GameContainer() {
     }
   }, [currentNodeId, currentChallenge, completedNodeIds, startChallenge, map]);
   
-  // Determine what to render in the main content area
-  const renderMainContent = () => {
-    // If there's an active challenge, show the challenge container
-    if (currentChallenge) {
-      return <ChallengeContainer />;
-    }
+  // Handle transition to night phase
+  const handleDayCompletion = () => {
+    setIsTransitioning(true);
     
-    // If a node is selected but not a challenge node, render the appropriate component
-    if (currentNodeId && !completedNodeIds.includes(currentNodeId)) {
-      const nodeType = getCurrentNodeType();
-      
-      if (nodeType === 'storage') {
-        return <StorageCloset />;
-      }
-      
-      if (nodeType === 'boss') return <BossNode />;
-      // if (nodeType === 'vendor') return <VendorNode />;
-    }
+    // Play sound effect
+    if (playSound) playSound('click');
     
-    // Default: show the map
-    return <GameMap />;
+    // Apply screen transition effect
+    if (flashScreen) flashScreen('white');
+    
+    // Short delay for transition effect
+    setTimeout(() => {
+      completeDay();
+      setIsTransitioning(false);
+    }, 500);
+  };
+
+  // Handle transition back to day phase from night
+  const handleNightCompletion = () => {
+    setIsTransitioning(true);
+    
+    // Play sound effect
+    if (playSound) playSound('click');
+    
+    // Apply screen transition effect
+    if (flashScreen) flashScreen('white');
+    
+    // Short delay for transition effect
+    setTimeout(() => {
+      useGameStore.getState().completeNight();
+      setIsTransitioning(false);
+    }, 500);
   };
   
-  const handleDayCompletion = () => {
-    const { map, completedNodeIds, player, setGamePhase } = useGameStore.getState();
-    
-    // Can't complete if no map
-    if (!map) {
-      console.error("Cannot complete day: No map available");
-      return;
+  // Determine what to render in the main content area
+  const renderMainContent = () => {
+    // If we're transitioning, show a loading screen
+    if (isTransitioning) {
+      return (
+        <div className="flex items-center justify-center h-full bg-background">
+          <div className="text-center">
+            <div className="animate-spin w-12 h-12 border-4 border-clinical border-t-transparent rounded-full mx-auto mb-4"></div>
+            <PixelText className="text-lg text-text-primary">Transitioning...</PixelText>
+          </div>
+        </div>
+      );
     }
     
-    // Check if player has run out of health
-    if (player.health <= 0) {
-      console.log("Player has run out of health, transitioning to game over");
-      setGamePhase('game_over');
-      return;
+    // Based on game phase, render different content
+    switch (gamePhase) {
+      case 'night':
+        return (
+          <HillHomeScene onComplete={handleNightCompletion} />
+        );
+        
+      case 'day':
+        // If there's an active challenge, show the challenge container
+        if (currentChallenge) {
+          return <ChallengeContainer />;
+        }
+        
+        // If a node is selected but not a challenge node, render the appropriate component
+        if (currentNodeId && !completedNodeIds.includes(currentNodeId)) {
+          const nodeType = getCurrentNodeType();
+          
+          if (nodeType === 'storage') {
+            return <StorageCloset />;
+          }
+          
+          if (nodeType === 'boss') return <BossNode />;
+          // if (nodeType === 'vendor') return <VendorNode />;
+        }
+        
+        // Default: show the map
+        return (
+          <div className="relative h-full">
+            <GameMap />
+            
+            {/* Day completion button */}
+            <div className="absolute bottom-4 right-4">
+              <PixelButton
+                className="bg-surface hover:bg-clinical text-text-primary px-4 py-2"
+                onClick={handleDayCompletion}
+              >
+                End Day
+              </PixelButton>
+            </div>
+          </div>
+        );
+        
+      default:
+        return <GameMap />;
     }
-    
-    // Check if boss is defeated
-    const isBossDefeated = completedNodeIds.includes(map.bossNodeId);
-    
-    // Check if all non-boss nodes are completed
-    const allNodesCompleted = map.nodes
-      .filter(node => node.type !== 'boss')
-      .every(node => completedNodeIds.includes(node.id));
-      
-    // Check if player has enough completed nodes to progress
-    // (Allow progress even if not everything is complete)
-    const hasMinimumProgress = completedNodeIds.length >= 3;
-    
-    if (isBossDefeated) {
-      console.log("Boss defeated, transitioning to victory");
-      setGamePhase('victory');
-      return;
-    }
-    
-    if (allNodesCompleted || hasMinimumProgress) {
-      console.log("Day complete, transitioning to night phase");
-      setGamePhase('night');
-      return;
-    }
-    
-    console.log("Cannot complete day: Not enough progress");
-    // Maybe show a message to the player that they need to complete more nodes
   };
 
   return (
     <div className="flex flex-col h-screen bg-background">
       <header className="p-4 bg-dark-gray border-b border-border">
-        <PixelText className="text-2xl text-text-primary font-pixel-heading">Rogue Resident</PixelText>
+        <div className="flex justify-between items-center">
+          <PixelText className="text-2xl text-text-primary font-pixel-heading">Rogue Resident</PixelText>
+          
+          {/* Game phase indicator */}
+          <div className="px-3 py-1 rounded-full bg-surface-dark">
+            <PixelText className="text-sm">
+              {gamePhase === 'day' ? '☀️ Day Phase' : gamePhase === 'night' ? '🌙 Night Phase' : ''}
+            </PixelText>
+          </div>
+        </div>
       </header>
+      
       <main className="flex flex-1">
         <section className="w-3/4 relative">
           {renderMainContent()}
