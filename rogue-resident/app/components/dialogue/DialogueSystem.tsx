@@ -7,12 +7,12 @@ import { PixelText, PixelButton } from '../PixelThemeProvider';
 export type Character = 'kapoor' | 'jesse' | 'quinn' | 'player';
 
 export interface DialogueOption {
-    id: string;
-    text: string;
-    responseText: string;
-    effect?: number; // Relationship change
-    nextNodeId?: string; // Add this property
-  }
+  id: string;
+  text: string;
+  responseText: string;
+  effect?: number; // Relationship change
+  nextNodeId?: string; // ID of next dialogue node if this option is selected
+}
 
 // Dialogue node interface
 export interface DialogueNode {
@@ -125,7 +125,7 @@ export function DialogueProvider({ children }: { children: ReactNode }) {
     return () => clearInterval(interval);
   }, [currentNode, selectedOption]);
   
-  // Character data
+  // Character data for styling dialogue based on character
   const characterData: Record<Character, {name: string, color: string}> = {
     'kapoor': { name: 'Dr. Kapoor', color: '#4e83bd' },
     'jesse': { name: 'Technician Jesse', color: '#5a6978' },
@@ -160,7 +160,16 @@ export function DialogueProvider({ children }: { children: ReactNode }) {
             </div>
             
             {/* Dialogue text */}
-            <div className="p-4 min-h-[100px]" onClick={() => setIsTyping(false)}>
+            <div 
+              className="p-4 min-h-[100px]" 
+              onClick={() => {
+                if (isTyping) {
+                  // Skip typing and show full text immediately
+                  setIsTyping(false);
+                  setDisplayedText(selectedOption ? selectedOption.responseText : currentNode.text);
+                }
+              }}
+            >
               <PixelText>{displayedText}{isTyping ? '|' : ''}</PixelText>
             </div>
             

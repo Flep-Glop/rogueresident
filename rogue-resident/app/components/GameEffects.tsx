@@ -5,7 +5,26 @@ import { useState, useCallback, createContext, useContext, ReactNode, useRef } f
 // Simplified effect types
 type ShakeIntensity = 'light' | 'medium' | 'heavy';
 type FlashColor = 'white' | 'red' | 'green' | 'blue';
-type SoundEffect = 'click' | 'success' | 'failure' | 'reward' | 'damage' | 'heal' | 'challenge-complete' | 'node-select';
+type SoundEffect = 
+  // Basic UI sounds
+  | 'click' 
+  | 'ui-click'
+  | 'ui-toggle'
+  | 'ui-error'
+  | 'ui-close'
+  // Gameplay feedback
+  | 'success' 
+  | 'failure' 
+  | 'reward' 
+  | 'damage' 
+  | 'heal' 
+  // Challenge sounds
+  | 'challenge-start'
+  | 'challenge-complete'
+  | 'challenge-success'
+  | 'challenge-failure'
+  // Navigation
+  | 'node-select';
 
 // Context interface
 interface GameEffectsContextType {
@@ -13,7 +32,6 @@ interface GameEffectsContextType {
   flashScreen: (color: FlashColor, duration?: number) => void;
   showDamageNumber: (amount: number) => void;
   showRewardNumber: (amount: number) => void;
-  // Add these methods to fix TypeScript errors:
   showRewardEffect: (amount: number, x: number, y: number) => void;
   showDamageEffect: (amount: number, x: number, y: number) => void;
   showHealEffect: (amount: number, x: number, y: number) => void;
