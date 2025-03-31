@@ -93,6 +93,7 @@ const initialState = {
 export const useGameStore = create<GameState>((set, get) => ({
   ...initialState,
   
+  // In gameStore.ts - Modify the startGame function
   startGame: () => {
     // Generate a new map when starting the game
     const newMap = generateMap();
@@ -103,8 +104,8 @@ export const useGameStore = create<GameState>((set, get) => ({
       gameState: 'in_progress',
       gamePhase: 'day',
       map: newMap,
-      // Set the current node to the start node
-      currentNodeId: newMap.startNodeId
+      // Don't automatically select a node
+      currentNodeId: null // Changed from newMap.startNodeId
     }));
   },
   

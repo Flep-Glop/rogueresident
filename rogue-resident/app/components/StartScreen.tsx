@@ -1,9 +1,10 @@
 // app/components/StartScreen.tsx
 'use client';
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useGameStore } from '../store/gameStore';
 import { PixelButton, PixelText } from './PixelThemeProvider';
 import { useGameEffects } from './GameEffects';
+import Image from 'next/image';
 
 export default function StartScreen() {
   const { resetGame, startGame } = useGameStore();
@@ -27,78 +28,59 @@ export default function StartScreen() {
     }, 500);
   };
   
-  // Starfield animation effect
-  useEffect(() => {
-    const stars = document.querySelector('.animated-stars');
-    if (!stars) return;
-    
-    const moveStars = () => {
-      const y = Math.random() * 0.5;
-      stars.animate(
-        [
-          { transform: 'translateY(0)' },
-          { transform: `translateY(${y}px)` }
-        ],
-        {
-          duration: 1000,
-          easing: 'ease-in-out',
-          fill: 'forwards'
-        }
-      );
-    };
-    
-    const interval = setInterval(moveStars, 3000);
-    return () => clearInterval(interval);
-  }, []);
-  
   return (
-    <div className="h-screen w-full flex flex-col items-center justify-center bg-background text-text-primary p-4 relative overflow-hidden">
-      {/* Animated starfield background */}
-      <div className="absolute inset-0 starfield-bg animated-stars"></div>
+    <div className="h-screen w-full relative overflow-hidden">
+      {/* Background image that fills the screen */}
+      <div className="absolute inset-0">
+        <Image
+          src="/home-background.jpg"
+          alt="Rogue Resident - Medical Physics Roguelike Game"
+          fill
+          style={{ objectFit: 'cover' }}
+          priority // Ensures image loads quickly
+        />
+        {/* Optional overlay to darken image slightly for better text readability */}
+        <div className="absolute inset-0 bg-black/20"></div>
+      </div>
       
-      <div className="relative z-10">
-        {/* Title with pulse animation */}
-        <div className="animate-pulse mb-2 text-center">
-          <PixelText className="text-6xl font-pixel-heading text-blue-400 mb-4">Rogue Resident</PixelText>
-        </div>
-        <PixelText className="text-2xl mb-12 text-blue-300 font-pixel text-center">Medical Physics Residency</PixelText>
-        
-        <div className="max-w-2xl bg-surface p-6 pixel-borders mb-12">
-          <p className="mb-4 font-pixel text-text-primary">
-            You are a new medical physics resident navigating through the challenges of your training.
-            Explore different areas of the department, face clinical situations, discover useful equipment,
-            and confront the mysterious Ionix anomaly.
-          </p>
-          
-          <h3 className="text-xl font-pixel text-blue-300 mb-2">How to Play:</h3>
-          <ul className="list-disc pl-6 mb-4 space-y-1 font-pixel text-text-secondary">
-            <li>During the day, navigate through the hospital map by selecting connected nodes</li>
-            <li>Complete challenges to earn insight and unlock new paths</li>
-            <li>Find useful items in storage closets to help with your challenges</li>
-            <li>At night, return to your hillside home to study and upgrade your skills</li>
-            <li>Reach and defeat the boss to complete your residency</li>
-          </ul>
-          
-          <p className="italic text-text-secondary text-sm font-pixel">
-            This prototype demonstrates the core gameplay loop with basic features.
-            The full game would include more diverse challenges, items, and progression.
-          </p>
+      {/* Content overlay */}
+      <div className="relative z-10 h-full flex flex-col justify-between items-center p-8">
+        {/* Game title at the top */}
+        <div className="mt-8 text-center">
+          <PixelText className="text-6xl font-pixel-heading text-white drop-shadow-lg mb-4">
+            Rogue Resident
+          </PixelText>
+          <PixelText className="text-2xl text-white drop-shadow-md font-pixel">
+            Medical Physics Residency
+          </PixelText>
         </div>
         
-        <div className="flex justify-center space-x-4">
-          <PixelButton
-            className="px-8 py-3 bg-clinical text-white hover:bg-clinical-light text-xl font-pixel"
-            onClick={handleStartNewGame}
-          >
-            Start New Run
-          </PixelButton>
+        {/* Buttons at the bottom */}
+        <div className="mb-16 flex flex-col items-center">
+          {/* Semi-transparent panel */}
+          <div className="bg-surface/80 p-6 rounded-lg pixel-borders mb-8 max-w-md">
+            <p className="mb-4 font-pixel text-text-primary text-center">
+              Embark on your journey as a medical physics resident.
+              Navigate challenges, master your skills, and discover the mysteries
+              of the hospital from your peaceful hillside home.
+            </p>
+          </div>
           
-          <PixelButton
-            className="px-4 py-3 bg-surface text-text-primary hover:bg-surface-dark text-lg font-pixel"
-            onClick={() => setShowCredits(true)}
-          >
-            Credits
-          </PixelButton>
+          <div className="flex space-x-4">
+            <PixelButton
+              className="px-8 py-3 bg-clinical text-white hover:bg-clinical-light text-xl font-pixel"
+              onClick={handleStartNewGame}
+            >
+              Start New Run
+            </PixelButton>
+            
+            <PixelButton
+              className="px-4 py-3 bg-surface/80 text-text-primary hover:bg-surface-dark text-lg font-pixel"
+              onClick={() => setShowCredits(true)}
+            >
+              Credits
+            </PixelButton>
+          </div>
         </div>
       </div>
       
@@ -142,8 +124,8 @@ export default function StartScreen() {
         </div>
       )}
       
-      {/* CRT scanline effect */}
-      <div className="absolute inset-0 scanlines opacity-20 pointer-events-none"></div>
+      {/* Subtle scanline effect - optional */}
+      <div className="absolute inset-0 scanlines opacity-10 pointer-events-none"></div>
     </div>
   );
 }
