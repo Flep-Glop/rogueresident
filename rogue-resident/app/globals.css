@@ -1,24 +1,66 @@
 @import "tailwindcss";
+@import "./styles/pixel-assets.css"; /* Add this line */
+
+/* Pixel font imports */
+@font-face {
+  font-family: 'VT323';
+  src: url('https://fonts.googleapis.com/css2?family=VT323&display=swap');
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Press Start 2P';
+  src: url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
+  font-display: swap;
+}
 
 :root {
-  /* Dark theme by default */
-  --background: #1A1E26;
-  --foreground: #E0E2E8;
-  --surface: #262B36;
-  --border: #3A4055;
-  --text-primary: #E0E2E8;
-  --text-secondary: #A0A8B8;
-  --accent-primary: #4A90E2;
-  --accent-secondary: #26A69A;
-  --success: #48BB78;
-  --warning: #F4D03F;
-  --danger: #E53E3E;
+  /* Retro pixel theme - darker/muted palette */
+  --background: #191c21;
+  --foreground: #c8d2e0;
+  --surface: #242830;
+  --surface-dark: #1a1e24;
+  --border: #353b47;
+  --text-primary: #c8d2e0;
+  --text-secondary: #8892a3;
+  --accent-primary: #53a8d4;
+  --accent-secondary: #2ba695;
+  --success: #4e9e6a;
+  --warning: #d6b740;
+  --danger: #cc4d4d;
+  
+  /* Node type colors (muted versions) */
+  --clinical-color: #4e83bd;
+  --clinical-color-dark: #3a6590;
+  --clinical-color-light: #63a0db;
+  
+  --qa-color: #5a6978;
+  --qa-color-dark: #464e59;
+  --qa-color-light: #6d7c8a;
+  
+  --educational-color: #2c9287;
+  --educational-color-dark: #1f6e66;
+  --educational-color-light: #3db3a6;
+  
+  --storage-color: #bfb38b;
+  --storage-color-dark: #a59970;
+  --storage-color-light: #d8cca3;
+  
+  --vendor-color: #323f4f;
+  --vendor-color-dark: #25303d;
+  --vendor-color-light: #3e4e61;
+  
+  --boss-color: #cc4d4d;
+  --boss-color-dark: #a33c3c;
+  --boss-color-light: #e05e5e;
   
   /* Font variables */
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-surface: var(--surface);
   --color-border: var(--border);
+  --font-pixel: 'VT323', monospace;
+  --font-pixel-heading: 'Press Start 2P', monospace;
   --font-sans: var(--font-geist-sans, Arial, Helvetica, sans-serif);
   --font-mono: var(--font-geist-mono, monospace);
 }
@@ -29,58 +71,193 @@ body {
   font-family: var(--font-sans);
 }
 
-/* Custom classes for themed components */
-.themed-card {
+/* Pixel art utility classes */
+.pixel-borders {
+  box-shadow: 
+    0 -2px 0 0 var(--border),
+    0 2px 0 0 var(--border),
+    -2px 0 0 0 var(--border),
+    2px 0 0 0 var(--border);
+  image-rendering: pixelated;
+}
+
+.pixel-borders-thin {
+  box-shadow: 
+    0 -1px 0 0 var(--border),
+    0 1px 0 0 var(--border),
+    -1px 0 0 0 var(--border),
+    1px 0 0 0 var(--border);
+  image-rendering: pixelated;
+}
+
+.pixel-text {
+  font-family: var(--font-pixel);
+  letter-spacing: 0.5px;
+}
+
+.pixel-heading {
+  font-family: var(--font-pixel-heading);
+  letter-spacing: 1px;
+  line-height: 1.4;
+}
+
+/* Scanline effect */
+.scanlines {
+  position: relative;
+  overflow: hidden;
+}
+
+.scanlines::before {
+  content: "";
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  top: 0;
+  left: 0;
+  background: linear-gradient(
+    to bottom,
+    transparent 50%,
+    rgba(0, 0, 0, 0.05) 51%
+  );
+  background-size: 100% 4px;
+  pointer-events: none;
+  z-index: 10;
+}
+
+/* CRT flicker animation */
+@keyframes crt-flicker {
+  0% {
+    opacity: 0.97;
+  }
+  10% {
+    opacity: 0.98;
+  }
+  20% {
+    opacity: 0.97;
+  }
+  50% {
+    opacity: 1;
+  }
+  80% {
+    opacity: 0.98;
+  }
+  90% {
+    opacity: 0.96;
+  }
+  100% {
+    opacity: 0.98;
+  }
+}
+
+.crt-flicker {
+  animation: crt-flicker 0.15s infinite alternate;
+}
+
+/* Pixel button */
+.pixel-button {
+  font-family: var(--font-pixel);
   background-color: var(--surface);
-  border: 1px solid var(--border);
   color: var(--text-primary);
-  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3), 0 2px 4px -1px rgba(0, 0, 0, 0.2);
+  border: none;
+  box-shadow: 
+    inset -2px -2px 0 var(--border),
+    inset 2px 2px 0 rgba(255, 255, 255, 0.1);
+  padding: 0.5rem 1rem;
+  transition: all 0.1s ease;
+  image-rendering: pixelated;
 }
 
-.themed-button {
+.pixel-button:hover {
   background-color: var(--accent-primary);
-  color: white;
-  transition: all 0.2s ease;
+  color: var(--surface-dark);
+  transform: translateY(-1px);
+  box-shadow: 
+    inset -2px -2px 0 rgba(0, 0, 0, 0.2),
+    inset 2px 2px 0 rgba(255, 255, 255, 0.2);
 }
 
-.themed-button:hover {
-  filter: brightness(110%);
-  transform: translateY(-1px);
+.pixel-button:active {
+  transform: translateY(1px);
+  box-shadow: 
+    inset 2px 2px 0 rgba(0, 0, 0, 0.2),
+    inset -2px -2px 0 rgba(255, 255, 255, 0.1);
+}
+
+/* Pixel card */
+.pixel-card {
+  background-color: var(--surface);
+  box-shadow: 
+    0 0 0 1px var(--border),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+  padding: 1rem;
+  border-radius: 0;
+  image-rendering: pixelated;
+}
+
+/* Pixel progress bar */
+.pixel-progress-bg {
+  height: 12px;
+  background-color: var(--surface-dark);
+  border: 1px solid var(--border);
+}
+
+.pixel-progress-fill {
+  height: 100%;
+  background: repeating-linear-gradient(
+    to right,
+    var(--accent-primary),
+    var(--accent-primary) 8px,
+    var(--accent-secondary) 8px,
+    var(--accent-secondary) 16px
+  );
 }
 
 /* Node type specific themes */
 .clinical-theme {
-  --node-color: #4A90E2;
-  --node-color-dark: #3A7BC9;
-  --node-color-light: #6BA5E9;
+  --node-color: var(--clinical-color);
+  --node-color-dark: var(--clinical-color-dark);
+  --node-color-light: var(--clinical-color-light);
 }
 
 .qa-theme {
-  --node-color: #5A6978;
-  --node-color-dark: #485460;
-  --node-color-light: #6B7A89;
+  --node-color: var(--qa-color);
+  --node-color-dark: var(--qa-color-dark);
+  --node-color-light: var(--qa-color-light);
 }
 
 .educational-theme {
-  --node-color: #26A69A;
-  --node-color-dark: #1D8C82;
-  --node-color-light: #39B9AD;
+  --node-color: var(--educational-color);
+  --node-color-dark: var(--educational-color-dark);
+  --node-color-light: var(--educational-color-light);
 }
 
 .storage-theme {
-  --node-color: #D8CCA3;
-  --node-color-dark: #BDB387;
-  --node-color-light: #E4DAB9;
+  --node-color: var(--storage-color);
+  --node-color-dark: var(--storage-color-dark);
+  --node-color-light: var(--storage-color-light);
 }
 
 .vendor-theme {
-  --node-color: #2C3E50;
-  --node-color-dark: #1E2A36;
-  --node-color-light: #3A5269;
+  --node-color: var(--vendor-color);
+  --node-color-dark: var(--vendor-color-dark);
+  --node-color-light: var(--vendor-color-light);
 }
 
 .boss-theme {
-  --node-color: #E53E3E;
-  --node-color-dark: #C53030;
-  --node-color-light: #F56565;
+  --node-color: var(--boss-color);
+  --node-color-dark: var(--boss-color-dark);
+  --node-color-light: var(--boss-color-light);
+}
+
+/* Health bar pixel style */
+.health-pixel {
+  width: 12px;
+  height: 12px;
+  margin: 0 1px;
+  clip-path: polygon(
+    0% 0%, 
+    100% 0%, 
+    100% 100%, 
+    0% 100%
+  );
 }

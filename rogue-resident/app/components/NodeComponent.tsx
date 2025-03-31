@@ -1,60 +1,60 @@
 // app/components/NodeComponent.tsx
-import { useState, useEffect } from 'react';
+import { useEffect } from 'react';
 import { Node } from '../types/map';
 
 // Enhanced color palette with primary and secondary colors for each node type
 const nodeColors = {
   clinical: {
-    primary: 'bg-blue-500',
-    secondary: 'bg-blue-700',
-    ring: 'ring-blue-300',
-    glow: '#3B82F6',
+    primary: 'bg-clinical',
+    secondary: 'bg-clinical-dark',
+    border: 'border-clinical-light',
+    glow: 'rgba(78, 131, 189, 0.6)',
     icon: '🏥'
   },
   qa: {
-    primary: 'bg-gray-500',
-    secondary: 'bg-gray-700',
-    ring: 'ring-gray-300',
-    glow: '#6B7280',
+    primary: 'bg-qa',
+    secondary: 'bg-qa-dark',
+    border: 'border-qa-light',
+    glow: 'rgba(90, 105, 120, 0.6)',
     icon: '🔍'
   },
   educational: {
-    primary: 'bg-green-500',
-    secondary: 'bg-green-700',
-    ring: 'ring-green-300',
-    glow: '#10B981',
+    primary: 'bg-educational',
+    secondary: 'bg-educational-dark',
+    border: 'border-educational-light',
+    glow: 'rgba(44, 146, 135, 0.6)',
     icon: '📚'
   },
   storage: {
-    primary: 'bg-amber-500',
-    secondary: 'bg-amber-700',
-    ring: 'ring-amber-300',
-    glow: '#F59E0B',
+    primary: 'bg-storage',
+    secondary: 'bg-storage-dark',
+    border: 'border-storage-light',
+    glow: 'rgba(191, 179, 139, 0.6)',
     icon: '📦'
   },
   vendor: {
-    primary: 'bg-indigo-500',
-    secondary: 'bg-indigo-700',
-    ring: 'ring-indigo-300',
-    glow: '#6366F1',
+    primary: 'bg-vendor',
+    secondary: 'bg-vendor-dark',
+    border: 'border-vendor-light',
+    glow: 'rgba(50, 63, 79, 0.6)',
     icon: '🛒'
   },
   boss: {
-    primary: 'bg-red-500',
-    secondary: 'bg-red-700',
-    ring: 'ring-red-300',
-    glow: '#EF4444',
+    primary: 'bg-boss',
+    secondary: 'bg-boss-dark',
+    border: 'border-boss-light',
+    glow: 'rgba(204, 77, 77, 0.6)',
     icon: '⚠️'
   },
 };
 
 // Completed node colors
 const completedColors = {
-  primary: 'bg-green-500',
-  secondary: 'bg-green-700',
-  ring: 'ring-green-300',
-  glow: '#10B981',
-  icon: '✓', // Add icon property to match the nodeColors structure
+  primary: 'bg-success',
+  secondary: 'bg-success-dark',
+  border: 'border-success-light',
+  glow: 'rgba(78, 158, 106, 0.6)',
+  icon: '✓',
 };
 
 // Type descriptions for node tooltip
@@ -88,27 +88,6 @@ export default function NodeComponent({
   onMouseEnter,
   onMouseLeave,
 }: NodeComponentProps) {
-  const [isPulsing, setIsPulsing] = useState(false);
-  
-  // Log state for debugging
-  useEffect(() => {
-    if (isCompleted) {
-      console.log(`Node ${node.id} (${node.type}) is completed`);
-    }
-    if (isAvailable) {
-      console.log(`Node ${node.id} (${node.type}) is available`);
-    }
-  }, [isCompleted, isAvailable, node.id, node.type]);
-  
-  // Pulse animation when a node becomes available
-  useEffect(() => {
-    if (isAvailable && !isCompleted && !isPulsing) {
-      setIsPulsing(true);
-      const timer = setTimeout(() => setIsPulsing(false), 2000);
-      return () => clearTimeout(timer);
-    }
-  }, [isAvailable, isCompleted, isPulsing]);
-
   // Get node style info - use completed style if completed
   const nodeStyle = isCompleted ? completedColors : nodeColors[node.type];
   
@@ -125,14 +104,14 @@ export default function NodeComponent({
       {/* Node glow effect (rendered separately from node for layering) */}
       {(isAvailable || isSelected || isHovered) && (
         <div
-          className={`absolute rounded-full opacity-20 transition-all duration-300 ${isPulsing ? 'animate-pulse' : ''}`}
+          className={`absolute rounded-full opacity-30 transition-all duration-300 
+            ${isHovered || isSelected ? 'node-glow-active' : 'node-glow'}`}
           style={{
-            left: `${node.position.x * 150 + 12}px`,
-            top: `${node.position.y * 100 + 12}px`,
-            width: '76px',
-            height: '76px',
+            left: '-10px',
+            top: '-10px',
+            width: '70px',
+            height: '70px',
             background: `radial-gradient(circle, ${nodeStyle.glow} 0%, transparent 70%)`,
-            transform: isHovered ? 'scale(1.5)' : 'scale(1.2)',
             zIndex: 0
           }}
         ></div>
@@ -142,42 +121,45 @@ export default function NodeComponent({
       <div
         {...dataAttributes}
         className={`
-          absolute w-24 h-24 rounded-full flex items-center justify-center transition-all duration-200
-          ${isCompleted ? 'bg-green-500' : nodeStyle.primary}
+          w-12 h-12 rounded-full relative overflow-hidden
+          ${isCompleted ? 'bg-success' : nodeStyle.primary}
           ${isAvailable && !isCompleted ? 'cursor-pointer' : 'cursor-default'}
-          ${isAvailable && !isCompleted ? 'ring-4 ring-yellow-300' : ''}
-          ${isSelected ? 'ring-4 ring-white' : ''}
+          ${isAvailable && !isCompleted ? 'border-2 border-yellow-300' : 'border border-gray-700'}
+          ${isSelected ? 'border-2 border-white' : ''}
           ${!isAvailable && !isCompleted ? 'opacity-50 grayscale' : ''}
-          ${isHovered && isAvailable ? 'transform scale-110 shadow-lg' : ''}
-          ${isPulsing && isAvailable ? 'animate-pulse' : ''}
+          box-content
         `}
-        style={{
-          left: `${node.position.x * 150}px`,
-          top: `${node.position.y * 100}px`,
-          boxShadow: isHovered && isAvailable ? `0 0 15px ${nodeStyle.glow}` : 'none',
-          zIndex: isHovered || isSelected ? 20 : 10
-        }}
         onClick={isAvailable ? onClick : undefined}
         onMouseEnter={onMouseEnter}
         onMouseLeave={onMouseLeave}
       >
+        {/* Node pixel overlay effect */}
+        <div className="absolute inset-0 opacity-20" 
+          style={{
+            backgroundImage: 'linear-gradient(45deg, #000 25%, transparent 25%), linear-gradient(-45deg, #000 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #000 75%), linear-gradient(-45deg, transparent 75%, #000 75%)',
+            backgroundSize: '4px 4px',
+            backgroundPosition: '0 0, 0 2px, 2px -2px, -2px 0'
+          }}
+        ></div>
+        
+        {/* Node inner shadow for 3D effect */}
         <div className={`
-          absolute inset-0 rounded-full 
-          ${isCompleted ? 'bg-green-700' : nodeStyle.secondary}
-          transform scale-90
+          absolute inset-2 rounded-full 
+          ${isCompleted ? 'bg-success-dark' : nodeStyle.secondary}
         `}></div>
         
-        <div className="flex flex-col items-center">
-          <span className="text-2xl mb-1">{isCompleted ? '✓' : nodeStyle.icon}</span>
-          <span className="text-white font-bold text-sm">
-            {node.type === 'boss' ? 'IONIX' : node.type.charAt(0).toUpperCase() + node.type.slice(1)}
-          </span>
+        {/* Node icon and label */}
+        <div className="absolute inset-0 flex flex-col items-center justify-center">
+          <div className="text-xl text-white drop-shadow-md">{isCompleted ? '✓' : nodeStyle.icon}</div>
+          {node.type === 'boss' && (
+            <div className="text-xs text-white font-bold mt-1 font-pixel">IONIX</div>
+          )}
         </div>
         
-        {/* Completion checkmark - more prominent */}
+        {/* Completion checkmark */}
         {isCompleted && (
-          <div className="absolute -top-2 -right-2 bg-green-500 rounded-full w-8 h-8 flex items-center justify-center shadow-md">
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-white" viewBox="0 0 20 20" fill="currentColor">
+          <div className="absolute -top-1 -right-1 bg-success w-5 h-5 flex items-center justify-center rounded-full border border-white">
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 text-white" viewBox="0 0 20 20" fill="currentColor">
               <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
             </svg>
           </div>
@@ -186,17 +168,31 @@ export default function NodeComponent({
       
       {/* Tooltip */}
       {isHovered && (
-        <div className="absolute z-30 bg-gray-800 text-white p-3 rounded shadow-lg max-w-xs"
+        <div 
+          className="absolute z-50 bg-dark-gray border border-gray-700 p-2 rounded-sm shadow-lg w-48 text-white font-pixel"
           style={{
-            left: `${node.position.x * 150 + 60}px`,
-            top: `${node.position.y * 100 - 30}px`,
-          }}>
-          <div className="font-bold mb-1">
+            left: '24px',
+            top: '-12px',
+          }}
+        >
+          <div className="font-bold text-sm mb-1">
             {node.type === 'boss' ? 'IONIX Encounter' : `${node.type.charAt(0).toUpperCase() + node.type.slice(1)} Node`}
           </div>
-          <p className="text-sm">{nodeDescriptions[node.type]}</p>
+          <p className="text-xs text-gray-300">{nodeDescriptions[node.type]}</p>
           {isCompleted && <p className="text-green-400 text-xs mt-1">✓ Completed</p>}
           {!isAvailable && !isCompleted && <p className="text-red-400 text-xs mt-1">🔒 Locked</p>}
+          
+          {/* Tooltip arrow */}
+          <div 
+            className="absolute w-2 h-2 bg-dark-gray transform rotate-45" 
+            style={{
+              left: '-4px',
+              top: '15px',
+              borderLeft: '1px solid',
+              borderBottom: '1px solid',
+              borderColor: '#374151'
+            }}
+          ></div>
         </div>
       )}
     </>

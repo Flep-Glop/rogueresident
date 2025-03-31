@@ -1,0 +1,67 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 50">
+  <!-- Clinical Node Icon -->
+  <g transform="translate(0, 0)">
+    <rect x="10" y="5" width="30" height="40" fill="#4e83bd" />
+    <!-- Windows -->
+    <rect x="15" y="10" width="8" height="8" fill="#c8d2e0" />
+    <rect x="27" y="10" width="8" height="8" fill="#c8d2e0" />
+    <rect x="15" y="22" width="8" height="8" fill="#c8d2e0" />
+    <rect x="27" y="22" width="8" height="8" fill="#c8d2e0" />
+    <!-- Door -->
+    <rect x="19" y="32" width="12" height="13" fill="#3a6590" />
+    <rect x="25" y="38" width="2" height="2" fill="#c8d2e0" />
+    <!-- Red Cross -->
+    <rect x="17" y="15" width="16" height="2" fill="#cc4d4d" />
+    <rect x="24" y="8" width="2" height="16" fill="#cc4d4d" />
+  </g>
+  
+  <!-- QA Node Icon -->
+  <g transform="translate(60, 0)">
+    <rect x="10" y="5" width="30" height="40" fill="#5a6978" />
+    <!-- Device -->
+    <rect x="15" y="15" width="20" height="20" fill="#353b47" />
+    <rect x="18" y="18" width="14" height="14" fill="#242830" />
+    <!-- Knobs -->
+    <circle cx="17" cy="12" r="2" fill="#8892a3" />
+    <circle cx="23" cy="12" r="2" fill="#8892a3" />
+    <circle cx="29" cy="12" r="2" fill="#8892a3" />
+    <!-- Screen readout -->
+    <rect x="20" y="22" width="10" height="6" fill="#53a8d4" />
+    <rect x="22" y="24" width="6" height="2" fill="#c8d2e0" />
+  </g>
+  
+  <!-- Educational Node Icon -->
+  <g transform="translate(120, 0)">
+    <rect x="10" y="10" width="30" height="30" fill="#2c9287" />
+    <!-- Book pages -->
+    <rect x="12" y="15" width="26" height="20" fill="#c8d2e0" />
+    <!-- Book lines -->
+    <rect x="15" y="20" width="20" height="1" fill="#353b47" />
+    <rect x="15" y="24" width="20" height="1" fill="#353b47" />
+    <rect x="15" y="28" width="15" height="1" fill="#353b47" />
+    <!-- Book binding -->
+    <rect x="24" y="10" width="2" height="30" fill="#1f6e66" />
+  </g>
+  
+  <!-- Storage Node Icon -->
+  <g transform="translate(180, 0)">
+    <rect x="10" y="15" width="30" height="25" fill="#bfb38b" />
+    <!-- Box top -->
+    <polygon points="10,15 25,5 40,15" fill="#a59970" />
+    <!-- Box flaps -->
+    <polygon points="25,5 25,15 40,15" fill="#d8cca3" />
+    <!-- Box contents -->
+    <rect x="17" y="22" width="4" height="10" fill="#353b47" />
+    <rect x="24" y="20" width="6" height="6" fill="#4e83bd" />
+    <rect x="30" y="25" width="3" height="8" fill="#cc4d4d" />
+  </g>
+  
+  <!-- Boss Node Icon -->
+  <g transform="translate(240, 0)">
+    <circle cx="25" cy="25" r="15" fill="#cc4d4d" />
+    <!-- Warning symbol -->
+    <polygon points="25,12 31,30 19,30" fill="#191c21" />
+    <rect x="24" y="22" width="2" height="5" fill="#d8cca3" />
+    <rect x="24" y="28" width="2" height="2" fill="#d8cca3" />
+  </g>
+</svg>

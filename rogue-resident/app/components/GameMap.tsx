@@ -1,4 +1,3 @@
-// app/components/GameMap.tsx
 'use client';
 import { useGameStore } from '../store/gameStore';
 import NodeComponent from './NodeComponent';
@@ -45,10 +44,6 @@ export default function GameMap() {
     }
   });
   
-  console.log("Map - Start node:", map.startNodeId);
-  console.log("Map - Completed nodes:", completedNodeIds);
-  console.log("Map - Available nodes:", Array.from(availableNodeIds));
-  
   // Get node position for label placement
   const getNodeConnectionLine = (nodeId1: string, nodeId2: string) => {
     const node1 = map.nodes.find(n => n.id === nodeId1);
@@ -74,25 +69,18 @@ export default function GameMap() {
   };
   
   return (
-    <div className="relative w-full h-full bg-gray-900 overflow-hidden">
-      {/* Background grid pattern */}
-      <div className="absolute inset-0" 
-           style={{ 
-             backgroundImage: 'radial-gradient(circle, #444 1px, transparent 1px)', 
-             backgroundSize: '20px 20px'
-           }} />
-      
+    <div className="relative w-full h-full starfield-bg overflow-hidden">
       {/* Map title */}
-      <div className="absolute top-4 left-0 right-0 text-center">
-        <h2 className="text-2xl font-bold text-white">Medical Physics Department</h2>
-        <p className="text-blue-300 text-sm">Navigate through challenges to reach the final encounter</p>
+      <div className="absolute top-4 left-0 right-0 text-center z-10">
+        <h2 className="map-title text-2xl font-bold text-white mb-1">Medical Physics Department</h2>
+        <p className="map-subtitle text-blue-300 text-sm">Navigate through challenges to reach the final encounter</p>
       </div>
       
       {/* Debug info for development */}
-      <div className="absolute bottom-20 left-4 bg-black bg-opacity-80 p-2 rounded text-green-400 text-xs font-mono z-50">
+      <div className="debug-console absolute bottom-20 left-4 z-50">
         <div>Completed: {completedNodeIds.length} nodes</div>
         <div>Available: {availableNodeIds.size} nodes</div>
-        <div>Selected: {currentNodeId || 'none'}</div>
+        <div>Selected: {currentNodeId?.substring(0, 8) || 'none'}</div>
       </div>
       
       {/* Draw connections between nodes */}
@@ -130,13 +118,12 @@ export default function GameMap() {
                   y1={conn.y1}
                   x2={conn.x2}
                   y2={conn.y2}
-                  stroke={
-                    conn.isPathCompleted ? "#10B981" : // Completed - green
-                    conn.isPathActive ? "#3B82F6" :    // Active - blue
-                    "#6B7280"                         // Inactive - gray
-                  }
-                  strokeWidth={conn.isPathActive ? 3 : 2}
-                  strokeDasharray={conn.isPathCompleted ? "none" : (conn.isPathActive ? "none" : "5,5")}
+                  className={`
+                    pixel-connection
+                    ${conn.isPathCompleted ? 'pixel-connection-completed stroke-success' : ''}
+                    ${conn.isPathActive && !conn.isPathCompleted ? 'pixel-connection-active stroke-blue-500' : ''}
+                    ${!conn.isPathActive && !conn.isPathCompleted ? 'stroke-gray-600' : ''}
+                  `}
                 />
               </g>
             );
@@ -152,37 +139,49 @@ export default function GameMap() {
         const isHovered = node.id === hoveredNodeId;
         
         return (
-          <NodeComponent
+          <div
             key={node.id}
-            node={node}
-            isAvailable={isAvailable}
-            isCompleted={isCompleted}
-            isSelected={isSelected}
-            isHovered={isHovered}
-            onClick={() => {
-              if (isAvailable) {
-                console.log(`Selecting node: ${node.id} (type: ${node.type})`);
-                setCurrentNode(node.id);
-              }
+            className={`
+              absolute transition-all duration-300
+              ${isHovered && isAvailable ? 'z-20 scale-110' : 'z-10'}
+              ${isSelected ? 'z-30' : ''}
+            `}
+            style={{
+              left: `${node.position.x * 150}px`,
+              top: `${node.position.y * 100}px`,
             }}
-            onMouseEnter={() => setHoveredNodeId(node.id)}
-            onMouseLeave={() => setHoveredNodeId(null)}
-          />
+          >
+            <NodeComponent
+              node={node}
+              isAvailable={isAvailable}
+              isCompleted={isCompleted}
+              isSelected={isSelected}
+              isHovered={isHovered}
+              onClick={() => {
+                if (isAvailable) {
+                  console.log(`Selecting node: ${node.id} (type: ${node.type})`);
+                  setCurrentNode(node.id);
+                }
+              }}
+              onMouseEnter={() => setHoveredNodeId(node.id)}
+              onMouseLeave={() => setHoveredNodeId(null)}
+            />
+          </div>
         );
       })}
       
       {/* Legend */}
-      <div className="absolute bottom-4 right-4 bg-gray-800 bg-opacity-80 p-3 rounded text-white text-sm">
+      <div className="map-legend absolute bottom-4 right-4 text-sm">
         <div className="flex items-center mb-2">
-          <div className="w-3 h-3 rounded-full bg-blue-500 mr-2"></div>
+          <div className="legend-dot bg-blue-500 mr-2"></div>
           <span>Available Nodes</span>
         </div>
         <div className="flex items-center mb-2">
-          <div className="w-3 h-3 rounded-full bg-green-500 mr-2"></div>
+          <div className="legend-dot bg-green-500 mr-2"></div>
           <span>Completed Nodes</span>
         </div>
         <div className="flex items-center">
-          <div className="w-3 h-3 rounded-full bg-gray-400 mr-2"></div>
+          <div className="legend-dot bg-gray-400 mr-2"></div>
           <span>Locked Nodes</span>
         </div>
       </div>

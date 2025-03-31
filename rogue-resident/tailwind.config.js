@@ -1,63 +1,117 @@
 /** @type {import('tailwindcss').Config} */
 module.exports = {
-    content: [
-      "./app/**/*.{js,ts,jsx,tsx}",
-      "./pages/**/*.{js,ts,jsx,tsx}",
-      "./components/**/*.{js,ts,jsx,tsx}",
-    ],
-    theme: {
-      extend: {
-        colors: {
-          // Dark theme base colors
-          background: '#1A1E26',
-          surface: '#262B36',
-          border: '#3A4055',
-          'text-primary': '#E0E2E8',
-          'text-secondary': '#A0A8B8',
-          
-          // Game-specific accent colors (from your design doc)
-          'clinical': {
-            DEFAULT: '#4A90E2',
-            dark: '#3A7BC9',
-            light: '#6BA5E9',
-          },
-          'qa': {
-            DEFAULT: '#5A6978',
-            dark: '#485460',
-            light: '#6B7A89',
-          },
-          'educational': {
-            DEFAULT: '#26A69A',
-            dark: '#1D8C82',
-            light: '#39B9AD',
-          },
-          'storage': {
-            DEFAULT: '#D8CCA3',
-            dark: '#BDB387',
-            light: '#E4DAB9',
-          },
-          'vendor': {
-            DEFAULT: '#2C3E50',
-            dark: '#1E2A36',
-            light: '#3A5269',
-          },
-          
-          // Feedback colors
-          success: '#48BB78',
-          warning: '#F4D03F',
-          danger: '#E53E3E',
-          
-          // Other useful shades
-          'dark-gray': '#121520',
-          'medium-gray': '#3A4055',
-          'light-gray': '#A0A8B8',
+  content: [
+    "./app/**/*.{js,ts,jsx,tsx}",
+    "./pages/**/*.{js,ts,jsx,tsx}",
+    "./components/**/*.{js,ts,jsx,tsx}",
+  ],
+  theme: {
+    extend: {
+      fontFamily: {
+        'pixel': ['VT323', 'monospace'],
+        'pixel-heading': ['"Press Start 2P"', 'monospace'],
+        'sans': ['var(--font-geist-sans)', 'Arial', 'sans-serif'],
+        'mono': ['var(--font-geist-mono)', 'monospace'],
+      },
+      colors: {
+        // Dark theme base colors
+        background: '#191c21',
+        surface: '#242830',
+        'surface-dark': '#1a1e24',
+        border: '#353b47',
+        'text-primary': '#c8d2e0',
+        'text-secondary': '#8892a3',
+        
+        // Game-specific accent colors (muted versions)
+        'clinical': {
+          DEFAULT: '#4e83bd',
+          dark: '#3a6590',
+          light: '#63a0db',
         },
-        // Add custom shadows for depth
-        boxShadow: {
-          'card': '0 4px 6px -1px rgba(0, 0, 0, 0.3), 0 2px 4px -1px rgba(0, 0, 0, 0.2)',
-          'active': '0 0 0 2px rgba(74, 144, 226, 0.6), 0 4px 8px rgba(0, 0, 0, 0.4)',
+        'qa': {
+          DEFAULT: '#5a6978',
+          dark: '#464e59',
+          light: '#6d7c8a',
+        },
+        'educational': {
+          DEFAULT: '#2c9287',
+          dark: '#1f6e66',
+          light: '#3db3a6',
+        },
+        'storage': {
+          DEFAULT: '#bfb38b',
+          dark: '#a59970',
+          light: '#d8cca3',
+        },
+        'vendor': {
+          DEFAULT: '#323f4f',
+          dark: '#25303d',
+          light: '#3e4e61',
+        },
+        'boss': {
+          DEFAULT: '#cc4d4d',
+          dark: '#a33c3c',
+          light: '#e05e5e',
+        },
+        
+        // Feedback colors
+        success: '#4e9e6a',
+        warning: '#d6b740',
+        danger: '#cc4d4d',
+        
+        // Other useful shades
+        'dark-gray': '#161a1f',
+        'medium-gray': '#353b47',
+        'light-gray': '#8892a3',
+      },
+      // Add custom shadows for pixel art
+      boxShadow: {
+        'pixel': '0 0 0 1px rgba(0, 0, 0, 0.8), inset 0 0 0 1px rgba(255, 255, 255, 0.08)',
+        'pixel-md': '0 0 0 2px rgba(0, 0, 0, 0.8), inset 0 0 0 1px rgba(255, 255, 255, 0.08)',
+        'pixel-lg': '0 0 0 3px rgba(0, 0, 0, 0.8), inset 0 0 0 1px rgba(255, 255, 255, 0.08)',
+        'pixel-inner': 'inset 0 0 0 1px rgba(0, 0, 0, 0.8)',
+        'pixel-none': 'none',
+        'pixel-button': 'inset -2px -2px 0 #353b47, inset 2px 2px 0 rgba(255, 255, 255, 0.1)',
+        'pixel-button-pressed': 'inset 2px 2px 0 #353b47, inset -2px -2px 0 rgba(255, 255, 255, 0.05)',
+      },
+      // Pixel-specific border styles
+      borderWidth: {
+        'pixel': '1px',
+        'pixel-2': '2px',
+      },
+      // Add custom pixel animations
+      keyframes: {
+        'pixel-pulse': {
+          '0%, 100%': { transform: 'scale(1)' },
+          '50%': { transform: 'scale(1.05)' },
+        },
+        'scanline': {
+          '0%': { transform: 'translateY(0%)' },
+          '100%': { transform: 'translateY(120%)' },
+        },
+        'crt-flicker': {
+          '0%': { opacity: '0.97' },
+          '10%': { opacity: '0.98' },
+          '20%': { opacity: '0.97' },
+          '50%': { opacity: '1' },
+          '80%': { opacity: '0.98' },
+          '90%': { opacity: '0.96' },
+          '100%': { opacity: '0.98' },
         }
       },
+      animation: {
+        'pixel-pulse': 'pixel-pulse 2s ease-in-out infinite',
+        'scanline': 'scanline 8s linear infinite',
+        'crt-flicker': 'crt-flicker 0.15s infinite alternate',
+      },
+      // Pixel-specific sizing
+      spacing: {
+        'pixel': '1px',
+        'pixel-2': '2px',
+        'pixel-4': '4px',
+        'pixel-8': '8px',
+      },
     },
-    plugins: [],
-  }
+  },
+  plugins: [],
+}

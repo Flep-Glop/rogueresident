@@ -73,18 +73,20 @@ export default function GameContainer() {
   
   return (
     <div className="flex flex-col h-screen">
-      <header className="p-4 bg-gray-800 text-white">
-        <h1 className="text-2xl font-bold">Rogue Resident</h1>
+      <header className="p-4 bg-dark-gray text-white font-pixel border-b-2 border-gray-700">
+        <h1 className="text-2xl">Rogue Resident</h1>
       </header>
       <main className="flex flex-1">
         <section className="w-3/4 relative">
           {renderMainContent()}
         </section>
-        <aside className="w-1/4 bg-gray-100 overflow-auto">
+        <aside className="w-1/4 stats-panel overflow-auto">
           <PlayerStats />
-          <Inventory />
         </aside>
       </main>
+      
+      {/* Add scanlines effect over the entire interface */}
+      <div className="pointer-events-none fixed inset-0 scanlines opacity-10 z-50"></div>
     </div>
   );
 }
