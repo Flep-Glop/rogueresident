@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useChallengeStore, ChallengeGrade } from '../../store/challengeStore';
 import { useGameStore } from '../../store/gameStore';
+import { PixelButton, PixelText } from '../PixelThemeProvider';
 
 // Grade-specific messages
 const gradeMessages = {
@@ -12,12 +13,32 @@ const gradeMessages = {
   'C': "You've completed the challenge, but might want to review these concepts further."
 };
 
-// Grade-specific animations
-const gradeAnimations = {
-  'S': 'animate-grade-s',
-  'A': 'animate-grade-a',
-  'B': 'animate-grade-b',
-  'C': 'animate-grade-c'
+// Grade-specific colors
+const gradeColors = {
+  'S': {
+    bg: 'bg-purple-900',
+    text: 'text-purple-300',
+    border: 'border-purple-700',
+    glow: 'shadow-[0_0_15px_rgba(147,51,234,0.5)]'
+  },
+  'A': {
+    bg: 'bg-green-900',
+    text: 'text-green-300',
+    border: 'border-green-700',
+    glow: 'shadow-[0_0_12px_rgba(16,185,129,0.5)]'
+  },
+  'B': {
+    bg: 'bg-blue-900',
+    text: 'text-blue-300',
+    border: 'border-blue-700',
+    glow: 'shadow-[0_0_10px_rgba(59,130,246,0.5)]'
+  },
+  'C': {
+    bg: 'bg-amber-900',
+    text: 'text-amber-300',
+    border: 'border-amber-700',
+    glow: 'shadow-[0_0_8px_rgba(251,191,36,0.5)]'
+  }
 };
 
 export default function ChallengeOutcome() {
@@ -64,34 +85,6 @@ export default function ChallengeOutcome() {
     'C': 25
   };
   
-  // Grade color mapping
-  const gradeColors = {
-    'S': {
-      bg: 'bg-gradient-to-br from-purple-500 to-indigo-600',
-      text: 'text-purple-700',
-      light: 'bg-purple-100',
-      border: 'border-purple-200'
-    },
-    'A': {
-      bg: 'bg-gradient-to-br from-green-500 to-emerald-600',
-      text: 'text-green-700',
-      light: 'bg-green-100',
-      border: 'border-green-200'
-    },
-    'B': {
-      bg: 'bg-gradient-to-br from-blue-500 to-cyan-600',
-      text: 'text-blue-700',
-      light: 'bg-blue-100',
-      border: 'border-blue-200'
-    },
-    'C': {
-      bg: 'bg-gradient-to-br from-yellow-400 to-amber-500',
-      text: 'text-amber-700',
-      light: 'bg-amber-100',
-      border: 'border-amber-200'
-    }
-  };
-  
   const colors = gradeColors[grade];
   
   const handleReturnToMap = () => {
@@ -101,10 +94,10 @@ export default function ChallengeOutcome() {
   };
   
   return (
-    <div className="p-6 max-w-4xl mx-auto bg-white rounded-lg shadow-lg text-center overflow-hidden">
-      <h2 className="text-3xl font-bold mb-8 bg-clip-text text-transparent bg-gradient-to-r from-blue-600 to-indigo-500">
+    <div className="p-6 max-w-4xl mx-auto bg-surface pixel-borders text-center">
+      <PixelText className="text-3xl text-clinical-light font-pixel-heading mb-8">
         Challenge Complete!
-      </h2>
+      </PixelText>
       
       <div className="mb-10 transition-all duration-500 transform translate-y-0 opacity-100">
         {/* Grade display */}
@@ -114,103 +107,71 @@ export default function ChallengeOutcome() {
           ${showGrade ? 'translate-y-0 opacity-100' : 'translate-y-10 opacity-0'}
         `}>
           <div className={`
-            w-32 h-32 rounded-full text-white text-6xl font-bold 
-            flex items-center justify-center mb-4 shadow-lg
-            ${colors.bg} ${gradeAnimations[grade]}
+            w-32 h-32 rounded-full text-white text-6xl font-pixel
+            flex items-center justify-center mb-4
+            ${colors.bg} ${colors.border} ${colors.glow} pixel-borders
+            animate-pixel-pulse
           `}>
             <span className="flex items-center justify-center">{grade}</span>
           </div>
           
-          <h3 className="text-xl font-semibold text-gray-800">Performance Grade</h3>
+          <PixelText className="text-xl text-text-primary mb-2">Performance Grade</PixelText>
           
-          <p className={`mt-2 ${colors.text} px-4 py-2 rounded-full ${colors.light} inline-block`}>
-            {gradeMessages[grade]}
-          </p>
+          <div className={`mt-2 ${colors.text} px-4 py-2 rounded-full ${colors.bg} inline-block pixel-borders-thin`}>
+            <PixelText>{gradeMessages[grade]}</PixelText>
+          </div>
         </div>
         
         {/* Rewards */}
         <div className={`
-          my-8 p-6 rounded-lg shadow-md ${colors.light} ${colors.border} border
+          my-8 p-6 rounded-lg ${colors.bg} ${colors.border} pixel-borders
           transition-all duration-1000 transform
           ${showRewards ? 'translate-y-0 opacity-100' : 'translate-y-10 opacity-0'}
         `}>
-          <h3 className="text-xl font-semibold mb-4 text-gray-800">Rewards</h3>
+          <PixelText className="text-xl text-white mb-4">Rewards</PixelText>
           
           <div className="flex justify-center items-center space-x-8">
             {/* Insight reward */}
             <div className="text-center">
-              <div className="text-3xl font-bold text-blue-600 flex items-center justify-center">
+              <div className="text-3xl font-pixel text-white flex items-center justify-center">
                 <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 mr-2" viewBox="0 0 20 20" fill="currentColor">
                   <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
                 </svg>
                 +{rewards[grade]}
               </div>
-              <p className="text-blue-800 font-medium">Insight Points</p>
+              <PixelText className="text-gray-300">Insight Points</PixelText>
             </div>
             
             {/* Experience reward - would connect to meta-progression in full game */}
             <div className="text-center opacity-50">
-              <div className="text-3xl font-bold text-green-600 flex items-center justify-center">
+              <div className="text-3xl font-pixel text-white flex items-center justify-center">
                 <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 mr-2" viewBox="0 0 20 20" fill="currentColor">
                   <path d="M10 12a2 2 0 100-4 2 2 0 000 4z" />
                   <path fillRule="evenodd" d="M.458 10C1.732 5.943 5.522 3 10 3s8.268 2.943 9.542 7c-1.274 4.057-5.064 7-9.542 7S1.732 14.057.458 10zM14 10a4 4 0 11-8 0 4 4 0 018 0z" clipRule="evenodd" />
                 </svg>
                 +{Math.round(rewards[grade] / 2)}
               </div>
-              <p className="text-green-800 font-medium">Experience 
-                <span className="ml-2 px-2 py-0.5 bg-gray-200 text-gray-600 text-xs rounded-full">
+              <PixelText className="text-gray-300">Experience 
+                <span className="ml-2 px-2 py-0.5 bg-gray-700 text-gray-300 text-xs rounded-full">
                   Full Game
                 </span>
-              </p>
+              </PixelText>
             </div>
           </div>
         </div>
       </div>
       
-      <button
+      <PixelButton
         className={`
-          px-8 py-3 rounded-lg font-medium text-lg
-          bg-blue-600 text-white hover:bg-blue-700
-          shadow-md hover:shadow-lg transform transition-all duration-300
-          hover:-translate-y-1
+          px-8 py-3 bg-clinical text-white hover:bg-clinical-light
+          shadow-pixel-md hover:shadow-pixel-lg transform transition-all duration-300
+          hover:-translate-y-1 font-pixel text-lg
           ${showButton ? 'opacity-100' : 'opacity-0'}
         `}
         onClick={handleReturnToMap}
       >
         Return to Map
-      </button>
-      
-      <style jsx>{`
-        @keyframes grade-s-animation {
-          0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(147, 51, 234, 0.7); }
-          50% { transform: scale(1.05); box-shadow: 0 0 20px 10px rgba(147, 51, 234, 0.5); }
-        }
-        @keyframes grade-a-animation {
-          0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); }
-          50% { transform: scale(1.05); box-shadow: 0 0 15px 7px rgba(16, 185, 129, 0.5); }
-        }
-        @keyframes grade-b-animation {
-          0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.7); }
-          50% { transform: scale(1.05); box-shadow: 0 0 10px 5px rgba(59, 130, 246, 0.5); }
-        }
-        @keyframes grade-c-animation {
-          0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(251, 191, 36, 0.7); }
-          50% { transform: scale(1.03); box-shadow: 0 0 8px 4px rgba(251, 191, 36, 0.5); }
-        }
-        
-        .animate-grade-s {
-          animation: grade-s-animation 2s infinite;
-        }
-        .animate-grade-a {
-          animation: grade-a-animation 2s infinite;
-        }
-        .animate-grade-b {
-          animation: grade-b-animation 2s infinite;
-        }
-        .animate-grade-c {
-          animation: grade-c-animation 2s infinite;
-        }
-      `}</style>
+      </PixelButton>
     </div>
   );
 }

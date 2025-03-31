@@ -9,6 +9,7 @@ import PlayerStats from './PlayerStats';
 import Inventory from './Inventory';
 import StorageCloset from './challenges/StorageCloset';
 import BossNode from './challenges/BossNode';
+import { PixelText } from './PixelThemeProvider';
 
 export default function GameContainer() {
   const { currentNodeId, completedNodeIds, map } = useGameStore();
@@ -72,16 +73,17 @@ export default function GameContainer() {
   };
   
   return (
-    <div className="flex flex-col h-screen">
-      <header className="p-4 bg-dark-gray text-white font-pixel border-b-2 border-gray-700">
-        <h1 className="text-2xl">Rogue Resident</h1>
+    <div className="flex flex-col h-screen bg-background">
+      <header className="p-4 bg-dark-gray border-b border-border">
+        <PixelText className="text-2xl text-text-primary font-pixel-heading">Rogue Resident</PixelText>
       </header>
       <main className="flex flex-1">
         <section className="w-3/4 relative">
           {renderMainContent()}
         </section>
-        <aside className="w-1/4 stats-panel overflow-auto">
+        <aside className="w-1/4 overflow-auto">
           <PlayerStats />
+          <Inventory />
         </aside>
       </main>
       

@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useChallengeStore } from '../../store/challengeStore';
 import { useGameStore } from '../../store/gameStore';
 import { Item } from '../../data/items';
+import { PixelButton, PixelText } from '../PixelThemeProvider';
 
 // Add these interfaces for type safety
 interface Option {
@@ -132,24 +133,25 @@ export default function ClinicalChallenge() {
   const eliminatedOptions = hintUsed ? useHint() : [];
   
   return (
-    <div className="p-6 max-w-4xl mx-auto bg-gradient-to-b from-blue-50 to-indigo-50 rounded-lg shadow-md">
-      {/* Timer and navigation */}
+    <div className="p-6 max-w-4xl mx-auto bg-surface pixel-borders clinical-container">
+      {/* Header with timer and title */}
       <div className="flex justify-between items-center mb-8">
-        <h2 className="text-2xl font-bold text-blue-800">
+        <PixelText className="text-2xl text-clinical-light font-pixel-heading">
           {currentChallenge.content.title}
-        </h2>
+        </PixelText>
         
         <div className="flex items-center space-x-4">
           {clinicalBonus > 0 && (
-            <div className="px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-sm font-medium flex items-center">
+            <div className="px-3 py-1 bg-clinical text-white pixel-borders-thin text-sm font-pixel flex items-center">
               <span className="mr-1">🏥</span>
               <span>+{clinicalBonus}% Clinical Bonus</span>
             </div>
           )}
           
           <div className={`
-            px-3 py-1 rounded-full text-sm font-medium flex items-center
-            ${timeRemaining < 60 ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-700'}
+            px-3 py-1 text-sm font-pixel flex items-center 
+            ${timeRemaining < 60 ? 'bg-danger text-white' : 'bg-medium-gray text-text-primary'}
+            pixel-borders-thin
           `}>
             <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -161,32 +163,33 @@ export default function ClinicalChallenge() {
       
       {/* Progress indicator */}
       <div className="mb-6">
-        <div className="w-full bg-gray-200 rounded-full h-2.5">
+        <div className="w-full bg-dark-gray pixel-borders-thin h-4">
           <div 
-            className="bg-blue-600 h-2.5 rounded-full transition-all duration-300" 
+            className="bg-clinical h-4 transition-all duration-300" 
             style={{ width: `${Object.keys(answers).length / questions.length * 100}%` }}
           ></div>
         </div>
-        <div className="mt-2 text-sm text-gray-500 flex justify-between">
+        <div className="mt-2 text-sm text-text-secondary flex justify-between font-pixel">
           <span>Question {activeQuestion + 1} of {questions.length}</span>
           <span>{Object.keys(answers).length} answered</span>
         </div>
       </div>
       
       {/* Current question */}
-      <div key={currentQuestion.id} className="bg-white p-6 rounded-lg border border-blue-200 shadow-sm mb-6">
-        <h3 className="text-lg font-semibold mb-4">{currentQuestion.text}</h3>
+      <div key={currentQuestion.id} className="bg-surface-dark p-6 pixel-borders mb-6">
+        <PixelText className="text-lg text-text-primary mb-4">{currentQuestion.text}</PixelText>
         
         <div className="space-y-3">
           {currentQuestion.options.map((option: Option) => {
             const isEliminatedOption = eliminatedOptions?.includes(option.id);
+            const isSelected = answers[currentQuestion.id] === option.id;
             
             return (
               <label 
                 key={option.id}
                 className={`
-                  block p-3 rounded-lg cursor-pointer transition-all duration-200
-                  ${answers[currentQuestion.id] === option.id ? 'bg-blue-100 border-blue-400 shadow-sm' : 'border border-gray-200 hover:border-blue-200'}
+                  block p-3 cursor-pointer transition-all duration-200
+                  ${isSelected ? 'bg-clinical/30 pixel-borders' : 'bg-surface pixel-borders-thin'}
                   ${isEliminatedOption ? 'opacity-50 line-through' : ''}
                 `}
               >
@@ -195,13 +198,13 @@ export default function ClinicalChallenge() {
                     type="radio"
                     name={currentQuestion.id}
                     value={option.id}
-                    checked={answers[currentQuestion.id] === option.id}
+                    checked={isSelected}
                     onChange={() => handleAnswerSelect(currentQuestion.id, option.id)}
                     className="mt-1 mr-3"
                     disabled={isEliminatedOption}
                   />
                   <div className="flex-grow">
-                    {option.text}
+                    <PixelText className="text-text-primary">{option.text}</PixelText>
                   </div>
                 </div>
               </label>
@@ -213,59 +216,58 @@ export default function ClinicalChallenge() {
       {/* Navigation buttons */}
       <div className="flex justify-between items-center">
         <div>
-          <button
+          <PixelButton
             className={`
-              px-4 py-2 rounded-lg mr-2 transition-colors
+              mr-2 
               ${activeQuestion > 0 
-                ? 'bg-gray-200 text-gray-700 hover:bg-gray-300' 
-                : 'bg-gray-100 text-gray-400 cursor-not-allowed'}
+                ? 'bg-medium-gray text-text-primary hover:bg-light-gray' 
+                : 'bg-dark-gray text-text-secondary cursor-not-allowed'}
             `}
             onClick={() => setActiveQuestion(prev => Math.max(0, prev - 1))}
             disabled={activeQuestion === 0}
           >
             Previous
-          </button>
+          </PixelButton>
           
-          <button
+          <PixelButton
             className={`
-              px-4 py-2 rounded-lg transition-colors
               ${activeQuestion < questions.length - 1
-                ? 'bg-gray-200 text-gray-700 hover:bg-gray-300' 
-                : 'bg-gray-100 text-gray-400 cursor-not-allowed'}
+                ? 'bg-medium-gray text-text-primary hover:bg-light-gray' 
+                : 'bg-dark-gray text-text-secondary cursor-not-allowed'}
             `}
             onClick={() => setActiveQuestion(prev => Math.min(questions.length - 1, prev + 1))}
             disabled={activeQuestion === questions.length - 1}
           >
             Next
-          </button>
+          </PixelButton>
         </div>
         
         <div>
-          <button
+          <PixelButton
             className={`
-              px-4 py-2 rounded-lg mr-2 transition-colors
+              mr-2
               ${!hintUsed
-                ? 'bg-amber-100 text-amber-700 hover:bg-amber-200' 
-                : 'bg-gray-100 text-gray-400 cursor-not-allowed'}
+                ? 'bg-warning text-dark-gray hover:bg-yellow-400' 
+                : 'bg-dark-gray text-text-secondary cursor-not-allowed'}
             `}
             onClick={() => useHint()}
             disabled={hintUsed}
           >
             Use Hint
-          </button>
+          </PixelButton>
           
-          <button
+          <PixelButton
             className={`
-              px-6 py-2 rounded-lg font-medium transition-colors
+              font-medium
               ${isComplete 
-                ? 'bg-blue-600 text-white hover:bg-blue-700' 
-                : 'bg-gray-300 text-gray-500 cursor-not-allowed'}
+                ? 'bg-clinical text-white hover:bg-clinical-light' 
+                : 'bg-dark-gray text-text-secondary cursor-not-allowed'}
             `}
             onClick={handleSubmit}
             disabled={!isComplete}
           >
             Submit All Answers
-          </button>
+          </PixelButton>
         </div>
       </div>
     </div>

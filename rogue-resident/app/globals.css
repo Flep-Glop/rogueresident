@@ -261,3 +261,148 @@ body {
     0% 100%
   );
 }
+
+/* Additional styles to add to your globals.css */
+
+/* Node type custom background and text colors */
+.bg-clinical {
+  background-color: var(--clinical-color);
+}
+.bg-clinical-dark {
+  background-color: var(--clinical-color-dark);
+}
+.bg-clinical-light {
+  background-color: var(--clinical-color-light);
+}
+.text-clinical-light {
+  color: var(--clinical-color-light);
+}
+
+.bg-qa {
+  background-color: var(--qa-color);
+}
+.bg-qa-dark {
+  background-color: var(--qa-color-dark);
+}
+.bg-qa-light {
+  background-color: var(--qa-color-light);
+}
+.text-qa-light {
+  color: var(--qa-color-light);
+}
+
+.bg-educational {
+  background-color: var(--educational-color);
+}
+.bg-educational-dark {
+  background-color: var(--educational-color-dark);
+}
+.bg-educational-light {
+  background-color: var(--educational-color-light);
+}
+.text-educational-light {
+  color: var(--educational-color-light);
+}
+
+.bg-storage {
+  background-color: var(--storage-color);
+}
+.bg-storage-dark {
+  background-color: var(--storage-color-dark);
+}
+.bg-storage-light {
+  background-color: var(--storage-color-light);
+}
+.text-storage-light {
+  color: var(--storage-color-light);
+}
+
+.bg-vendor {
+  background-color: var(--vendor-color);
+}
+.bg-vendor-dark {
+  background-color: var(--vendor-color-dark);
+}
+.bg-vendor-light {
+  background-color: var(--vendor-color-light);
+}
+.text-vendor-light {
+  color: var(--vendor-color-light);
+}
+
+.bg-boss {
+  background-color: var(--boss-color);
+}
+.bg-boss-dark {
+  background-color: var(--boss-color-dark);
+}
+.bg-boss-light {
+  background-color: var(--boss-color-light);
+}
+.text-boss-light {
+  color: var(--boss-color-light);
+}
+
+.bg-success {
+  background-color: var(--success);
+}
+.bg-success-dark {
+  background-color: #3d7e55;
+}
+.bg-success-light {
+  background-color: #5eae7a;
+}
+.text-success {
+  color: var(--success);
+}
+
+.bg-warning {
+  background-color: var(--warning);
+}
+.bg-danger {
+  background-color: var(--danger);
+}
+
+/* Enhanced pixel animations */
+@keyframes pixel-pulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.05); }
+}
+
+.animate-pixel-pulse {
+  animation: pixel-pulse 2s ease-in-out infinite;
+}
+
+/* Enhanced container styles */
+.clinical-container {
+  border-color: var(--clinical-color);
+}
+
+.qa-container {
+  border-color: var(--qa-color);
+}
+
+.educational-container {
+  border-color: var(--educational-color);
+}
+
+.storage-container {
+  border-color: var(--storage-color);
+}
+
+.vendor-container {
+  border-color: var(--vendor-color);
+}
+
+.boss-container {
+  border-color: var(--boss-color);
+}
+
+/* Font utility classes */
+.font-pixel {
+  font-family: var(--font-pixel);
+}
+
+.font-pixel-heading {
+  font-family: var(--font-pixel-heading);
+}
