@@ -262,11 +262,10 @@ export default function QAChallenge() {
     
     // Set result and play appropriate effect
     if (isCorrect) {
-      setResult('success');
-      flashScreen('green');
-      playSound('challenge-success');
-      showRewardEffect(50, window.innerWidth / 2, window.innerHeight / 2);
-      
+        setResult('success');
+        flashScreen('green');
+        playSound('challenge-success');
+        showRewardEffect(50, window.innerWidth / 2, window.innerHeight / 2);
       // Success vibration pattern
       navigator.vibrate?.(200);
       
