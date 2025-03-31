@@ -1,5 +1,5 @@
 // app/components/NodeComponent.tsx
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Node } from '../types/map';
 
 // Enhanced color palette with primary and secondary colors for each node type
@@ -91,6 +91,76 @@ export default function NodeComponent({
   // Get node style info - use completed style if completed
   const nodeStyle = isCompleted ? completedColors : nodeColors[node.type];
   
+  // Add state for animation
+  const [animating, setAnimating] = useState<boolean>(false);
+  
+  // Sound effects enabled state
+  const [soundEnabled, setSoundEnabled] = useState<boolean>(true);
+  
+  // Load sound effects
+  useEffect(() => {
+    // Check if we're in a browser environment with audio support
+    if (typeof window !== 'undefined' && 'Audio' in window) {
+      // Pre-load sounds for faster playback
+      const clickSound = new Audio('/sounds/node-select.mp3');
+      clickSound.preload = 'auto';
+      
+      // Make sure to clean up
+      return () => {
+        clickSound.pause();
+        clickSound.src = '';
+      };
+    }
+  }, []);
+  
+  // Handle click with animation and sound
+  const handleNodeClick = () => {
+    // Skip if node isn't available or is already animating
+    if (!isAvailable || animating || isSelected) {
+      return;
+    }
+    
+    // Start animation
+    setAnimating(true);
+    
+    // Play sound effect
+    if (soundEnabled) {
+      try {
+        const clickSound = new Audio('/sounds/node-select.mp3');
+        clickSound.volume = 0.5;
+        clickSound.play().catch(err => {
+          console.log('Audio play failed:', err);
+          // If audio fails, disable to avoid console spam
+          setSoundEnabled(false);
+        });
+      } catch (error) {
+        console.log('Sound not supported or file not found');
+        setSoundEnabled(false);
+      }
+    }
+    
+    // Apply visual feedback
+    const nodeElement = document.getElementById(`node-${node.id}`);
+    if (nodeElement) {
+      nodeElement.classList.add('node-pulse-animation');
+    }
+    
+    // Small delay for animation to complete
+    setTimeout(() => {
+      // Log node selection
+      console.log(`Selecting node: ${node.id} (type: ${node.type})`);
+      
+      // Call the parent's onClick handler
+      onClick();
+      
+      // Reset animation states
+      setAnimating(false);
+      if (nodeElement) {
+        nodeElement.classList.remove('node-pulse-animation');
+      }
+    }, 300);
+  };
+  
   // Add data attributes for debug purposes
   const dataAttributes = {
     'data-node-id': node.id,
@@ -105,7 +175,9 @@ export default function NodeComponent({
       {(isAvailable || isSelected || isHovered) && (
         <div
           className={`absolute rounded-full opacity-30 transition-all duration-300 
-            ${isHovered || isSelected ? 'node-glow-active' : 'node-glow'}`}
+            ${isHovered || isSelected ? 'node-glow-active' : 'node-glow'}
+            ${animating ? 'animate-pulse' : ''}
+          `}
           style={{
             left: '-10px',
             top: '-10px',
@@ -119,6 +191,7 @@ export default function NodeComponent({
     
       {/* Main node */}
       <div
+        id={`node-${node.id}`}
         {...dataAttributes}
         className={`
           w-12 h-12 rounded-full relative overflow-hidden
@@ -127,9 +200,11 @@ export default function NodeComponent({
           ${isAvailable && !isCompleted ? 'border-2 border-yellow-300' : 'border border-gray-700'}
           ${isSelected ? 'border-2 border-white' : ''}
           ${!isAvailable && !isCompleted ? 'opacity-50 grayscale' : ''}
+          ${animating ? 'animate-node-pulse' : ''}
           box-content
+          transition-all duration-200
         `}
-        onClick={isAvailable ? onClick : undefined}
+        onClick={() => isAvailable ? handleNodeClick() : undefined}
         onMouseEnter={onMouseEnter}
         onMouseLeave={onMouseLeave}
       >
@@ -195,6 +270,19 @@ export default function NodeComponent({
           ></div>
         </div>
       )}
+      
+      {/* Add CSS for node pulse animation */}
+      <style jsx>{`
+        @keyframes node-pulse {
+          0% { transform: scale(1); }
+          50% { transform: scale(1.1); }
+          100% { transform: scale(1); }
+        }
+        
+        .animate-node-pulse {
+          animation: node-pulse 0.3s ease-in-out;
+        }
+      `}</style>
     </>
   );
 }

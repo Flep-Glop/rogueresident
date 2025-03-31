@@ -72,6 +72,50 @@ export default function GameContainer() {
     return <GameMap />;
   };
   
+  const handleDayCompletion = () => {
+    const { map, completedNodeIds, player, setGamePhase } = useGameStore.getState();
+    
+    // Can't complete if no map
+    if (!map) {
+      console.error("Cannot complete day: No map available");
+      return;
+    }
+    
+    // Check if player has run out of health
+    if (player.health <= 0) {
+      console.log("Player has run out of health, transitioning to game over");
+      setGamePhase('game_over');
+      return;
+    }
+    
+    // Check if boss is defeated
+    const isBossDefeated = completedNodeIds.includes(map.bossNodeId);
+    
+    // Check if all non-boss nodes are completed
+    const allNodesCompleted = map.nodes
+      .filter(node => node.type !== 'boss')
+      .every(node => completedNodeIds.includes(node.id));
+      
+    // Check if player has enough completed nodes to progress
+    // (Allow progress even if not everything is complete)
+    const hasMinimumProgress = completedNodeIds.length >= 3;
+    
+    if (isBossDefeated) {
+      console.log("Boss defeated, transitioning to victory");
+      setGamePhase('victory');
+      return;
+    }
+    
+    if (allNodesCompleted || hasMinimumProgress) {
+      console.log("Day complete, transitioning to night phase");
+      setGamePhase('night');
+      return;
+    }
+    
+    console.log("Cannot complete day: Not enough progress");
+    // Maybe show a message to the player that they need to complete more nodes
+  };
+
   return (
     <div className="flex flex-col h-screen bg-background">
       <header className="p-4 bg-dark-gray border-b border-border">

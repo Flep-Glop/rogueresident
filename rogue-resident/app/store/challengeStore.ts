@@ -52,24 +52,65 @@ export const useChallengeStore = create<ChallengeState>((set, get) => ({
     const currentNodeId = useGameStore.getState().currentNodeId;
     console.log("Current node ID when completing challenge:", currentNodeId);
     
-    // Update player stats if we have a current node
-    if (currentNodeId) {
-      console.log("Updating insight and completing node:", currentNodeId);
-      const gameStore = useGameStore.getState();
-      
-      // First update insight
-      gameStore.updateInsight(rewards[grade]);
-      
-      // Then mark the node as completed
-      gameStore.completeNode(currentNodeId);
-      
-      console.log("After completion, completed nodes:", 
-        useGameStore.getState().completedNodeIds);
-    } else {
+    if (!currentNodeId) {
       console.warn("No current node ID found when completing challenge!");
+      // Still proceed to outcome stage
+      set((state) => ({
+        currentChallenge: state.currentChallenge
+          ? { ...state.currentChallenge, stage: 'outcome', grade }
+          : null
+      }));
+      return;
     }
     
-    // Move to outcome stage
+    // First, check if node is already completed to avoid duplicate operations
+    const gameStore = useGameStore.getState();
+    if (gameStore.completedNodeIds.includes(currentNodeId)) {
+      console.log("Node already marked as completed:", currentNodeId);
+      
+      // Still update insight if not already done
+      gameStore.updateInsight(rewards[grade]);
+      
+      // Move to outcome stage
+      set((state) => ({
+        currentChallenge: state.currentChallenge
+          ? { ...state.currentChallenge, stage: 'outcome', grade }
+          : null
+      }));
+      return;
+    }
+    
+    // Update insight first (this is a separate operation that doesn't depend on node completion)
+    gameStore.updateInsight(rewards[grade]);
+    console.log(`Added ${rewards[grade]} insight points`);
+    
+    // Then attempt to mark the node as completed
+    try {
+      gameStore.completeNode(currentNodeId);
+      console.log("Node marked as completed:", currentNodeId);
+    } catch (error) {
+      console.warn("Error completing node, will retry once:", error);
+      
+      // Retry node completion once after a delay
+      setTimeout(() => {
+        try {
+          // Get fresh state
+          const freshGameStore = useGameStore.getState();
+          
+          // Check if it's already completed now
+          if (!freshGameStore.completedNodeIds.includes(currentNodeId)) {
+            freshGameStore.completeNode(currentNodeId);
+            console.log("Node completion retry successful");
+          }
+        } catch (retryError) {
+          // Just log a warning, don't throw an error - let the game continue
+          console.warn("Node completion retry failed, continuing anyway");
+        }
+      }, 300);
+    }
+    
+    // Always move to outcome stage, regardless of completion success
+    // This ensures the game flow continues even if there's an issue
     set((state) => ({
       currentChallenge: state.currentChallenge
         ? { ...state.currentChallenge, stage: 'outcome', grade }

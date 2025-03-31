@@ -3,8 +3,13 @@ import { create } from 'zustand';
 import { Item } from '../data/items';
 import { generateMap, GameMap, Node } from '../utils/mapGenerator';
 
+// Game phase types
+export type GamePhase = 'day' | 'night' | 'game_over' | 'victory';
+export type TutorialStep = number;
+
 type GameState = {
   gameState: 'not_started' | 'in_progress' | 'game_over' | 'victory';
+  gamePhase: GamePhase;
   player: {
     health: number;
     insight: number;
@@ -14,6 +19,11 @@ type GameState = {
   inventory: Item[];
   map: GameMap | null;
   
+  // Tutorial & progression state
+  hasPlayedBefore: boolean;
+  tutorialStep: TutorialStep;
+  showHints: boolean;
+  
   // Actions
   startGame: () => void;
   setCurrentNode: (nodeId: string) => void;
@@ -22,13 +32,24 @@ type GameState = {
   updateInsight: (amount: number) => void;
   addToInventory: (item: Item) => void;
   removeFromInventory: (itemId: string) => void;
-  // For easy reset/new game
   resetGame: () => void;
+  
+  // Tutorial actions
+  showTutorial: (step: TutorialStep) => void;
+  dismissTutorial: () => void;
+  markAsPlayed: () => void;
+  toggleHints: (show?: boolean) => void;
+  
+  // Game phase management
+  setGamePhase: (phase: GamePhase) => void;
+  completeDay: () => void;
+  completeNight: () => void;
 };
 
 // Initial state for reuse in resetGame
 const initialState = {
   gameState: 'not_started' as const,
+  gamePhase: 'day' as GamePhase,
   player: {
     health: 4, // Starting health
     insight: 100, // Starting insight
@@ -37,6 +58,11 @@ const initialState = {
   completedNodeIds: [],
   inventory: [],
   map: null,
+  
+  // Tutorial state
+  hasPlayedBefore: false,
+  tutorialStep: 0,
+  showHints: true,
 };
 
 export const useGameStore = create<GameState>((set, get) => ({
@@ -50,6 +76,7 @@ export const useGameStore = create<GameState>((set, get) => ({
     set(state => ({ 
       ...state, 
       gameState: 'in_progress',
+      gamePhase: 'day',
       map: newMap,
       // Set the current node to the start node
       currentNodeId: newMap.startNodeId
@@ -83,13 +110,23 @@ export const useGameStore = create<GameState>((set, get) => ({
   updateHealth: (amount) => set((state) => {
     const newHealth = Math.max(0, state.player.health + amount);
     console.log(`Updating health by ${amount} to ${newHealth}`);
+    
+    // If health reaches 0, update gameState
+    if (newHealth <= 0) {
+      return {
+        player: {
+          ...state.player,
+          health: newHealth,
+        },
+        gameState: 'game_over'
+      };
+    }
+    
     return {
       player: {
         ...state.player,
         health: newHealth,
-      },
-      // If health reaches 0, update gameState
-      ...(newHealth <= 0 ? { gameState: 'game_over' } : {})
+      }
     };
   }),
   
@@ -121,6 +158,93 @@ export const useGameStore = create<GameState>((set, get) => ({
   resetGame: () => {
     console.log("Resetting game to initial state");
     set({ ...initialState });
+  },
+  
+  // Tutorial system
+  showTutorial: (step: TutorialStep) => {
+    console.log(`Showing tutorial step: ${step}`);
+    set({ tutorialStep: step });
+  },
+  
+  dismissTutorial: () => {
+    console.log("Dismissing tutorial");
+    set({ tutorialStep: -1 });
+  },
+  
+  markAsPlayed: () => {
+    console.log("Marking game as played before");
+    set({ hasPlayedBefore: true });
+  },
+  
+  toggleHints: (show?: boolean) => {
+    console.log(`Toggling hints: ${show !== undefined ? show : 'toggle'}`);
+    set((state) => ({ 
+      showHints: show !== undefined ? show : !state.showHints 
+    }));
+  },
+  
+  // Game phase management
+  setGamePhase: (phase: GamePhase) => {
+    console.log(`Setting game phase to: ${phase}`);
+    set({ gamePhase: phase });
+  },
+  
+  completeDay: () => {
+    const { map, completedNodeIds, player } = get();
+    
+    // Can't complete if no map
+    if (!map) {
+      console.error("Cannot complete day: No map available");
+      return;
+    }
+    
+    // Check if player has run out of health
+    if (player.health <= 0) {
+      console.log("Player has run out of health, transitioning to game over");
+      set({ 
+        gameState: 'game_over',
+        gamePhase: 'game_over'
+      });
+      return;
+    }
+    
+    // Check if boss is defeated
+    const isBossDefeated = completedNodeIds.includes(map.bossNodeId);
+    
+    // Check if all non-boss nodes are completed
+    const allNodesCompleted = map.nodes
+      .filter(node => node.type !== 'boss')
+      .every(node => completedNodeIds.includes(node.id));
+      
+    // Check if player has enough completed nodes to progress
+    // (Allow progress even if not everything is complete)
+    const hasMinimumProgress = completedNodeIds.length >= 3;
+    
+    if (isBossDefeated) {
+      console.log("Boss defeated, transitioning to victory");
+      set({ 
+        gameState: 'victory',
+        gamePhase: 'victory'
+      });
+      return;
+    }
+    
+    if (allNodesCompleted || hasMinimumProgress) {
+      console.log("Day complete, transitioning to night phase");
+      set({ gamePhase: 'night' });
+      return;
+    }
+    
+    console.log("Cannot complete day: Not enough progress");
+    // Maybe show a message to the player that they need to complete more nodes
+  },
+  
+  completeNight: () => {
+    console.log("Night phase complete, starting new day");
+    
+    // In a full implementation, this would apply upgrades and generate a new map
+    // For prototype, just return to day phase
+    set({ gamePhase: 'day' });
   },
 }));
 
