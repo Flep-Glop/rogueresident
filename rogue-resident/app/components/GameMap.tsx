@@ -1,16 +1,67 @@
 'use client';
 import { useGameStore } from '../store/gameStore';
 import NodeComponent from './NodeComponent';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
+import { PixelButton } from './PixelThemeProvider';
 
 export default function GameMap() {
   const { currentNodeId, completedNodeIds, setCurrentNode, map } = useGameStore();
   const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
+  const mapContainerRef = useRef<HTMLDivElement>(null);
+  const [mapDimensions, setMapDimensions] = useState({ width: 0, height: 0 });
+  const [offsetX, setOffsetX] = useState(0);
+  const [offsetY, setOffsetY] = useState(0);
   
-  // Log for debugging
+  // Calculate map dimensions and center offset on mount and when map changes
   useEffect(() => {
-    console.log("GameMap - completedNodeIds updated:", completedNodeIds);
-  }, [completedNodeIds]);
+    if (!map) return;
+    
+    // Find the boundaries of the map
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    
+    map.nodes.forEach(node => {
+      minX = Math.min(minX, node.position.x);
+      maxX = Math.max(maxX, node.position.x);
+      minY = Math.min(minY, node.position.y);
+      maxY = Math.max(maxY, node.position.y);
+    });
+    
+    // Calculate map dimensions in grid units
+    const mapWidth = maxX - minX + 1;
+    const mapHeight = maxY - minY + 1;
+    
+    // Calculate pixel dimensions (using 150px width and 100px height per grid unit)
+    const pixelWidth = mapWidth * 150;
+    const pixelHeight = mapHeight * 100;
+    
+    setMapDimensions({ width: pixelWidth, height: pixelHeight });
+    
+    // Calculate centering offsets if container is available
+    if (mapContainerRef.current) {
+      const containerWidth = mapContainerRef.current.clientWidth;
+      const containerHeight = mapContainerRef.current.clientHeight;
+      
+      // Center the map in the container
+      setOffsetX((containerWidth - pixelWidth) / 2);
+      setOffsetY((containerHeight - pixelHeight) / 2);
+    }
+  }, [map, mapContainerRef.current?.clientWidth, mapContainerRef.current?.clientHeight]);
+  
+  // Recalculate on resize
+  useEffect(() => {
+    const handleResize = () => {
+      if (mapContainerRef.current && map) {
+        const containerWidth = mapContainerRef.current.clientWidth;
+        const containerHeight = mapContainerRef.current.clientHeight;
+        
+        setOffsetX((containerWidth - mapDimensions.width) / 2);
+        setOffsetY((containerHeight - mapDimensions.height) / 2);
+      }
+    };
+    
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, [map, mapDimensions]);
 
   if (!map) {
     return (
@@ -44,17 +95,19 @@ export default function GameMap() {
     }
   });
   
-  // Get node position for label placement
+  // Get node position for connections
   const getNodeConnectionLine = (nodeId1: string, nodeId2: string) => {
     const node1 = map.nodes.find(n => n.id === nodeId1);
     const node2 = map.nodes.find(n => n.id === nodeId2);
     
     if (!node1 || !node2) return null;
     
-    const x1 = node1.position.x * 150 + 50;
-    const y1 = node1.position.y * 100 + 50;
-    const x2 = node2.position.x * 150 + 50;
-    const y2 = node2.position.y * 100 + 50;
+    // Calculate absolute positions (add the centering offsets)
+    // Use center of the node (add 24px which is half the node size of 48px)
+    const x1 = node1.position.x * 150 + offsetX + 24;
+    const y1 = node1.position.y * 100 + offsetY + 24;
+    const x2 = node2.position.x * 150 + offsetX + 24;
+    const y2 = node2.position.y * 100 + offsetY + 24;
     
     // Calculate if the path is available
     const isPathActive = 
@@ -69,7 +122,10 @@ export default function GameMap() {
   };
   
   return (
-    <div className="relative w-full h-full starfield-bg overflow-hidden">
+    <div 
+      ref={mapContainerRef}
+      className="relative w-full h-full starfield-bg overflow-hidden"
+    >
       {/* Map title */}
       <div className="absolute top-4 left-0 right-0 text-center z-10">
         <h2 className="map-title text-2xl font-bold text-white mb-1">Medical Physics Department</h2>
@@ -106,22 +162,23 @@ export default function GameMap() {
                     x2={conn.x2}
                     y2={conn.y2}
                     stroke="#60A5FA"
-                    strokeWidth={5}
-                    strokeOpacity={0.5}
+                    strokeWidth={6}
+                    strokeOpacity={0.6}
                     filter="url(#glow)"
                   />
                 )}
                 
-                {/* Main connection line */}
+                {/* Thicker, more visible connection lines */}
                 <line
                   x1={conn.x1}
                   y1={conn.y1}
                   x2={conn.x2}
                   y2={conn.y2}
+                  strokeWidth={conn.isPathActive ? "3" : "1.5"}
+                  strokeDasharray={!conn.isPathActive && !conn.isPathCompleted ? "4 4" : "none"}
                   className={`
-                    pixel-connection
-                    ${conn.isPathCompleted ? 'pixel-connection-completed stroke-success' : ''}
-                    ${conn.isPathActive && !conn.isPathCompleted ? 'pixel-connection-active stroke-blue-500' : ''}
+                    ${conn.isPathCompleted ? 'stroke-success' : ''}
+                    ${conn.isPathActive && !conn.isPathCompleted ? 'stroke-blue-400' : ''}
                     ${!conn.isPathActive && !conn.isPathCompleted ? 'stroke-gray-600' : ''}
                   `}
                 />
@@ -147,8 +204,8 @@ export default function GameMap() {
               ${isSelected ? 'z-30' : ''}
             `}
             style={{
-              left: `${node.position.x * 150}px`,
-              top: `${node.position.y * 100}px`,
+              left: `${node.position.x * 150 + offsetX}px`,
+              top: `${node.position.y * 100 + offsetY}px`,
             }}
           >
             <NodeComponent
@@ -184,6 +241,16 @@ export default function GameMap() {
           <div className="legend-dot bg-gray-400 mr-2"></div>
           <span>Locked Nodes</span>
         </div>
+      </div>
+      
+      {/* Day completion button */}
+      <div className="absolute bottom-4 right-4">
+        <PixelButton
+          className="bg-surface hover:bg-clinical text-text-primary px-4 py-2"
+          onClick={() => useGameStore.getState().completeDay()}
+        >
+          End Day
+        </PixelButton>
       </div>
     </div>
   );

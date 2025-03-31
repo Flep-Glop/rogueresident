@@ -1,71 +1,7 @@
 // app/components/NodeComponent.tsx
 import { useEffect, useState } from 'react';
 import { Node } from '../types/map';
-
-// Enhanced color palette with primary and secondary colors for each node type
-const nodeColors = {
-  clinical: {
-    primary: 'bg-clinical',
-    secondary: 'bg-clinical-dark',
-    border: 'border-clinical-light',
-    glow: 'rgba(78, 131, 189, 0.6)',
-    icon: '🏥'
-  },
-  qa: {
-    primary: 'bg-qa',
-    secondary: 'bg-qa-dark',
-    border: 'border-qa-light',
-    glow: 'rgba(90, 105, 120, 0.6)',
-    icon: '🔍'
-  },
-  educational: {
-    primary: 'bg-educational',
-    secondary: 'bg-educational-dark',
-    border: 'border-educational-light',
-    glow: 'rgba(44, 146, 135, 0.6)',
-    icon: '📚'
-  },
-  storage: {
-    primary: 'bg-storage',
-    secondary: 'bg-storage-dark',
-    border: 'border-storage-light',
-    glow: 'rgba(191, 179, 139, 0.6)',
-    icon: '📦'
-  },
-  vendor: {
-    primary: 'bg-vendor',
-    secondary: 'bg-vendor-dark',
-    border: 'border-vendor-light',
-    glow: 'rgba(50, 63, 79, 0.6)',
-    icon: '🛒'
-  },
-  boss: {
-    primary: 'bg-boss',
-    secondary: 'bg-boss-dark',
-    border: 'border-boss-light',
-    glow: 'rgba(204, 77, 77, 0.6)',
-    icon: '⚠️'
-  },
-};
-
-// Completed node colors
-const completedColors = {
-  primary: 'bg-success',
-  secondary: 'bg-success-dark',
-  border: 'border-success-light',
-  glow: 'rgba(78, 158, 106, 0.6)',
-  icon: '✓',
-};
-
-// Type descriptions for node tooltip
-const nodeDescriptions = {
-  clinical: 'Clinical Scenario: Apply your medical physics knowledge to patient cases',
-  qa: 'Quality Assurance: Calibrate and test important medical equipment',
-  educational: 'Educational Challenge: Test your ability to explain complex concepts',
-  storage: 'Storage Closet: Find useful items to aid your journey',
-  vendor: 'Vendor Showcase: Purchase specialized equipment',
-  boss: 'Critical Challenge: A major test of your medical physics knowledge',
-};
+import Image from 'next/image';
 
 interface NodeComponentProps {
   node: Node;
@@ -88,9 +24,6 @@ export default function NodeComponent({
   onMouseEnter,
   onMouseLeave,
 }: NodeComponentProps) {
-  // Get node style info - use completed style if completed
-  const nodeStyle = isCompleted ? completedColors : nodeColors[node.type];
-  
   // Add state for animation
   const [animating, setAnimating] = useState<boolean>(false);
   
@@ -161,6 +94,60 @@ export default function NodeComponent({
     }, 300);
   };
   
+  // Get node icon path based on type
+  const getNodeIconPath = () => {
+    switch (node.type) {
+      case 'clinical':
+        return '/node-icons/clinical-node.png';
+      case 'qa':
+        return '/node-icons/qa-node.png';
+      case 'educational':
+        return '/node-icons/educational-node.png';
+      case 'storage':
+        return '/node-icons/storage-node.png';
+      case 'vendor':
+        return '/node-icons/vendor-node.png';
+      case 'boss':
+        return '/node-icons/boss-node.png';
+      default:
+        return '/node-icons/default-node.png';
+    }
+  };
+  
+  // Get glow color based on node type
+  const getGlowColor = () => {
+    if (isCompleted) {
+      return 'rgba(78, 158, 106, 0.7)'; // Success/Green color
+    }
+    
+    switch(node.type) {
+      case 'clinical':
+        return 'rgba(78, 131, 189, 0.7)'; // Blue
+      case 'qa':
+        return 'rgba(90, 105, 120, 0.7)'; // Gray-blue
+      case 'educational':
+        return 'rgba(44, 146, 135, 0.7)'; // Teal
+      case 'storage':
+        return 'rgba(191, 179, 139, 0.7)'; // Tan
+      case 'vendor':
+        return 'rgba(50, 63, 79, 0.7)'; // Dark blue
+      case 'boss':
+        return 'rgba(204, 77, 77, 0.7)'; // Red
+      default:
+        return 'rgba(255, 255, 255, 0.7)'; // White
+    }
+  };
+  
+  // Node descriptions for tooltip
+  const nodeDescriptions = {
+    clinical: 'Clinical Scenario: Apply your medical physics knowledge to patient cases',
+    qa: 'Quality Assurance: Calibrate and test important medical equipment',
+    educational: 'Educational Challenge: Test your ability to explain complex concepts',
+    storage: 'Storage Closet: Find useful items to aid your journey',
+    vendor: 'Vendor Showcase: Purchase specialized equipment',
+    boss: 'Critical Challenge: A major test of your medical physics knowledge',
+  };
+  
   // Add data attributes for debug purposes
   const dataAttributes = {
     'data-node-id': node.id,
@@ -171,69 +158,67 @@ export default function NodeComponent({
   
   return (
     <>
-      {/* Node glow effect (rendered separately from node for layering) */}
-      {(isAvailable || isSelected || isHovered) && (
-        <div
-          className={`absolute rounded-full opacity-30 transition-all duration-300 
-            ${isHovered || isSelected ? 'node-glow-active' : 'node-glow'}
-            ${animating ? 'animate-pulse' : ''}
-          `}
-          style={{
-            left: '-10px',
-            top: '-10px',
-            width: '70px',
-            height: '70px',
-            background: `radial-gradient(circle, ${nodeStyle.glow} 0%, transparent 70%)`,
-            zIndex: 0
-          }}
-        ></div>
-      )}
-    
-      {/* Main node */}
+      {/* Node with glow effect */}
       <div
         id={`node-${node.id}`}
         {...dataAttributes}
         className={`
-          w-12 h-12 rounded-full relative overflow-hidden
-          ${isCompleted ? 'bg-success' : nodeStyle.primary}
-          ${isAvailable && !isCompleted ? 'cursor-pointer' : 'cursor-default'}
-          ${isAvailable && !isCompleted ? 'border-2 border-yellow-300' : 'border border-gray-700'}
-          ${isSelected ? 'border-2 border-white' : ''}
+          relative
+          ${isAvailable ? 'cursor-pointer' : 'cursor-default'}
           ${!isAvailable && !isCompleted ? 'opacity-50 grayscale' : ''}
           ${animating ? 'animate-node-pulse' : ''}
-          box-content
           transition-all duration-200
         `}
         onClick={() => isAvailable ? handleNodeClick() : undefined}
         onMouseEnter={onMouseEnter}
         onMouseLeave={onMouseLeave}
       >
-        {/* Node pixel overlay effect */}
-        <div className="absolute inset-0 opacity-20" 
+        {/* Glow effect - positioned behind the node */}
+        <div
+          className={`
+            absolute inset-0 rounded-full
+            ${isHovered || isSelected ? 'glow-strong' : 'glow'}
+            ${isAvailable || isSelected || isHovered ? 'opacity-100' : 'opacity-0'}
+            transition-all duration-300
+          `}
           style={{
-            backgroundImage: 'linear-gradient(45deg, #000 25%, transparent 25%), linear-gradient(-45deg, #000 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #000 75%), linear-gradient(-45deg, transparent 75%, #000 75%)',
-            backgroundSize: '4px 4px',
-            backgroundPosition: '0 0, 0 2px, 2px -2px, -2px 0'
+            backgroundColor: getGlowColor(),
+            filter: `blur(${isHovered || isSelected ? '8px' : '6px'})`,
+            transform: 'scale(1.4)',
+            zIndex: 0
           }}
         ></div>
         
-        {/* Node inner shadow for 3D effect */}
-        <div className={`
-          absolute inset-2 rounded-full 
-          ${isCompleted ? 'bg-success-dark' : nodeStyle.secondary}
-        `}></div>
-        
-        {/* Node icon and label */}
-        <div className="absolute inset-0 flex flex-col items-center justify-center">
-          <div className="text-xl text-white drop-shadow-md">{isCompleted ? '✓' : nodeStyle.icon}</div>
-          {node.type === 'boss' && (
-            <div className="text-xs text-white font-bold mt-1 font-pixel">IONIX</div>
+        {/* Node Icon */}
+        <div className="relative w-12 h-12 z-10">
+          <Image
+            src={getNodeIconPath()}
+            alt={`${node.type} node`}
+            width={48}
+            height={48}
+            className={`
+              ${isCompleted ? 'brightness-110 contrast-125 saturate-150' : ''}
+              ${isSelected ? 'scale-110' : ''}
+              transition-transform duration-200
+            `}
+          />
+          
+          {/* Selection indicator */}
+          {isSelected && (
+            <div 
+              className="absolute -inset-2 rounded-full animate-pulse"
+              style={{ 
+                border: `2px solid white`,
+                boxShadow: '0 0 8px rgba(255,255,255,0.8)',
+                zIndex: -1
+              }}
+            ></div>
           )}
         </div>
         
-        {/* Completion checkmark */}
+        {/* Completion checkmark - positioned as an overlay */}
         {isCompleted && (
-          <div className="absolute -top-1 -right-1 bg-success w-5 h-5 flex items-center justify-center rounded-full border border-white">
+          <div className="absolute -top-1 -right-1 bg-success w-5 h-5 flex items-center justify-center rounded-full border border-white z-20">
             <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 text-white" viewBox="0 0 20 20" fill="currentColor">
               <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
             </svg>
@@ -271,7 +256,7 @@ export default function NodeComponent({
         </div>
       )}
       
-      {/* Add CSS for node pulse animation */}
+      {/* Add CSS for node animations and effects */}
       <style jsx>{`
         @keyframes node-pulse {
           0% { transform: scale(1); }
@@ -281,6 +266,22 @@ export default function NodeComponent({
         
         .animate-node-pulse {
           animation: node-pulse 0.3s ease-in-out;
+        }
+        
+        .glow {
+          opacity: 0.7;
+          transition: all 0.3s ease;
+        }
+        
+        .glow-strong {
+          opacity: 1;
+          transition: all 0.3s ease;
+        }
+        
+        @keyframes pulse {
+          0% { opacity: 0.7; }
+          50% { opacity: 1; }
+          100% { opacity: 0.7; }
         }
       `}</style>
     </>

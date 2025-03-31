@@ -1,5 +1,6 @@
 import { useGameStore } from '../store/gameStore';
 import { PixelBorder, PixelText } from './PixelThemeProvider';
+import Image from 'next/image';
 
 export default function PlayerStats() {
   const { health, insight } = useGameStore((state) => state.player);
@@ -31,7 +32,7 @@ export default function PlayerStats() {
             </div>
             <div className="pixel-progress-bg">
               <div 
-                className="pixel-progress-fill"
+                className="pixel-progress-fill h-full transition-all duration-300"
                 style={{width: `${Math.min(100, insight/2)}%`}}
               ></div>
             </div>
@@ -39,13 +40,19 @@ export default function PlayerStats() {
         </div>
       </div>
       
-      {/* Character portrait */}
+      {/* Character portrait using PNG instead of emoji */}
       <div className="flex flex-col items-center">
-        <PixelBorder className="w-24 h-24 mb-2">
-          <div className="w-full h-full bg-surface-dark flex items-center justify-center text-4xl">
-            👨‍⚕️
+        <div className="w-24 h-24 mb-2 relative pixel-borders-thin overflow-hidden">
+          <div className="w-full h-full bg-surface-dark relative">
+            <Image
+              src="/images/resident-portrait.png"
+              alt="The Resident"
+              fill
+              style={{ objectFit: 'contain' }}
+              priority
+            />
           </div>
-        </PixelBorder>
+        </div>
         <PixelText className="text-text-primary">The Resident</PixelText>
       </div>
     </div>
