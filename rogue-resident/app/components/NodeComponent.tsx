@@ -191,17 +191,18 @@ export default function NodeComponent({
         
         {/* Node Icon */}
         <div className="relative w-12 h-12 z-10">
-          <Image
-            src={getNodeIconPath()}
-            alt={`${node.type} node`}
-            width={48}
-            height={48}
-            className={`
-              ${isCompleted ? 'brightness-110 contrast-125 saturate-150' : ''}
-              ${isSelected ? 'scale-110' : ''}
-              transition-transform duration-200
-            `}
-          />
+        <Image
+          src={getNodeIconPath()}
+          alt={`${node.type} node`}
+          width={48}
+          height={48}
+          className={`
+            pixel-art
+            ${isCompleted ? 'brightness-110 contrast-125 saturate-150' : ''}
+            ${isSelected ? 'scale-110' : ''}
+            transition-transform duration-200
+          `}
+        />
           
           {/* Selection indicator */}
           {isSelected && (

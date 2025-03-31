@@ -406,3 +406,26 @@ body {
 .font-pixel-heading {
   font-family: var(--font-pixel-heading);
 }
+
+/* Global pixel art rendering settings */
+img.pixel-art,
+.pixel-sprite,
+.pixel-icon {
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+  -ms-interpolation-mode: nearest-neighbor;
+}
+
+/* Make sure the character portrait maintains crisp edges */
+.character-portrait img {
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+  -ms-interpolation-mode: nearest-neighbor;
+}
+
+/* Fix node icons */
+.node-icon img {
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+  -ms-interpolation-mode: nearest-neighbor;
+}

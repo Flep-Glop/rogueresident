@@ -42,17 +42,18 @@ export default function PlayerStats() {
       
       {/* Character portrait using PNG instead of emoji */}
       <div className="flex flex-col items-center">
-        <div className="w-24 h-24 mb-2 relative pixel-borders-thin overflow-hidden">
-          <div className="w-full h-full bg-surface-dark relative">
-            <Image
-              src="/images/resident-portrait.png"
-              alt="The Resident"
-              fill
-              style={{ objectFit: 'contain' }}
-              priority
-            />
-          </div>
+      <div className="w-24 h-24 mb-2 relative pixel-borders-thin overflow-hidden character-portrait">
+        <div className="w-full h-full bg-surface-dark relative">
+          <Image
+            src="/images/resident-portrait.png"
+            alt="The Resident"
+            fill
+            className="pixel-art"
+            style={{ objectFit: 'contain' }}
+            priority
+          />
         </div>
+      </div>
         <PixelText className="text-text-primary">The Resident</PixelText>
       </div>
     </div>
