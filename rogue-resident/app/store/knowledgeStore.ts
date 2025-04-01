@@ -529,6 +529,6 @@ if (process.env.NODE_ENV !== 'production') {
   const originalSet = useKnowledgeStore.setState;
   useKnowledgeStore.setState = (state, replace) => {
     console.log('Knowledge store updated:', state);
-    return originalSet(state, replace);
+    return originalSet(state, replace === true);
   };
 }

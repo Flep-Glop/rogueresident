@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import { PixelText, PixelButton } from '../PixelThemeProvider';
 import { useGameEffects } from '../GameEffects';
 import { useGameStore } from '../../store/gameStore';
+import ConnectionSuggestions from '../knowledge/ConnectionSuggestions';
 import Image from 'next/image';
 
 // Knowledge domains and their theme colors
@@ -633,6 +634,26 @@ export default function ConstellationView({
         onClick={handleClick}
       />
       
+      {/* Add the ConnectionSuggestions component in a suitable position */}
+      {interactive && (
+        <div className="absolute top-4 left-1/2 transform -translate-x-1/2 w-64 z-10">
+          <ConnectionSuggestions 
+            onSelectConnection={(sourceId, targetId) => {
+              // Find the source node and set it as selected
+              const sourceNode = nodes.find(n => n.id === sourceId);
+              setSelectedNode(sourceNode || null);
+              
+              // Start the connection process from this node
+              setPendingConnection(sourceId);
+              
+              // Optionally provide a visual/audio cue about what to do next
+              if (playSound) playSound('click');
+            }}
+            maxSuggestions={3}
+          />
+        </div>
+      )}
+
       {/* Controls and info overlays */}
       <div className="absolute top-4 left-4 space-y-4 z-10">
         <div className="bg-surface-dark/80 p-3 pixel-borders-thin text-sm">
