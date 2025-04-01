@@ -8,10 +8,10 @@ import { useGameEffects } from './GameEffects';
 import ConstellationView from './knowledge/ConstellationView';
 
 /**
- * HillHomeScene - Night phase component with a minimalist design
+ * HillHomeScene - Night phase component with constellation focus
  * 
- * This version focuses on functionality over visual complexity,
- * using a simple black background with clear navigation buttons
+ * This version removes the skill section and emphasizes the constellation
+ * as the primary progression system
  */
 export default function HillHomeScene({ onComplete }: { onComplete: () => void }) {
   const { player, completedNodeIds, inventory, updateInsight } = useGameStore();
@@ -27,31 +27,16 @@ export default function HillHomeScene({ onComplete }: { onComplete: () => void }
   const { playSound, flashScreen, showRewardEffect } = useGameEffects();
   
   // Internal state
-  const [showSkillPanel, setShowSkillPanel] = useState(false);
   const [showInventory, setShowInventory] = useState(false);
   const [showConstellation, setShowConstellation] = useState(false);
-  const [skillsApplied, setSkillsApplied] = useState(false);
   const [insightTransferred, setInsightTransferred] = useState(false);
   const [constellationAnimating, setConstellationAnimating] = useState(false);
   const [activeNodes, setActiveNodes] = useState<string[]>([]);
   
-  // Simple skill upgrade system
-  const [availablePoints, setAvailablePoints] = useState(3);
-  const [skills, setSkills] = useState({
-    clinical: 0,
-    qa: 0,
-    educational: 0,
-    health: 0
-  });
-  
   useEffect(() => {
-    // Calculate available skill points based on insight
-    const calculatedPoints = Math.floor(player.insight / 100);
-    setAvailablePoints(calculatedPoints);
-    
     // Track whether there are pending insights to transfer
     setInsightTransferred(pendingInsights.length === 0);
-  }, [completedNodeIds, player.insight, pendingInsights.length]);
+  }, [completedNodeIds, pendingInsights.length]);
   
   // Start day phase
   const startDay = () => {
@@ -72,7 +57,7 @@ export default function HillHomeScene({ onComplete }: { onComplete: () => void }
     }
   };
   
-  // Handle constellation transfer - ENHANCED AS SUGGESTED
+  // Handle constellation transfer
   const handleTransferInsights = () => {
     // Connect to animation sequence
     setConstellationAnimating(true);
@@ -102,52 +87,6 @@ export default function HillHomeScene({ onComplete }: { onComplete: () => void }
       setActiveNodes([]);
     }, 5000);
   };
-  
-  // Apply skills to game state
-  const applySkills = () => {
-    // Apply clinical skill bonus
-    if (skills.clinical > 0) {
-      console.log(`Applied +${skills.clinical * 15}% Clinical bonus`);
-    }
-    
-    // Apply QA skill bonus
-    if (skills.qa > 0) {
-      console.log(`Applied +${skills.qa * 15}% QA bonus`);
-    }
-    
-    // Apply educational skill bonus
-    if (skills.educational > 0) {
-      console.log(`Applied +${skills.educational * 15}% Educational bonus`);
-    }
-    
-    // Apply health bonus
-    if (skills.health > 0) {
-      const bonusInsight = skills.health * 50;
-      updateInsight(bonusInsight);
-      
-      if (showRewardEffect) {
-        showRewardEffect(bonusInsight, window.innerWidth / 2, window.innerHeight / 2);
-      }
-    }
-    
-    setSkillsApplied(true);
-    setShowSkillPanel(false);
-    if (playSound) playSound('success');
-    if (flashScreen) flashScreen('green');
-  };
-  
-  const upgradeSkill = (skill: keyof typeof skills) => {
-    if (availablePoints > 0) {
-      if (playSound) playSound('success');
-      setSkills(prev => ({
-        ...prev,
-        [skill]: prev[skill] + 1
-      }));
-      setAvailablePoints(prev => prev - 1);
-    } else {
-      if (playSound) playSound('failure');
-    }
-  };
 
   return (
     <div className="h-full w-full bg-black flex flex-col items-center justify-center p-6">
@@ -159,37 +98,21 @@ export default function HillHomeScene({ onComplete }: { onComplete: () => void }
         </PixelText>
       </div>
       
-      {/* Main interaction grid - simplified to 2x2 button layout */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-8 w-full max-w-4xl mb-8">
-        {/* Constellation button */}
+      {/* Main interaction grid - now 3 buttons in a row */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-8 w-full max-w-4xl mb-8">
+        {/* Constellation button - now larger and more prominent */}
         <div 
-          className={`p-8 bg-surface-dark pixel-borders flex flex-col items-center justify-center min-h-[200px] transition-all duration-300 hover:bg-surface cursor-pointer ${!insightTransferred ? 'animate-pulse' : ''}`}
+          className={`p-8 col-span-3 bg-surface-dark pixel-borders flex flex-col items-center justify-center min-h-[200px] transition-all duration-300 hover:bg-surface cursor-pointer ${!insightTransferred ? 'animate-pulse' : ''}`}
           onClick={() => setShowConstellation(true)}
         >
           <div className="text-4xl mb-4">🌠</div>
           <PixelText className="text-xl mb-2">Knowledge Constellation</PixelText>
+          <PixelText className="text-sm text-text-secondary mb-2">
+            View your growing understanding of medical physics
+          </PixelText>
           {!insightTransferred && (
             <span className="px-3 py-1 bg-clinical text-white text-sm mt-2">
               {pendingInsights.length} New Insights!
-            </span>
-          )}
-        </div>
-        
-        {/* Skill development button */}
-        <div 
-          className={`p-8 bg-surface-dark pixel-borders flex flex-col items-center justify-center min-h-[200px] transition-all duration-300 hover:bg-surface cursor-pointer ${availablePoints > 0 ? 'ring-1 ring-educational' : ''}`}
-          onClick={() => setShowSkillPanel(true)}
-        >
-          <div className="text-4xl mb-4">📚</div>
-          <PixelText className="text-xl mb-2">Skill Development</PixelText>
-          {availablePoints > 0 && (
-            <span className="px-3 py-1 bg-educational text-white text-sm mt-2">
-              {availablePoints} Points Available
-            </span>
-          )}
-          {skillsApplied && (
-            <span className="px-3 py-1 bg-success text-white text-sm mt-2">
-              Skills Applied
             </span>
           )}
         </div>
@@ -208,7 +131,7 @@ export default function HillHomeScene({ onComplete }: { onComplete: () => void }
         
         {/* Start day button */}
         <div 
-          className="p-8 bg-surface-dark pixel-borders flex flex-col items-center justify-center min-h-[200px] transition-all duration-300 hover:bg-surface cursor-pointer"
+          className="p-8 bg-surface-dark pixel-borders flex flex-col items-center justify-center min-h-[200px] transition-all duration-300 hover:bg-surface cursor-pointer col-span-2"
           onClick={startDay}
         >
           <div className="text-4xl mb-4">🏥</div>
@@ -219,7 +142,7 @@ export default function HillHomeScene({ onComplete }: { onComplete: () => void }
         </div>
       </div>
       
-      {/* Player stats summary - simplified */}
+      {/* Player stats summary */}
       <div className="bg-surface-dark pixel-borders p-4 w-full max-w-4xl">
         <div className="flex justify-between items-center mb-4">
           <PixelText className="text-lg">Player Status</PixelText>
@@ -249,99 +172,6 @@ export default function HillHomeScene({ onComplete }: { onComplete: () => void }
           <span>Theory: {domainMastery.theoretical}%</span>
         </div>
       </div>
-      
-      {/* Simple skill panel */}
-      {showSkillPanel && (
-        <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-50">
-          <div className="bg-surface p-6 max-w-md w-full pixel-borders">
-            <div className="flex justify-between items-center mb-4">
-              <PixelText className="text-2xl">Skill Development</PixelText>
-              <PixelButton 
-                className="bg-red-600 hover:bg-red-500 text-white" 
-                onClick={() => setShowSkillPanel(false)}
-              >
-                Close
-              </PixelButton>
-            </div>
-            
-            <PixelText className="mb-4">Available Points: {availablePoints}</PixelText>
-            
-            <div className="space-y-4">
-              <div className="flex justify-between items-center">
-                <div>
-                  <PixelText>Clinical Expertise: {skills.clinical}</PixelText>
-                  <PixelText className="text-xs text-text-secondary">Improves performance in clinical scenarios</PixelText>
-                </div>
-                <PixelButton
-                  className="bg-clinical hover:bg-clinical-light text-white"
-                  onClick={() => upgradeSkill('clinical')}
-                  disabled={availablePoints <= 0}
-                >
-                  Upgrade
-                </PixelButton>
-              </div>
-              
-              <div className="flex justify-between items-center">
-                <div>
-                  <PixelText>QA Proficiency: {skills.qa}</PixelText>
-                  <PixelText className="text-xs text-text-secondary">Enhances equipment calibration accuracy</PixelText>
-                </div>
-                <PixelButton
-                  className="bg-qa hover:bg-qa-light text-white"
-                  onClick={() => upgradeSkill('qa')}
-                  disabled={availablePoints <= 0}
-                >
-                  Upgrade
-                </PixelButton>
-              </div>
-              
-              <div className="flex justify-between items-center">
-                <div>
-                  <PixelText>Educational Insight: {skills.educational}</PixelText>
-                  <PixelText className="text-xs text-text-secondary">Improves ability to explain complex concepts</PixelText>
-                </div>
-                <PixelButton
-                  className="bg-educational hover:bg-educational-light text-white"
-                  onClick={() => upgradeSkill('educational')}
-                  disabled={availablePoints <= 0}
-                >
-                  Upgrade
-                </PixelButton>
-              </div>
-              
-              <div className="flex justify-between items-center">
-                <div>
-                  <PixelText>Max Health: {skills.health}</PixelText>
-                  <PixelText className="text-xs text-text-secondary">Increases maximum health by 1 per level</PixelText>
-                </div>
-                <PixelButton
-                  className="bg-danger hover:bg-red-500 text-white"
-                  onClick={() => upgradeSkill('health')}
-                  disabled={availablePoints <= 0}
-                >
-                  Upgrade
-                </PixelButton>
-              </div>
-            </div>
-            
-            <div className="mt-6 pt-4 border-t border-border flex justify-between items-center">
-              <PixelText className="text-sm text-text-secondary">
-                {skillsApplied 
-                  ? "Skills already applied to this run" 
-                  : "Apply your skills to gain benefits for your next day"}
-              </PixelText>
-              
-              <PixelButton
-                className="bg-success hover:bg-green-600 text-white"
-                onClick={applySkills}
-                disabled={skillsApplied || (skills.clinical === 0 && skills.qa === 0 && skills.educational === 0 && skills.health === 0)}
-              >
-                Apply Skills
-              </PixelButton>
-            </div>
-          </div>
-        </div>
-      )}
       
       {/* Inventory panel */}
       {showInventory && (

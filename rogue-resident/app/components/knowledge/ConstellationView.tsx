@@ -6,40 +6,40 @@ import { useGameEffects } from '../GameEffects';
 import { useKnowledgeStore } from '../../store/knowledgeStore';
 import ConnectionSuggestions from './ConnectionSuggestions';
 
-// Knowledge domains and their theme colors
+// Knowledge domains with direct color values for canvas rendering
 export const KNOWLEDGE_DOMAINS = {
   'clinical': {
     name: 'Clinical Practice',
-    color: 'var(--clinical-color)',
-    lightColor: 'var(--clinical-color-light)',
-    darkColor: 'var(--clinical-color-dark)',
+    color: '#4e83bd', // Direct hex value
+    lightColor: '#63a0db',
+    darkColor: '#3a6590',
     bgClass: 'bg-clinical',
     textClass: 'text-clinical-light',
     icon: '🏥'
   },
   'technical': {
     name: 'Equipment & QA',
-    color: 'var(--qa-color)',
-    lightColor: 'var(--qa-color-light)',
-    darkColor: 'var(--qa-color-dark)',
+    color: '#5a6978',
+    lightColor: '#6d7c8a',
+    darkColor: '#464e59',
     bgClass: 'bg-qa',
     textClass: 'text-qa-light',
     icon: '🔧'
   },
   'theoretical': {
     name: 'Physics Theory',
-    color: 'var(--educational-color)',
-    lightColor: 'var(--educational-color-light)',
-    darkColor: 'var(--educational-color-dark)',
+    color: '#2c9287',
+    lightColor: '#3db3a6',
+    darkColor: '#1f6e66',
     bgClass: 'bg-educational',
     textClass: 'text-educational-light',
     icon: '🔬'
   },
   'general': {
     name: 'General Knowledge',
-    color: 'var(--text-primary)',
-    lightColor: 'var(--text-primary)',
-    darkColor: 'var(--text-secondary)',
+    color: '#c8d2e0',
+    lightColor: '#e0e5ec',
+    darkColor: '#8892a3',
     bgClass: 'bg-surface',
     textClass: 'text-text-primary',
     icon: '📚'
@@ -76,11 +76,13 @@ interface ConstellationViewProps {
 }
 
 /**
- * ConstellationView - Displays the player's knowledge as an interactive constellation
+ * ConstellationView - The interactive knowledge visualization system
  * 
- * This is a simplified, functional implementation focusing on core gameplay rather than 
- * visual polish. It represents the central knowledge visualization system that makes
- * the educational aspects of the game feel rewarding.
+ * Core to the game's progression, this component visualizes player knowledge as a
+ * constellation of stars, with connections representing relationships between concepts.
+ * 
+ * The visual language borrows from star charts and neural networks, emphasizing the
+ * organic growth of knowledge and insight through pattern recognition.
  */
 export default function ConstellationView({ 
   onClose, 
@@ -90,12 +92,12 @@ export default function ConstellationView({
   enableJournal = true,
   activeNodes = []
 }: ConstellationViewProps) {
-  // Refs
+  // CORE REFS
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const animationFrameRef = useRef<number | null>(null);
   
-  // Hooks
+  // HOOKS AND STORE ACCESS
   const { playSound, flashScreen, showRewardEffect } = useGameEffects();
   const { 
     nodes, 
@@ -104,18 +106,21 @@ export default function ConstellationView({
     domainMastery,
     createConnection,
     updateMastery,
-    newlyDiscovered
+    newlyDiscovered,
+    resetNewlyDiscovered,
+    journalEntries
   } = useKnowledgeStore();
   
-  // State
+  // STATE MANAGEMENT
   const [activeNode, setActiveNode] = useState<ConceptNode | null>(null);
   const [selectedNode, setSelectedNode] = useState<ConceptNode | null>(null);
   const [pendingConnection, setPendingConnection] = useState<string | null>(null);
   const [journalVisible, setJournalVisible] = useState(false);
   const [recentInsights, setRecentInsights] = useState<{conceptId: string, amount: number}[]>([]);
   const [showHelp, setShowHelp] = useState(false);
+  const [zoomLevel, setZoomLevel] = useState(1);
   
-  // Animation properties
+  // VISUAL EFFECTS STATE
   const [particleEffects, setParticleEffects] = useState<Array<{
     id: string,
     x: number,
@@ -125,9 +130,26 @@ export default function ConstellationView({
     color: string,
     size: number,
     life: number,
-    maxLife: number
+    maxLife: number,
+    opacity?: number,
+    velocity?: { x: number, y: number }
   }>>([]);
   
+  // FILTER AND MEMOIZE DATA
+  // Get discovered nodes for rendering
+  const discoveredNodes = useMemo(() => 
+    nodes.filter(node => node.discovered), 
+    [nodes]
+  );
+  
+  // Get discovered connections
+  const discoveredConnections = useMemo(() => 
+    connections.filter(conn => conn.discovered), 
+    [connections]
+  );
+
+  // EFFECTS
+
   // Focus on active nodes passed from parent
   useEffect(() => {
     if (activeNodes.length > 0 && nodes.length > 0) {
@@ -143,7 +165,7 @@ export default function ConstellationView({
           const node = nodes.find(n => n.id === nodeId);
           if (node?.position) {
             // Create multiple particles for each active node
-            for (let i = 0; i < 10; i++) {
+            for (let i = 0; i < 15; i++) {
               const angle = Math.random() * Math.PI * 2;
               const distance = Math.random() * 100 + 50;
               
@@ -164,7 +186,7 @@ export default function ConstellationView({
         
         setParticleEffects(prev => [...prev, ...newParticles]);
         
-        // Play sound effect
+        // Play discovery sound effect
         if (playSound) playSound('success');
       }
     }
@@ -180,7 +202,7 @@ export default function ConstellationView({
         const node = nodes.find(n => n.id === nodeId);
         if (node?.position) {
           // Create multiple particles for each newly discovered node
-          for (let i = 0; i < 10; i++) {
+          for (let i = 0; i < 15; i++) {
             const angle = Math.random() * Math.PI * 2;
             const distance = Math.random() * 100 + 50;
             
@@ -203,26 +225,37 @@ export default function ConstellationView({
     }
   }, [newlyDiscovered, nodes]);
   
-  // Get discovered nodes
-  const discoveredNodes = useMemo(() => 
-    nodes.filter(node => node.discovered), 
-    [nodes]
-  );
-  
-  // Get discovered connections
-  const discoveredConnections = useMemo(() => 
-    connections.filter(conn => conn.discovered), 
-    [connections]
-  );
+  // Track recent insights for journal
+  useEffect(() => {
+    // Extract most recent journal entries for display
+    if (journalEntries.length > 0) {
+      const recentEntries = journalEntries
+        .sort((a, b) => b.timestamp - a.timestamp)
+        .slice(0, 5)
+        .map(entry => ({
+          conceptId: entry.conceptId,
+          amount: entry.masteryGained
+        }));
+        
+      setRecentInsights(recentEntries);
+    } else {
+      // For demonstration, we'll use placeholder data
+      setRecentInsights([
+        { conceptId: 'ionization-chambers', amount: 15 },
+        { conceptId: 'quantum-effects', amount: 30 }
+      ]);
+    }
+  }, [journalEntries]);
 
-  // Animation loop for particles
+  // ANIMATION LOOP
+  // Handle particle animations and movement
   useEffect(() => {
     let animating = false;
     
     const animate = () => {
       if (!canvasRef.current) return;
       
-      // Update particle positions
+      // Update particle positions and properties
       setParticleEffects(prev => {
         const updatedParticles = prev.map(particle => {
           // Move particle toward target
@@ -231,7 +264,7 @@ export default function ConstellationView({
           const distance = Math.sqrt(dx * dx + dy * dy);
           
           if (distance > 5) {
-            // Still moving
+            // Still moving toward target
             animating = true;
             return {
               ...particle,
@@ -240,11 +273,22 @@ export default function ConstellationView({
               life: particle.life - 1
             };
           } else {
-            // Reached target, reduce life faster
-            return {
-              ...particle,
-              life: particle.life - 3
-            };
+            // At target, handle differently
+            if (particle.velocity) {
+              // For particles with velocity, continue moving
+              return {
+                ...particle,
+                x: particle.x + particle.velocity.x,
+                y: particle.y + particle.velocity.y,
+                life: particle.life - 1
+              };
+            } else {
+              // For targeted particles, decay faster once at destination
+              return {
+                ...particle,
+                life: particle.life - 3
+              };
+            }
           }
         }).filter(p => p.life > 0); // Remove dead particles
         
@@ -274,7 +318,9 @@ export default function ConstellationView({
     };
   }, [particleEffects.length]);
 
-  // Draw constellation
+  // RENDERING FUNCTIONS
+
+  // Draw constellation on canvas
   useEffect(() => {
     if (!canvasRef.current) return;
     
@@ -285,13 +331,49 @@ export default function ConstellationView({
     // Clear canvas
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     
-    // Draw starry background (subtle)
-    ctx.fillStyle = '#000000';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    // Apply zoom transform
+    ctx.save();
+    ctx.scale(zoomLevel, zoomLevel);
     
-    for (let i = 0; i < 200; i++) {
-      const x = Math.random() * canvas.width;
-      const y = Math.random() * canvas.height;
+    // Draw deep space background
+    drawStarryBackground(ctx, canvas.width, canvas.height);
+    
+    // Draw connections
+    drawConnections(ctx);
+    
+    // Draw nodes
+    drawNodes(ctx);
+    
+    // Draw connecting line when establishing new connection
+    drawPendingConnection(ctx);
+    
+    // Draw particles
+    drawParticles(ctx);
+    
+    // Restore transform
+    ctx.restore();
+  }, [
+    discoveredNodes, 
+    discoveredConnections, 
+    activeNode, 
+    selectedNode, 
+    pendingConnection, 
+    activeNodes, 
+    newlyDiscovered, 
+    particleEffects,
+    zoomLevel
+  ]);
+
+  // Helper: Draw starry background
+  const drawStarryBackground = (ctx: CanvasRenderingContext2D, width: number, height: number) => {
+    // Fill with deep space color
+    ctx.fillStyle = '#000000';
+    ctx.fillRect(0, 0, width, height);
+    
+    // Create distant stars with various brightness
+    for (let i = 0; i < 300; i++) {
+      const x = Math.random() * width;
+      const y = Math.random() * height;
       const radius = Math.random() * 1.2;
       const opacity = Math.random() * 0.3 + 0.1;
       
@@ -301,7 +383,33 @@ export default function ConstellationView({
       ctx.fill();
     }
     
-    // Draw connections
+    // Add a subtle nebula effect in the background
+    for (let i = 0; i < 5; i++) {
+      const x = Math.random() * width;
+      const y = Math.random() * height;
+      const radius = Math.random() * 150 + 100;
+      
+      // Random domain color for nebula with very low opacity
+      const domainKeys = Object.keys(KNOWLEDGE_DOMAINS);
+      const randomDomain = domainKeys[Math.floor(Math.random() * domainKeys.length)] as keyof typeof KNOWLEDGE_DOMAINS;
+      const color = KNOWLEDGE_DOMAINS[randomDomain].color;
+      
+      // Create radial gradient for nebula
+      const nebula = ctx.createRadialGradient(
+        x, y, 0,
+        x, y, radius
+      );
+      
+      nebula.addColorStop(0, `${color}15`); // 15 is hex for ~8% opacity
+      nebula.addColorStop(1, 'rgba(0,0,0,0)');
+      
+      ctx.fillStyle = nebula;
+      ctx.fillRect(0, 0, width, height);
+    }
+  };
+  
+  // Helper: Draw all connections
+  const drawConnections = (ctx: CanvasRenderingContext2D) => {
     discoveredConnections.forEach(connection => {
       const sourceNode = discoveredNodes.find(n => n.id === connection.source);
       const targetNode = discoveredNodes.find(n => n.id === connection.target);
@@ -356,8 +464,10 @@ export default function ConstellationView({
         ctx.globalAlpha = 1;
       }
     });
-    
-    // Draw nodes
+  };
+  
+  // Helper: Draw all nodes
+  const drawNodes = (ctx: CanvasRenderingContext2D) => {
     discoveredNodes.forEach(node => {
       if (!node.position) return;
       
@@ -453,54 +563,17 @@ export default function ConstellationView({
           node.position.x, 
           node.position.y, 
           size + 2, 
-          0, 
-          (Math.PI * 2) * (node.mastery / 100)
+          -Math.PI / 2, // Start at top
+          (Math.PI * 2) * (node.mastery / 100) - Math.PI / 2 // End based on mastery %
         );
         ctx.strokeStyle = domain.lightColor;
         ctx.lineWidth = 2;
         ctx.stroke();
       }
-    });
-    
-    // Draw connecting line when establishing new connection
-    if (pendingConnection && activeNode && selectedNode) {
-      const sourceNode = discoveredNodes.find(n => n.id === pendingConnection);
-      if (sourceNode && sourceNode.position && activeNode.position) {
-        ctx.beginPath();
-        ctx.moveTo(sourceNode.position.x, sourceNode.position.y);
-        ctx.lineTo(activeNode.position.x, activeNode.position.y);
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.6)';
-        ctx.lineWidth = 2;
-        ctx.setLineDash([5, 3]); // Create dashed line
-        ctx.stroke();
-        ctx.setLineDash([]); // Reset dash
-      }
-    }
-    
-    // Draw particles
-    particleEffects.forEach(particle => {
-      ctx.beginPath();
       
-      // Fade particles as they near the end of their life
-      const opacity = particle.life / particle.maxLife;
-      
-      // Draw particle
-      ctx.arc(particle.x, particle.y, particle.size, 0, Math.PI * 2);
-      ctx.fillStyle = `${particle.color}${Math.floor(opacity * 255).toString(16).padStart(2, '0')}`;
-      ctx.fill();
-    });
-    
-    // Draw labels for active/selected nodes
-    discoveredNodes.forEach(node => {
-      if (!node.position) return;
-      
-      const isActiveNode = activeNode?.id === node.id;
-      const isSelectedNode = selectedNode?.id === node.id;
-      const isHighlighted = activeNodes.includes(node.id) || newlyDiscovered.includes(node.id);
-      
-      // Only show labels for active/selected/highlighted nodes to avoid clutter
+      // Draw labels for active/selected nodes
       if (isActiveNode || isSelectedNode || isHighlighted) {
-        const domain = KNOWLEDGE_DOMAINS[node.domain];
+        const isTemporaryLabel = isActiveNode && !isSelectedNode && !isHighlighted;
         
         // Text background
         ctx.font = '12px var(--font-pixel)';
@@ -509,7 +582,7 @@ export default function ConstellationView({
         const rectX = node.position.x - textWidth / 2 - padding;
         const rectY = node.position.y + 15 - padding;
         
-        ctx.fillStyle = 'rgba(26, 30, 36, 0.8)';
+        ctx.fillStyle = isTemporaryLabel ? 'rgba(26, 30, 36, 0.6)' : 'rgba(26, 30, 36, 0.8)';
         ctx.fillRect(
           rectX, 
           rectY, 
@@ -527,7 +600,47 @@ export default function ConstellationView({
         ctx.fillRect(node.position.x - textWidth / 2 - padding, rectY, 3, 18);
       }
     });
-  }, [discoveredNodes, discoveredConnections, activeNode, selectedNode, pendingConnection, activeNodes, newlyDiscovered, particleEffects]);
+  };
+  
+  // Helper: Draw pending connection line
+  const drawPendingConnection = (ctx: CanvasRenderingContext2D) => {
+    if (pendingConnection && activeNode) {
+      const sourceNode = discoveredNodes.find(n => n.id === pendingConnection);
+      if (sourceNode && sourceNode.position && activeNode.position) {
+        ctx.beginPath();
+        ctx.moveTo(sourceNode.position.x, sourceNode.position.y);
+        ctx.lineTo(activeNode.position.x, activeNode.position.y);
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.6)';
+        ctx.lineWidth = 2;
+        ctx.setLineDash([5, 3]); // Create dashed line
+        ctx.stroke();
+        ctx.setLineDash([]); // Reset dash
+      }
+    }
+  };
+  
+  // Helper: Draw particles
+  const drawParticles = (ctx: CanvasRenderingContext2D) => {
+    particleEffects.forEach(particle => {
+      ctx.beginPath();
+      
+      // Fade particles as they near the end of their life
+      const opacity = particle.opacity !== undefined 
+        ? particle.opacity 
+        : particle.life / particle.maxLife;
+      
+      // Draw particle
+      ctx.arc(particle.x, particle.y, particle.size, 0, Math.PI * 2);
+      
+      // Convert opacity (0-1) to hex for color string
+      const alphaHex = Math.floor(opacity * 255).toString(16).padStart(2, '0');
+      ctx.fillStyle = `${particle.color}${alphaHex}`;
+      
+      ctx.fill();
+    });
+  };
+
+  // INTERACTION HANDLERS
 
   // Handle mouse movement for node hover
   const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
@@ -535,8 +648,8 @@ export default function ConstellationView({
     
     const canvas = canvasRef.current;
     const rect = canvas.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
+    const x = (e.clientX - rect.left) / zoomLevel;
+    const y = (e.clientY - rect.top) / zoomLevel;
     
     // Check if mouse is over any node
     const hoveredNode = discoveredNodes.find(node => {
@@ -590,8 +703,8 @@ export default function ConstellationView({
             updateMastery(activeNode.id, Math.min(5, 100 - activeNode.mastery));
             
             // Create visual effect where connection is created
-            const midX = (sourceNode.position?.x || 0 + activeNode.position?.x || 0) / 2;
-            const midY = (sourceNode.position?.y || 0 + activeNode.position?.y || 0) / 2;
+            const midX = ((sourceNode.position?.x || 0) + (activeNode.position?.x || 0)) / 2;
+            const midY = ((sourceNode.position?.y || 0) + (activeNode.position?.y || 0)) / 2;
             
             if (showRewardEffect && containerRef.current) {
               const rect = containerRef.current.getBoundingClientRect();
@@ -647,15 +760,21 @@ export default function ConstellationView({
     }
   };
 
-  // Track recent insights for journal
-  useEffect(() => {
-    // In a full implementation, this would come from the game state
-    // For now, we'll use placeholder data
-    setRecentInsights([
-      { conceptId: 'quantum-effects', amount: 30 },
-      { conceptId: 'ionization-chambers', amount: 15 }
-    ]);
-  }, []);
+  // Handle zoom with mouse wheel
+  const handleWheel = (e: React.WheelEvent<HTMLCanvasElement>) => {
+    if (!interactive) return;
+    
+    // Prevent default scrolling
+    e.preventDefault();
+    
+    // Calculate new zoom level
+    const delta = e.deltaY > 0 ? -0.1 : 0.1;
+    const newZoom = Math.max(0.5, Math.min(2, zoomLevel + delta));
+    
+    setZoomLevel(newZoom);
+  };
+  
+  // COMPONENT RENDERING
 
   return (
     <div 
@@ -671,6 +790,7 @@ export default function ConstellationView({
         className="w-full h-full"
         onMouseMove={handleMouseMove}
         onClick={handleClick}
+        onWheel={handleWheel}
       />
       
       {/* Controls and info panels */}
@@ -711,11 +831,36 @@ export default function ConstellationView({
         <div className="space-y-1 text-sm">
           {Object.entries(KNOWLEDGE_DOMAINS).map(([key, domain]) => (
             <div key={key} className="flex items-center">
-              <div className="w-3 h-3 mr-2" style={{ backgroundColor: domain.color }}></div>
+              <div 
+                className="w-3 h-3 mr-2" 
+                style={{ backgroundColor: domain.color }}
+              ></div>
               <PixelText className={domain.textClass}>{domain.name}</PixelText>
             </div>
           ))}
         </div>
+      </div>
+      
+      {/* Zoom controls */}
+      <div className="absolute bottom-20 right-4 flex flex-col space-y-2 z-10">
+        <PixelButton
+          className="w-8 h-8 flex items-center justify-center bg-surface-dark"
+          onClick={() => setZoomLevel(Math.min(2, zoomLevel + 0.1))}
+        >
+          +
+        </PixelButton>
+        <PixelButton
+          className="w-8 h-8 flex items-center justify-center bg-surface-dark"
+          onClick={() => setZoomLevel(Math.max(0.5, zoomLevel - 0.1))}
+        >
+          -
+        </PixelButton>
+        <PixelButton
+          className="w-8 h-8 flex items-center justify-center bg-surface-dark"
+          onClick={() => setZoomLevel(1)}
+        >
+          ↺
+        </PixelButton>
       </div>
       
       {/* Bottom action buttons */}
@@ -739,7 +884,17 @@ export default function ConstellationView({
         {onClose && (
           <PixelButton
             className="bg-surface hover:bg-danger text-text-primary"
-            onClick={onClose}
+            onClick={() => {
+              // Reset selected nodes before closing
+              setSelectedNode(null);
+              setActiveNode(null);
+              setPendingConnection(null);
+              
+              // Clean up newly discovered highlights
+              resetNewlyDiscovered();
+              
+              onClose();
+            }}
           >
             Close
           </PixelButton>
@@ -752,7 +907,10 @@ export default function ConstellationView({
           <div className="flex justify-between items-start">
             <div>
               <div className="flex items-center mb-1">
-                <div className="w-3 h-3 mr-2" style={{ backgroundColor: KNOWLEDGE_DOMAINS[selectedNode.domain].color }}></div>
+                <div 
+                  className="w-3 h-3 mr-2" 
+                  style={{ backgroundColor: KNOWLEDGE_DOMAINS[selectedNode.domain].color }}
+                ></div>
                 <PixelText className={`text-lg ${KNOWLEDGE_DOMAINS[selectedNode.domain].textClass}`}>
                   {selectedNode.name}
                 </PixelText>
@@ -874,7 +1032,7 @@ export default function ConstellationView({
                 <PixelText className="text-educational-light mb-1">Creating Connections</PixelText>
                 <PixelText className="text-sm text-text-secondary">
                   1. Click on a concept to select it
-                  2. Click it again to begin a connection
+                  2. Click the "Connect" button or click the concept again to begin a connection
                   3. Click another concept to form a connection
                 </PixelText>
                 <PixelText className="text-sm text-text-secondary mt-1">
@@ -891,10 +1049,11 @@ export default function ConstellationView({
               </div>
               
               <div>
-                <PixelText className="text-educational-light mb-1">Suggested Connections</PixelText>
+                <PixelText className="text-educational-light mb-1">Navigation Controls</PixelText>
                 <PixelText className="text-sm text-text-secondary">
-                  The panel in the top-right suggests potentially related concepts that you can connect.
-                  These suggestions are based on shared domains and existing connections.
+                  • Use the mouse wheel to zoom in and out
+                  • Use the +/- buttons to adjust zoom level
+                  • Click the ↺ button to reset zoom
                 </PixelText>
               </div>
             </div>
