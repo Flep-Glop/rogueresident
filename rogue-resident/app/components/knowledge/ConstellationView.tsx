@@ -1,11 +1,10 @@
 // app/components/knowledge/ConstellationView.tsx
 'use client';
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { PixelText, PixelButton } from '../PixelThemeProvider';
 import { useGameEffects } from '../GameEffects';
-import { useGameStore } from '../../store/gameStore';
-import ConnectionSuggestions from '../knowledge/ConnectionSuggestions';
-import Image from 'next/image';
+import { useKnowledgeStore } from '../../store/knowledgeStore';
+import ConnectionSuggestions from './ConnectionSuggestions';
 
 // Knowledge domains and their theme colors
 export const KNOWLEDGE_DOMAINS = {
@@ -73,192 +72,211 @@ interface ConstellationViewProps {
   height?: number;
   interactive?: boolean;
   enableJournal?: boolean;
+  activeNodes?: string[]; // IDs of nodes to highlight (newly discovered/updated)
 }
 
+/**
+ * ConstellationView - Displays the player's knowledge as an interactive constellation
+ * 
+ * This is a simplified, functional implementation focusing on core gameplay rather than 
+ * visual polish. It represents the central knowledge visualization system that makes
+ * the educational aspects of the game feel rewarding.
+ */
 export default function ConstellationView({ 
   onClose, 
   width = 800, 
   height = 600, 
   interactive = true,
-  enableJournal = true
+  enableJournal = true,
+  activeNodes = []
 }: ConstellationViewProps) {
+  // Refs
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  const { playSound, flashScreen, showRewardEffect } = useGameEffects();
-  const { updateInsight } = useGameStore();
+  const animationFrameRef = useRef<number | null>(null);
   
-  // State for constellation
-  const [nodes, setNodes] = useState<ConceptNode[]>([]);
-  const [connections, setConnections] = useState<ConceptConnection[]>([]);
+  // Hooks
+  const { playSound, flashScreen, showRewardEffect } = useGameEffects();
+  const { 
+    nodes, 
+    connections,
+    totalMastery,
+    domainMastery,
+    createConnection,
+    updateMastery,
+    newlyDiscovered
+  } = useKnowledgeStore();
+  
+  // State
   const [activeNode, setActiveNode] = useState<ConceptNode | null>(null);
   const [selectedNode, setSelectedNode] = useState<ConceptNode | null>(null);
   const [pendingConnection, setPendingConnection] = useState<string | null>(null);
-  const [showAnimation, setShowAnimation] = useState(false);
-  const [animatingNodeId, setAnimatingNodeId] = useState<string | null>(null);
   const [journalVisible, setJournalVisible] = useState(false);
-  const [recentInsights, setRecentInsights] = useState<{concept: string, domain: string, amount: number}[]>([]);
+  const [recentInsights, setRecentInsights] = useState<{conceptId: string, amount: number}[]>([]);
+  const [showHelp, setShowHelp] = useState(false);
   
-  // Animation frame tracking
-  const animationFrameRef = useRef<number | null>(null);
+  // Animation properties
+  const [particleEffects, setParticleEffects] = useState<Array<{
+    id: string,
+    x: number,
+    y: number, 
+    targetX: number,
+    targetY: number,
+    color: string,
+    size: number,
+    life: number,
+    maxLife: number
+  }>>([]);
   
-  // Placeholder for recently acquired knowledge from game state
-  // In a full implementation, this would come from the global state
-  const recentlyAcquiredKnowledge = useRef<ConceptNode[]>([]);
-  
-  // Load concept data
+  // Focus on active nodes passed from parent
   useEffect(() => {
-    // In a real implementation, this would come from gameStore
-    // For prototype, we'll use placeholder data
-    const initialNodes: ConceptNode[] = [
-      {
-        id: 'radiation-basics',
-        name: 'Radiation Fundamentals',
-        domain: 'theoretical',
-        description: 'Core principles of ionizing radiation including types, energy transfer, and interactions with matter.',
-        mastery: 75,
-        connections: ['dosimetry-principles', 'radiation-safety'],
-        discovered: true,
-        position: { x: 400, y: 200 }
-      },
-      {
-        id: 'dosimetry-principles',
-        name: 'Dosimetry Principles',
-        domain: 'technical',
-        description: 'Methods and instruments for measuring radiation dose and its distribution.',
-        mastery: 60,
-        connections: ['radiation-basics', 'radiation-detectors'],
-        discovered: true,
-        position: { x: 250, y: 280 }
-      },
-      {
-        id: 'radiation-detectors',
-        name: 'Radiation Detectors',
-        domain: 'technical',
-        description: 'Various technologies used for detection and measurement of radiation.',
-        mastery: 50,
-        connections: ['dosimetry-principles', 'ionization-chambers'],
-        discovered: true,
-        position: { x: 320, y: 370 }
-      },
-      {
-        id: 'ionization-chambers',
-        name: 'Ionization Chambers',
-        domain: 'technical',
-        description: 'Gas-filled detectors that measure ionizing radiation by collecting ions.',
-        mastery: 40,
-        connections: ['radiation-detectors', 'quantum-effects'],
-        discovered: true,
-        position: { x: 470, y: 350 }
-      },
-      {
-        id: 'quantum-effects',
-        name: 'Quantum Effects',
-        domain: 'theoretical',
-        description: 'Quantum mechanical phenomena affecting radiation interactions and detection.',
-        mastery: 30,
-        connections: ['ionization-chambers', 'ionix-anomaly'],
-        discovered: true,
-        position: { x: 550, y: 250 }
-      },
-      {
-        id: 'radiation-safety',
-        name: 'Radiation Safety',
-        domain: 'clinical',
-        description: 'Protocols and principles for ensuring safe use of radiation in medical settings.',
-        mastery: 65,
-        connections: ['radiation-basics', 'alara-principle'],
-        discovered: true,
-        position: { x: 320, y: 120 }
-      },
-      {
-        id: 'alara-principle',
-        name: 'ALARA Principle',
-        domain: 'clinical',
-        description: 'As Low As Reasonably Achievable - framework for minimizing radiation exposure.',
-        mastery: 80,
-        connections: ['radiation-safety'],
-        discovered: true,
-        position: { x: 180, y: 150 }
-      },
-      {
-        id: 'ionix-anomaly',
-        name: 'Ionix Anomaly',
-        domain: 'theoretical',
-        description: 'Unusual quantum behavior observed in experimental ion chambers.',
-        mastery: 15,
-        connections: ['quantum-effects'],
-        discovered: true,
-        position: { x: 620, y: 150 }
-      },
-      // Undiscovered nodes
-      {
-        id: 'detector-calibration',
-        name: 'Detector Calibration',
-        domain: 'technical',
-        description: 'Procedures to ensure accurate readings from radiation detectors.',
-        mastery: 0,
-        connections: ['radiation-detectors', 'quality-assurance'],
-        discovered: false,
-        position: { x: 200, y: 420 }
-      },
-      {
-        id: 'quality-assurance',
-        name: 'Quality Assurance',
-        domain: 'clinical',
-        description: 'Procedures to ensure reliability and consistency of medical equipment.',
-        mastery: 0,
-        connections: ['detector-calibration'],
-        discovered: false,
-        position: { x: 150, y: 350 }
+    if (activeNodes.length > 0 && nodes.length > 0) {
+      // Find the first active node that exists in our nodes list
+      const nodeToFocus = nodes.find(n => activeNodes.includes(n.id));
+      if (nodeToFocus) {
+        setSelectedNode(nodeToFocus);
+        
+        // Create particle effects for all active nodes
+        const newParticles: typeof particleEffects = [];
+        
+        activeNodes.forEach(nodeId => {
+          const node = nodes.find(n => n.id === nodeId);
+          if (node?.position) {
+            // Create multiple particles for each active node
+            for (let i = 0; i < 10; i++) {
+              const angle = Math.random() * Math.PI * 2;
+              const distance = Math.random() * 100 + 50;
+              
+              newParticles.push({
+                id: `particle-${nodeId}-${i}-${Date.now()}`,
+                x: node.position.x + Math.cos(angle) * distance,
+                y: node.position.y + Math.sin(angle) * distance,
+                targetX: node.position.x,
+                targetY: node.position.y,
+                color: KNOWLEDGE_DOMAINS[node.domain].color,
+                size: Math.random() * 3 + 1,
+                life: 100,
+                maxLife: 100
+              });
+            }
+          }
+        });
+        
+        setParticleEffects(prev => [...prev, ...newParticles]);
+        
+        // Play sound effect
+        if (playSound) playSound('success');
       }
-    ];
-
-    // Build connections from nodes
-    const initialConnections: ConceptConnection[] = [];
-    initialNodes.forEach(node => {
-      node.connections.forEach(targetId => {
-        // Only create connection if both nodes exist and are discovered
-        const targetNode = initialNodes.find(n => n.id === targetId);
-        if (targetNode && node.discovered && targetNode.discovered) {
-          initialConnections.push({
-            source: node.id,
-            target: targetId,
-            strength: (node.mastery + (targetNode?.mastery || 0)) / 2,
-            discovered: true
-          });
+    }
+  }, [activeNodes, nodes, playSound]);
+  
+  // Also highlight newly discovered nodes from knowledgeStore
+  useEffect(() => {
+    if (newlyDiscovered.length > 0 && nodes.length > 0) {
+      // Create particle effects for newly discovered nodes
+      const newParticles: typeof particleEffects = [];
+      
+      newlyDiscovered.forEach(nodeId => {
+        const node = nodes.find(n => n.id === nodeId);
+        if (node?.position) {
+          // Create multiple particles for each newly discovered node
+          for (let i = 0; i < 10; i++) {
+            const angle = Math.random() * Math.PI * 2;
+            const distance = Math.random() * 100 + 50;
+            
+            newParticles.push({
+              id: `particle-${nodeId}-${i}-${Date.now()}`,
+              x: node.position.x + Math.cos(angle) * distance,
+              y: node.position.y + Math.sin(angle) * distance,
+              targetX: node.position.x,
+              targetY: node.position.y,
+              color: KNOWLEDGE_DOMAINS[node.domain].color,
+              size: Math.random() * 3 + 1,
+              life: 100,
+              maxLife: 100
+            });
+          }
         }
       });
-    });
+      
+      setParticleEffects(prev => [...prev, ...newParticles]);
+    }
+  }, [newlyDiscovered, nodes]);
+  
+  // Get discovered nodes
+  const discoveredNodes = useMemo(() => 
+    nodes.filter(node => node.discovered), 
+    [nodes]
+  );
+  
+  // Get discovered connections
+  const discoveredConnections = useMemo(() => 
+    connections.filter(conn => conn.discovered), 
+    [connections]
+  );
 
-    setNodes(initialNodes);
-    setConnections(initialConnections);
+  // Animation loop for particles
+  useEffect(() => {
+    let animating = false;
     
-    // In a full implementation, this would come from game state
-    // Simulating recently acquired knowledge for the prototype
-    recentlyAcquiredKnowledge.current = [
-      {
-        id: 'quantum-effects',
-        name: 'Quantum Effects',
-        domain: 'theoretical',
-        description: 'Quantum mechanical phenomena affecting radiation interactions and detection.',
-        mastery: 30,
-        connections: ['ionization-chambers', 'ionix-anomaly'],
-        discovered: true,
-        position: { x: 550, y: 250 }
+    const animate = () => {
+      if (!canvasRef.current) return;
+      
+      // Update particle positions
+      setParticleEffects(prev => {
+        const updatedParticles = prev.map(particle => {
+          // Move particle toward target
+          const dx = particle.targetX - particle.x;
+          const dy = particle.targetY - particle.y;
+          const distance = Math.sqrt(dx * dx + dy * dy);
+          
+          if (distance > 5) {
+            // Still moving
+            animating = true;
+            return {
+              ...particle,
+              x: particle.x + dx * 0.05,
+              y: particle.y + dy * 0.05,
+              life: particle.life - 1
+            };
+          } else {
+            // Reached target, reduce life faster
+            return {
+              ...particle,
+              life: particle.life - 3
+            };
+          }
+        }).filter(p => p.life > 0); // Remove dead particles
+        
+        if (updatedParticles.length === 0) {
+          animating = false;
+        }
+        
+        return updatedParticles;
+      });
+      
+      // Continue animation if particles still exist
+      if (animating) {
+        animationFrameRef.current = requestAnimationFrame(animate);
       }
-    ];
+    };
     
-    // Set recent insights for journal
-    setRecentInsights([
-      { concept: 'Quantum Effects', domain: 'theoretical', amount: 30 },
-      { concept: 'Ionization Chambers', domain: 'technical', amount: 15 }
-    ]);
+    // Start animation if we have particles
+    if (particleEffects.length > 0 && !animationFrameRef.current) {
+      animationFrameRef.current = requestAnimationFrame(animate);
+    }
     
-  }, []);
+    return () => {
+      if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current);
+        animationFrameRef.current = null;
+      }
+    };
+  }, [particleEffects.length]);
 
   // Draw constellation
   useEffect(() => {
-    if (!canvasRef.current || nodes.length === 0) return;
+    if (!canvasRef.current) return;
     
     const canvas = canvasRef.current;
     const ctx = canvas.getContext('2d');
@@ -268,11 +286,14 @@ export default function ConstellationView({
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     
     // Draw starry background (subtle)
-    for (let i = 0; i < 100; i++) {
+    ctx.fillStyle = '#000000';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    
+    for (let i = 0; i < 200; i++) {
       const x = Math.random() * canvas.width;
       const y = Math.random() * canvas.height;
       const radius = Math.random() * 1.2;
-      const opacity = Math.random() * 0.5 + 0.1;
+      const opacity = Math.random() * 0.3 + 0.1;
       
       ctx.beginPath();
       ctx.arc(x, y, radius, 0, Math.PI * 2);
@@ -281,9 +302,9 @@ export default function ConstellationView({
     }
     
     // Draw connections
-    connections.forEach(connection => {
-      const sourceNode = nodes.find(n => n.id === connection.source);
-      const targetNode = nodes.find(n => n.id === connection.target);
+    discoveredConnections.forEach(connection => {
+      const sourceNode = discoveredNodes.find(n => n.id === connection.source);
+      const targetNode = discoveredNodes.find(n => n.id === connection.target);
       
       if (sourceNode && targetNode && sourceNode.position && targetNode.position) {
         const isActive = 
@@ -337,40 +358,65 @@ export default function ConstellationView({
     });
     
     // Draw nodes
-    nodes.forEach(node => {
-      if (!node.position || !node.discovered) return;
+    discoveredNodes.forEach(node => {
+      if (!node.position) return;
       
       const domain = KNOWLEDGE_DOMAINS[node.domain];
       const isActiveNode = activeNode?.id === node.id;
       const isSelectedNode = selectedNode?.id === node.id;
       const isPendingConnection = pendingConnection === node.id;
-      const isAnimating = animatingNodeId === node.id;
+      const isHighlighted = activeNodes.includes(node.id) || newlyDiscovered.includes(node.id);
       
       // Calculate node size based on mastery (10-20px range)
       const baseSize = 10 + (node.mastery / 100) * 10;
       
-      // Increase size if active/selected
-      const size = isActiveNode || isSelectedNode || isPendingConnection || isAnimating
+      // Increase size if active/selected/highlighted
+      const size = isActiveNode || isSelectedNode || isPendingConnection || isHighlighted
         ? baseSize * 1.3
         : baseSize;
         
-      // Draw glow for active nodes
-      if (isActiveNode || isSelectedNode || isPendingConnection || isAnimating) {
+      // Draw glow for active/highlighted nodes
+      if (isActiveNode || isSelectedNode || isPendingConnection || isHighlighted) {
         ctx.beginPath();
-        ctx.arc(node.position.x, node.position.y, size * 1.8, 0, Math.PI * 2);
+        
+        // Extra strong glow for highlighted nodes
+        const glowRadius = isHighlighted ? size * 2.5 : size * 1.8;
+        ctx.arc(node.position.x, node.position.y, glowRadius, 0, Math.PI * 2);
         
         // Create radial gradient for glow
         const glow = ctx.createRadialGradient(
           node.position.x, node.position.y, size * 0.5,
-          node.position.x, node.position.y, size * 2
+          node.position.x, node.position.y, glowRadius
         );
         
         // Use domain color for glow
-        glow.addColorStop(0, domain.color);
+        const glowColor = isHighlighted ? domain.lightColor : domain.color;
+        glow.addColorStop(0, glowColor);
         glow.addColorStop(1, 'rgba(0,0,0,0)');
         
         ctx.fillStyle = glow;
         ctx.fill();
+        
+        // Add pulsing animation for highlighted nodes
+        if (isHighlighted) {
+          // Second larger glow
+          ctx.beginPath();
+          ctx.arc(node.position.x, node.position.y, glowRadius * 1.5, 0, Math.PI * 2);
+          
+          const outerGlow = ctx.createRadialGradient(
+            node.position.x, node.position.y, glowRadius,
+            node.position.x, node.position.y, glowRadius * 1.5
+          );
+          outerGlow.addColorStop(0, `${domain.lightColor}50`); // 50 is hex for 31% opacity
+          outerGlow.addColorStop(1, 'rgba(0,0,0,0)');
+          
+          ctx.fillStyle = outerGlow;
+          ctx.fill();
+          
+          // Add extra shadow for highlighted nodes
+          ctx.shadowColor = domain.color;
+          ctx.shadowBlur = 15;
+        }
       }
       
       // Draw primary node
@@ -378,15 +424,16 @@ export default function ConstellationView({
       ctx.arc(node.position.x, node.position.y, size, 0, Math.PI * 2);
       
       // Fill based on mastery and domain
-      if (isAnimating) {
-        // Pulsing white for animation
-        ctx.fillStyle = 'white';
+      if (isHighlighted) {
+        // Brighter color for highlighted nodes
+        ctx.fillStyle = domain.lightColor;
       } else {
         // Normal fill with domain color
         ctx.fillStyle = domain.color;
       }
       
       ctx.fill();
+      ctx.shadowBlur = 0; // Reset shadow
       
       // Add inner highlight
       ctx.beginPath();
@@ -417,7 +464,7 @@ export default function ConstellationView({
     
     // Draw connecting line when establishing new connection
     if (pendingConnection && activeNode && selectedNode) {
-      const sourceNode = nodes.find(n => n.id === pendingConnection);
+      const sourceNode = discoveredNodes.find(n => n.id === pendingConnection);
       if (sourceNode && sourceNode.position && activeNode.position) {
         ctx.beginPath();
         ctx.moveTo(sourceNode.position.x, sourceNode.position.y);
@@ -430,15 +477,29 @@ export default function ConstellationView({
       }
     }
     
+    // Draw particles
+    particleEffects.forEach(particle => {
+      ctx.beginPath();
+      
+      // Fade particles as they near the end of their life
+      const opacity = particle.life / particle.maxLife;
+      
+      // Draw particle
+      ctx.arc(particle.x, particle.y, particle.size, 0, Math.PI * 2);
+      ctx.fillStyle = `${particle.color}${Math.floor(opacity * 255).toString(16).padStart(2, '0')}`;
+      ctx.fill();
+    });
+    
     // Draw labels for active/selected nodes
-    nodes.forEach(node => {
-      if (!node.position || !node.discovered) return;
+    discoveredNodes.forEach(node => {
+      if (!node.position) return;
       
       const isActiveNode = activeNode?.id === node.id;
       const isSelectedNode = selectedNode?.id === node.id;
+      const isHighlighted = activeNodes.includes(node.id) || newlyDiscovered.includes(node.id);
       
-      // Only show labels for active/selected nodes to avoid clutter
-      if (isActiveNode || isSelectedNode) {
+      // Only show labels for active/selected/highlighted nodes to avoid clutter
+      if (isActiveNode || isSelectedNode || isHighlighted) {
         const domain = KNOWLEDGE_DOMAINS[node.domain];
         
         // Text background
@@ -457,7 +518,7 @@ export default function ConstellationView({
         );
         
         // Text
-        ctx.fillStyle = domain.lightColor;
+        ctx.fillStyle = isHighlighted ? '#FFFFFF' : domain.lightColor;
         ctx.textAlign = 'center';
         ctx.fillText(node.name, node.position.x, node.position.y + 28);
         
@@ -466,7 +527,7 @@ export default function ConstellationView({
         ctx.fillRect(node.position.x - textWidth / 2 - padding, rectY, 3, 18);
       }
     });
-  }, [nodes, connections, activeNode, selectedNode, pendingConnection, animatingNodeId]);
+  }, [discoveredNodes, discoveredConnections, activeNode, selectedNode, pendingConnection, activeNodes, newlyDiscovered, particleEffects]);
 
   // Handle mouse movement for node hover
   const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
@@ -478,8 +539,8 @@ export default function ConstellationView({
     const y = e.clientY - rect.top;
     
     // Check if mouse is over any node
-    const hoveredNode = nodes.find(node => {
-      if (!node.position || !node.discovered) return false;
+    const hoveredNode = discoveredNodes.find(node => {
+      if (!node.position) return false;
       
       const baseSize = 10 + (node.mastery / 100) * 10;
       const distance = Math.sqrt(
@@ -504,61 +565,61 @@ export default function ConstellationView({
     if (pendingConnection) {
       // Complete connection if clicking a different node
       if (pendingConnection !== activeNode.id) {
-        const sourceNode = nodes.find(n => n.id === pendingConnection);
+        const sourceNode = discoveredNodes.find(n => n.id === pendingConnection);
         
         if (sourceNode) {
           // Check if connection already exists
-          const existingConnection = connections.find(
+          const existingConnection = discoveredConnections.find(
             conn => (conn.source === pendingConnection && conn.target === activeNode.id) ||
                    (conn.source === activeNode.id && conn.target === pendingConnection)
           );
           
           if (!existingConnection) {
-            // Create new connection
-            const newConnection: ConceptConnection = {
-              source: pendingConnection,
-              target: activeNode.id,
-              // Strength based on average mastery of both nodes
-              strength: (sourceNode.mastery + activeNode.mastery) / 2,
-              discovered: true
-            };
-            
-            // Update connections
-            setConnections([...connections, newConnection]);
-            
-            // Update nodes to include connection reference
-            setNodes(nodes.map(node => {
-              if (node.id === pendingConnection) {
-                return {
-                  ...node,
-                  connections: [...node.connections, activeNode.id]
-                };
-              }
-              if (node.id === activeNode.id) {
-                return {
-                  ...node,
-                  connections: [...node.connections, pendingConnection]
-                };
-              }
-              return node;
-            }));
-            
-            // Show connection formation effects
+            // Create new connection with satisfying feedback
             if (playSound) playSound('success');
             if (flashScreen) flashScreen('blue');
             
-            // Grant insight for forming connection
+            // Create new connection in store
+            createConnection(pendingConnection, activeNode.id);
+            
+            // Grant insights based on nodes' mastery
             const insightGain = Math.floor((sourceNode.mastery + activeNode.mastery) / 10) + 5;
-            updateInsight(insightGain);
+            
+            // Boost mastery for both nodes
+            updateMastery(pendingConnection, Math.min(5, 100 - sourceNode.mastery));
+            updateMastery(activeNode.id, Math.min(5, 100 - activeNode.mastery));
+            
+            // Create visual effect where connection is created
+            const midX = (sourceNode.position?.x || 0 + activeNode.position?.x || 0) / 2;
+            const midY = (sourceNode.position?.y || 0 + activeNode.position?.y || 0) / 2;
             
             if (showRewardEffect && containerRef.current) {
               const rect = containerRef.current.getBoundingClientRect();
-              showRewardEffect(
-                insightGain,
-                rect.left + (sourceNode.position?.x || 0) + 100,
-                rect.top + (sourceNode.position?.y || 0) + 100
-              );
+              showRewardEffect(insightGain, rect.left + midX, rect.top + midY);
             }
+            
+            // Create particle burst at connection point
+            const newParticles: typeof particleEffects = [];
+            
+            for (let i = 0; i < 20; i++) {
+              const angle = Math.random() * Math.PI * 2;
+              const distance = Math.random() * 30;
+              const startDistance = 5;
+              
+              newParticles.push({
+                id: `connection-particle-${i}-${Date.now()}`,
+                x: midX + Math.cos(angle) * startDistance,
+                y: midY + Math.sin(angle) * startDistance,
+                targetX: midX + Math.cos(angle) * distance,
+                targetY: midY + Math.sin(angle) * distance,
+                color: '#FFFFFF',
+                size: Math.random() * 3 + 1,
+                life: 50,
+                maxLife: 50
+              });
+            }
+            
+            setParticleEffects(prev => [...prev, ...newParticles]);
           }
         }
         
@@ -573,55 +634,33 @@ export default function ConstellationView({
       if (selectedNode?.id === activeNode.id) {
         // Start connection from selected node
         setPendingConnection(activeNode.id);
+        
+        // Play connection sound
+        if (playSound) playSound('click');
       } else {
         // Select node
         setSelectedNode(activeNode);
+        
+        // Play node selection sound
         if (playSound) playSound('click');
       }
     }
   };
 
-  // Simulate journal insight transfer animation
+  // Track recent insights for journal
   useEffect(() => {
-    if (showAnimation && recentlyAcquiredKnowledge.current.length > 0) {
-      // Animate each recently acquired node
-      const animateNodes = async () => {
-        for (const node of recentlyAcquiredKnowledge.current) {
-          setAnimatingNodeId(node.id);
-          
-          // Play animation sound
-          if (playSound) playSound('success');
-          
-          // Wait for animation to complete
-          await new Promise(resolve => setTimeout(resolve, 1500));
-          
-          setAnimatingNodeId(null);
-          
-          // Small pause between nodes
-          await new Promise(resolve => setTimeout(resolve, 300));
-        }
-        
-        // Complete animation
-        setShowAnimation(false);
-      };
-      
-      animateNodes();
-    }
-  }, [showAnimation, playSound]);
-
-  // Clean up any animations on unmount
-  useEffect(() => {
-    return () => {
-      if (animationFrameRef.current) {
-        cancelAnimationFrame(animationFrameRef.current);
-      }
-    };
+    // In a full implementation, this would come from the game state
+    // For now, we'll use placeholder data
+    setRecentInsights([
+      { conceptId: 'quantum-effects', amount: 30 },
+      { conceptId: 'ionization-chambers', amount: 15 }
+    ]);
   }, []);
 
   return (
     <div 
       ref={containerRef}
-      className="relative bg-surface-dark pixel-borders"
+      className="relative bg-black pixel-borders"
       style={{ width, height }}
     >
       {/* Main canvas */}
@@ -634,39 +673,40 @@ export default function ConstellationView({
         onClick={handleClick}
       />
       
-      {/* Add the ConnectionSuggestions component in a suitable position */}
+      {/* Controls and info panels */}
+      <div className="absolute top-4 left-4 z-10">
+        <div className="bg-surface-dark/80 p-3 pixel-borders-thin text-sm">
+          <PixelText className="text-text-primary mb-1">Knowledge Constellation</PixelText>
+          <div className="text-text-secondary">
+            <div>Discovered: {discoveredNodes.length}/{nodes.length}</div>
+            <div>Connections: {discoveredConnections.length}</div>
+            <div>Mastery: {totalMastery}%</div>
+          </div>
+        </div>
+      </div>
+      
+      {/* Connection suggestions panel */}
       {interactive && (
-        <div className="absolute top-4 left-1/2 transform -translate-x-1/2 w-64 z-10">
+        <div className="absolute top-4 right-4 w-64 z-10">
           <ConnectionSuggestions 
             onSelectConnection={(sourceId, targetId) => {
               // Find the source node and set it as selected
-              const sourceNode = nodes.find(n => n.id === sourceId);
+              const sourceNode = discoveredNodes.find(n => n.id === sourceId);
               setSelectedNode(sourceNode || null);
               
               // Start the connection process from this node
               setPendingConnection(sourceId);
               
-              // Optionally provide a visual/audio cue about what to do next
+              // Play sound effect
               if (playSound) playSound('click');
             }}
             maxSuggestions={3}
           />
         </div>
       )}
-
-      {/* Controls and info overlays */}
-      <div className="absolute top-4 left-4 space-y-4 z-10">
-        <div className="bg-surface-dark/80 p-3 pixel-borders-thin text-sm">
-          <PixelText className="text-text-primary mb-1">Knowledge Constellation</PixelText>
-          <div className="text-text-secondary">
-            <div>Discovered: {nodes.filter(n => n.discovered).length}/{nodes.length}</div>
-            <div>Connections: {connections.length}/{nodes.reduce((acc, n) => acc + n.connections.length, 0) / 2}</div>
-          </div>
-        </div>
-      </div>
       
       {/* Domains legend */}
-      <div className="absolute top-4 right-4 bg-surface-dark/80 p-3 pixel-borders-thin z-10">
+      <div className="absolute bottom-4 left-4 bg-surface-dark/80 p-3 pixel-borders-thin z-10">
         <PixelText className="text-text-primary mb-2">Knowledge Domains</PixelText>
         <div className="space-y-1 text-sm">
           {Object.entries(KNOWLEDGE_DOMAINS).map(([key, domain]) => (
@@ -685,21 +725,15 @@ export default function ConstellationView({
             className="bg-surface hover:bg-surface-dark text-text-primary"
             onClick={() => setJournalVisible(true)}
           >
-            <div className="flex items-center">
-              <Image src="/journal-icon.svg" width={16} height={16} alt="Journal" className="mr-1" />
-              <span>Journal</span>
-            </div>
+            Journal
           </PixelButton>
         )}
         
         <PixelButton
           className="bg-surface hover:bg-surface-dark text-text-primary"
-          onClick={() => setShowAnimation(true)}
+          onClick={() => setShowHelp(true)}
         >
-          <div className="flex items-center">
-            <Image src="/insight-icon.svg" width={16} height={16} alt="Transfer" className="mr-1" />
-            <span>Transfer Insights</span>
-          </div>
+          Help
         </PixelButton>
         
         {onClose && (
@@ -707,14 +741,14 @@ export default function ConstellationView({
             className="bg-surface hover:bg-danger text-text-primary"
             onClick={onClose}
           >
-            Close View
+            Close
           </PixelButton>
         )}
       </div>
       
       {/* Selected node details */}
       {selectedNode && (
-        <div className="absolute bottom-4 left-4 max-w-sm bg-surface-dark/90 p-3 pixel-borders z-10">
+        <div className="absolute top-1/2 right-4 transform -translate-y-1/2 max-w-xs bg-surface-dark/90 p-3 pixel-borders z-10">
           <div className="flex justify-between items-start">
             <div>
               <div className="flex items-center mb-1">
@@ -738,7 +772,9 @@ export default function ConstellationView({
             <PixelText className="text-text-secondary text-xs">
               {pendingConnection === selectedNode.id 
                 ? 'Click another node to form connection' 
-                : 'Connections: ' + selectedNode.connections.length}
+                : 'Connections: ' + selectedNode.connections.filter(id => 
+                    discoveredNodes.some(n => n.id === id)
+                  ).length}
             </PixelText>
             
             {!pendingConnection && (
@@ -755,7 +791,7 @@ export default function ConstellationView({
       
       {/* Journal overlay */}
       {journalVisible && (
-        <div className="absolute inset-0 bg-black/80 z-20 flex items-center justify-center">
+        <div className="absolute inset-0 bg-black/90 z-20 flex items-center justify-center">
           <div className="bg-surface p-6 max-w-md w-full pixel-borders">
             <div className="flex justify-between items-center mb-4">
               <PixelText className="text-2xl">Research Journal</PixelText>
@@ -771,30 +807,30 @@ export default function ConstellationView({
               <PixelText className="mb-2">Recent Insights</PixelText>
               <div className="space-y-2">
                 {recentInsights.map((insight, index) => {
-                  const domain = Object.entries(KNOWLEDGE_DOMAINS).find(
-                    ([key]) => key.toLowerCase() === insight.domain.toLowerCase()
-                  )?.[1];
+                  const node = discoveredNodes.find(n => n.id === insight.conceptId);
+                  if (!node) return null;
+                  
+                  const domain = KNOWLEDGE_DOMAINS[node.domain];
                   
                   return (
                     <div 
                       key={index}
-                      className={`p-3 pixel-borders-thin`}
-                      style={{ backgroundColor: 'var(--surface-dark)' }}
+                      className="p-3 pixel-borders-thin bg-surface-dark"
                     >
                       <div className="flex justify-between items-start">
                         <div className="flex items-center">
                           <div 
                             className="w-3 h-3 mr-2" 
-                            style={{ backgroundColor: domain?.color || 'var(--text-primary)' }}
+                            style={{ backgroundColor: domain.color }}
                           ></div>
-                          <PixelText>{insight.concept}</PixelText>
+                          <PixelText>{node.name}</PixelText>
                         </div>
                         <div className="bg-surface px-2 py-0.5 text-sm">
                           <PixelText>{insight.amount}%</PixelText>
                         </div>
                       </div>
                       <PixelText className="text-sm text-text-secondary mt-1">
-                        {domain?.name || 'Unknown Domain'}
+                        {domain.name}
                       </PixelText>
                     </div>
                   );
@@ -805,6 +841,69 @@ export default function ConstellationView({
             <div className="p-3 bg-surface-dark pixel-borders-thin">
               <PixelText className="text-text-secondary text-sm italic">
                 As you learn and apply knowledge through challenges, your insights will be recorded here, then transferred to your constellation during the night phase.
+              </PixelText>
+            </div>
+          </div>
+        </div>
+      )}
+      
+      {/* Help overlay */}
+      {showHelp && (
+        <div className="absolute inset-0 bg-black/90 z-20 flex items-center justify-center">
+          <div className="bg-surface p-6 max-w-md w-full pixel-borders">
+            <div className="flex justify-between items-center mb-4">
+              <PixelText className="text-2xl">Constellation Help</PixelText>
+              <PixelButton 
+                className="bg-red-600 hover:bg-red-500 text-white" 
+                onClick={() => setShowHelp(false)}
+              >
+                Close
+              </PixelButton>
+            </div>
+            
+            <div className="space-y-4 mb-4">
+              <div>
+                <PixelText className="text-educational-light mb-1">Viewing Knowledge</PixelText>
+                <PixelText className="text-sm text-text-secondary">
+                  Your constellation represents your knowledge in different domains of medical physics. 
+                  Each star is a concept you've learned, with brighter stars indicating higher mastery.
+                </PixelText>
+              </div>
+              
+              <div>
+                <PixelText className="text-educational-light mb-1">Creating Connections</PixelText>
+                <PixelText className="text-sm text-text-secondary">
+                  1. Click on a concept to select it
+                  2. Click it again to begin a connection
+                  3. Click another concept to form a connection
+                </PixelText>
+                <PixelText className="text-sm text-text-secondary mt-1">
+                  Connecting related concepts deepens your understanding and grants additional insight.
+                </PixelText>
+              </div>
+              
+              <div>
+                <PixelText className="text-educational-light mb-1">Knowledge Application</PixelText>
+                <PixelText className="text-sm text-text-secondary">
+                  Your knowledge unlocks new dialogue options and challenge approaches during gameplay.
+                  Higher mastery in relevant domains improves your performance in challenges.
+                </PixelText>
+              </div>
+              
+              <div>
+                <PixelText className="text-educational-light mb-1">Suggested Connections</PixelText>
+                <PixelText className="text-sm text-text-secondary">
+                  The panel in the top-right suggests potentially related concepts that you can connect.
+                  These suggestions are based on shared domains and existing connections.
+                </PixelText>
+              </div>
+            </div>
+            
+            <div className="p-3 bg-clinical/20 pixel-borders-thin">
+              <PixelText className="text-clinical-light mb-1">Pro Tip</PixelText>
+              <PixelText className="text-sm text-text-secondary">
+                The most powerful insights come from connecting concepts across different domains.
+                Try connecting clinical knowledge with theoretical understanding!
               </PixelText>
             </div>
           </div>

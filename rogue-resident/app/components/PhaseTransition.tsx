@@ -10,6 +10,12 @@ interface PhaseTransitionProps {
   onComplete: () => void;
 }
 
+/**
+ * Monochromatic phase transition component
+ * 
+ * Provides a clean, minimalist transition between day and night phases
+ * using only black and white for visual clarity
+ */
 export default function PhaseTransition({ fromPhase, toPhase, onComplete }: PhaseTransitionProps) {
   const [opacity, setOpacity] = useState(0);
   const [showText, setShowText] = useState(false);
@@ -41,20 +47,9 @@ export default function PhaseTransition({ fromPhase, toPhase, onComplete }: Phas
     };
   }, [onComplete]);
   
-  // Determine background gradient based on transition direction
-  const getGradientStyle = () => {
-    if (fromPhase === 'day' && toPhase === 'night') {
-      // Day to night transition (sunset)
-      return 'from-orange-600 via-purple-700 to-indigo-900';
-    } else {
-      // Night to day transition (sunrise)
-      return 'from-indigo-900 via-purple-700 to-orange-400';
-    }
-  };
-  
   return (
     <div 
-      className={`fixed inset-0 z-50 flex items-center justify-center bg-gradient-to-b ${getGradientStyle()}`}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black"
       style={{ 
         transition: 'opacity 0.5s ease-in-out',
         opacity: opacity

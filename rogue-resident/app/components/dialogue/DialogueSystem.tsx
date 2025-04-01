@@ -2,8 +2,12 @@
 'use client';
 import { useState, useEffect, createContext, useContext, ReactNode } from 'react';
 import { useGameStore } from '../../store/gameStore';
+import { useKnowledgeStore } from '../../store/knowledgeStore';
 import { PixelText, PixelButton } from '../PixelThemeProvider';
 import { useGameEffects } from '../GameEffects';
+import { meetsRequirement, getMissingKnowledgeInfo } from '../../utils/knowledgeRequirements';
+import { KnowledgeRequirement } from '../../utils/knowledgeRequirements';
+import { KNOWLEDGE_DOMAINS } from '../knowledge/ConstellationView';
 
 // Prototype character types - limited to 3 key characters
 export type Character = 'kapoor' | 'jesse' | 'quinn' | 'player';
@@ -18,13 +22,11 @@ export interface DialogueOption {
   insightGain?: number; // Insight points gained for this option
   knowledgeGain?: {
     domain: KnowledgeDomain;
+    conceptId?: string;
     amount: number; // Percentage progress toward mastery
   };
   nextNodeId?: string; // ID of next dialogue node if this option is selected
-  requiresKnowledge?: {
-    domain: KnowledgeDomain;
-    level: number; // Minimum mastery percentage required
-  };
+  requiresKnowledge?: KnowledgeRequirement; // Knowledge requirement to unlock this option
 }
 
 // Dialogue node interface
@@ -56,7 +58,8 @@ export const useDialogue = () => useContext(DialogueContext);
 // Provider component
 export function DialogueProvider({ children }: { children: ReactNode }) {
   const { updateInsight } = useGameStore();
-  const { playSound } = useGameEffects();
+  const { updateMastery } = useKnowledgeStore();
+  const { playSound, flashScreen } = useGameEffects();
   
   const [dialogueNodes, setDialogueNodes] = useState<DialogueNode[]>([]);
   const [currentNodeId, setCurrentNodeId] = useState<string | null>(null);
@@ -108,15 +111,26 @@ export function DialogueProvider({ children }: { children: ReactNode }) {
     if (option.insightGain && option.insightGain > 0) {
       updateInsight(option.insightGain);
       
-      // In a full implementation, would also update knowledge constellation
-      if (option.knowledgeGain) {
-        console.log(`Knowledge gained: ${option.knowledgeGain.amount}% in ${option.knowledgeGain.domain} domain`);
-        // Would call a function like: updateKnowledgeDomain(option.knowledgeGain.domain, option.knowledgeGain.amount)
+      // Update knowledge constellation
+      if (option.knowledgeGain && option.knowledgeGain.conceptId) {
+        updateMastery(option.knowledgeGain.conceptId, option.knowledgeGain.amount);
+        
+        // Log knowledge gain for debugging
+        console.log(`Knowledge gained: ${option.knowledgeGain.amount}% in ${option.knowledgeGain.domain} domain, concept: ${option.knowledgeGain.conceptId}`);
       }
     }
     
-    // Play selection sound
-    if (playSound) playSound('click');
+    // Play selection sound based on insight gain
+    if (playSound) {
+      if (option.insightGain && option.insightGain >= 15) {
+        playSound('success');
+        if (flashScreen) flashScreen('green');
+      } else if (option.insightGain && option.insightGain <= 5) {
+        playSound('failure');
+      } else {
+        playSound('click');
+      }
+    }
   };
   
   // Move to next node
@@ -193,6 +207,79 @@ export function DialogueProvider({ children }: { children: ReactNode }) {
     }
   };
   
+  // Render dialogue option with knowledge requirements
+  const renderDialogueOption = (option: DialogueOption) => {
+    // Check if option requires knowledge
+    const knowledge = option.requiresKnowledge;
+    const isMet = knowledge ? meetsRequirement(knowledge) : true;
+    
+    // Get domain style if there's a knowledge requirement
+    const getDomainStyle = () => {
+      if (!knowledge) return {};
+      
+      if (knowledge.domain) {
+        return {
+          borderColor: KNOWLEDGE_DOMAINS[knowledge.domain].color,
+          textClass: KNOWLEDGE_DOMAINS[knowledge.domain].textClass,
+          bgClass: isMet ? KNOWLEDGE_DOMAINS[knowledge.domain].bgClass : ''
+        };
+      }
+      
+      return {
+        borderColor: 'var(--educational-color)',
+        textClass: 'text-educational-light',
+        bgClass: isMet ? 'bg-educational/20' : ''
+      };
+    };
+    
+    const domainStyle = getDomainStyle();
+    
+    return (
+      <button
+        key={option.id}
+        className={`
+          w-full text-left p-3 
+          ${isMet 
+            ? `${domainStyle.bgClass} hover:bg-surface-dark pixel-borders-thin` 
+            : 'bg-surface-dark opacity-70 cursor-not-allowed'}
+          ${isMet && knowledge 
+            ? 'border-l-4' 
+            : 'pixel-borders-thin'}
+          transition-all duration-200
+        `}
+        style={knowledge ? {
+          borderLeftColor: isMet ? domainStyle.borderColor : 'transparent' 
+        } : {}}
+        onClick={() => isMet && selectOption(option)}
+        disabled={!isMet}
+        title={!isMet && knowledge ? getMissingKnowledgeInfo(knowledge) : ''}
+      >
+        <div className="flex justify-between items-center">
+          <PixelText>{option.text}</PixelText>
+          
+          <div className="flex items-center space-x-2">
+            {/* Show knowledge indicator if option requires knowledge */}
+            {knowledge && isMet && (
+              <span className={`w-3 h-3 rounded-full ${domainStyle.bgClass} animate-pulse`}></span>
+            )}
+            
+            {/* Show insight preview if available */}
+            {option.insightGain && option.insightGain > 0 && (
+              <span className="text-xs bg-clinical text-white px-2 py-1">
+                +{option.insightGain}
+              </span>
+            )}
+            
+            {/* Show lock icon if required */}
+            {!isMet && (
+              <span className="text-text-secondary">🔒</span>
+            )}
+          </div>
+        </div>
+      </button>
+    );
+  };
+  
   // Provide context value
   const value = {
     startDialogue,
@@ -236,41 +323,7 @@ export function DialogueProvider({ children }: { children: ReactNode }) {
             <div className="p-4 bg-surface-dark">
               {!isTyping && !selectedOption && currentNode.options ? (
                 <div className="space-y-2">
-                  {currentNode.options.map(option => {
-                    // Check if option requires knowledge
-                    const isLocked = option.requiresKnowledge !== undefined;
-                    const lockMessage = isLocked ? 
-                      `Requires ${option.requiresKnowledge!.level}% mastery in ${option.requiresKnowledge!.domain}` : '';
-                    
-                    return (
-                      <button
-                        key={option.id}
-                        className={`
-                          w-full text-left p-2 
-                          ${isLocked ? 'bg-surface-dark opacity-50 cursor-not-allowed' : 'pixel-borders-thin bg-surface hover:bg-surface-dark'}
-                        `}
-                        onClick={() => !isLocked && selectOption(option)}
-                        disabled={isLocked}
-                        title={lockMessage}
-                      >
-                        <div className="flex justify-between items-center">
-                          <PixelText>{option.text}</PixelText>
-                          
-                          {/* Show insight gain if applicable */}
-                          {option.insightGain && option.insightGain > 0 && (
-                            <span className="ml-2 text-xs bg-clinical text-white px-2 py-1">
-                              +{option.insightGain} insight
-                            </span>
-                          )}
-                          
-                          {/* Show lock icon if required */}
-                          {isLocked && (
-                            <span className="ml-2 text-text-secondary">🔒</span>
-                          )}
-                        </div>
-                      </button>
-                    );
-                  })}
+                  {currentNode.options.map(option => renderDialogueOption(option))}
                 </div>
               ) : (
                 <PixelButton
