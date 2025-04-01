@@ -5,16 +5,22 @@ import { useGameStore } from '../store/gameStore';
 import { useChallengeStore } from '../store/challengeStore';
 import { clinicalChallenges } from '../data/clinicalChallenges';
 import GameMap from './GameMap';
+import SimplifiedMap from './SimplifiedMap'; // Import the new simplified map
 import ChallengeContainer from './challenges/ChallengeContainer';
 import PlayerStats from './PlayerStats';
 import Inventory from './Inventory';
 import StorageCloset from './challenges/StorageCloset';
 import BossNode from './challenges/BossNode';
+import KapoorLINACCalibration from './challenges/KapoorLINACCalibration'; // Import the new calibration component
 import HillHomeScene from './HillHomeScene';
 import { PixelText, PixelButton } from './PixelThemeProvider';
 import { useGameEffects } from './GameEffects';
 
-export default function GameContainer() {
+interface GameContainerProps {
+  useSimplifiedMap?: boolean; // Optional flag to use the simplified 3-node map
+}
+
+export default function GameContainer({ useSimplifiedMap = false }: GameContainerProps) {
   const { currentNodeId, completedNodeIds, map, gamePhase, setGamePhase, player, completeDay } = useGameStore();
   const { currentChallenge, startChallenge } = useChallengeStore();
   const { flashScreen, playSound } = useGameEffects();
@@ -24,6 +30,19 @@ export default function GameContainer() {
   const getCurrentNodeType = () => {
     if (!currentNodeId || !map) return null;
     
+    // Special handling for simplified map
+    if (useSimplifiedMap) {
+      // Parse node ID to get index (e.g., 'node-0' => 0)
+      const nodeIndex = parseInt(currentNodeId.split('-')[1]);
+      
+      if (nodeIndex === 0) return 'kapoor-calibration';
+      if (nodeIndex === 1) return 'quinn-experiment';
+      if (nodeIndex === 2) return 'boss'; 
+      
+      return null;
+    }
+    
+    // Original map logic
     const currentNode = map.nodes.find(node => node.id === currentNodeId);
     if (!currentNode) {
       console.warn(`Current node ${currentNodeId} not found in map!`);
@@ -110,6 +129,18 @@ export default function GameContainer() {
         );
         
       case 'day':
+        // Special node handling for simplified map
+        if (useSimplifiedMap && currentNodeId) {
+          const nodeType = getCurrentNodeType();
+          
+          // Handle Dr. Kapoor's calibration node (first node in simplified map)
+          if (nodeType === 'kapoor-calibration' && !completedNodeIds.includes(currentNodeId)) {
+            return <KapoorLINACCalibration />;
+          }
+          
+          // For other node types, pass through to existing handling
+        }
+        
         // If there's an active challenge, show the challenge container
         if (currentChallenge) {
           return <ChallengeContainer />;
@@ -127,10 +158,10 @@ export default function GameContainer() {
           // if (nodeType === 'vendor') return <VendorNode />;
         }
         
-        // Default: show the map
+        // Default: show the map (either simplified or original)
         return (
           <div className="relative h-full">
-            <GameMap />
+            {useSimplifiedMap ? <SimplifiedMap /> : <GameMap />}
             
             {/* Day completion button */}
             <div className="absolute bottom-4 right-4">
@@ -145,7 +176,7 @@ export default function GameContainer() {
         );
         
       default:
-        return <GameMap />;
+        return useSimplifiedMap ? <SimplifiedMap /> : <GameMap />;
     }
   };
 

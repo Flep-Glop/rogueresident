@@ -53,7 +53,7 @@ export default function Home() {
 
   return (
     <>
-      <GameContainer />
+      <GameContainer useSimplifiedMap={true} />
       {showTransition && (
         <PhaseTransition 
           fromPhase={transitionFrom} 
