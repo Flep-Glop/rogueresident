@@ -2,20 +2,37 @@
 ├── README.md
 ├── app
 │   ├── components
+│   │   ├── CompetencyBinder.tsx
 │   │   ├── GameContainer.tsx
+│   │   ├── GameEffects.tsx
 │   │   ├── GameMap.tsx
 │   │   ├── GameOver.tsx
+│   │   ├── HillHomeScene.tsx
 │   │   ├── Inventory.tsx
 │   │   ├── NodeComponent.tsx
+│   │   ├── PhaseTransition.tsx
+│   │   ├── PixelHealthBar.tsx
+│   │   ├── PixelThemeProvider.tsx
+│   │   ├── PixelUIElements.tsx
 │   │   ├── PlayerStats.tsx
 │   │   ├── StartScreen.tsx
-│   │   └── challenges
-│   │       ├── BossNode.tsx
-│   │       ├── ChallengeContainer.tsx
-│   │       ├── ChallengeOutcome.tsx
-│   │       ├── ClinicalChallenge.tsx
-│   │       ├── ClinicalChallengeIntro.tsx
-│   │       └── StorageCloset.tsx
+│   │   ├── VictoryScreen.tsx
+│   │   ├── animation
+│   │   │   └── AnimationSystem.tsx
+│   │   ├── audio
+│   │   │   └── SoundManager.tsx
+│   │   ├── challenges
+│   │   │   ├── BossNode.tsx
+│   │   │   ├── ChallengeContainer.tsx
+│   │   │   ├── ChallengeOutcome.tsx
+│   │   │   ├── CharacterInteractionNode.tsx
+│   │   │   ├── ClinicalChallenge.tsx
+│   │   │   ├── ClinicalChallengeIntro.tsx
+│   │   │   ├── EducationalChallenge.tsx
+│   │   │   ├── QAChallenge.tsx
+│   │   │   └── StorageCloset.tsx
+│   │   └── dialogue
+│   │       └── DialogueSystem.tsx
 │   ├── data
 │   │   ├── clinicalChallenges.ts
 │   │   └── items.ts
@@ -26,6 +43,8 @@
 │   ├── store
 │   │   ├── challengeStore.ts
 │   │   └── gameStore.ts
+│   ├── styles
+│   │   └── pixel-assets.css
 │   ├── types
 │   │   └── map.ts
 │   └── utils
@@ -37,6 +56,7 @@
 ├── package-lock.json
 ├── package.json
 ├── postcss.config.mjs
+├── tailwind.config.js
 └── tsconfig.json
 
-7 directories, 32 files
+11 directories, 48 files
