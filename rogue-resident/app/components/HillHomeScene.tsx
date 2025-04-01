@@ -2,8 +2,11 @@
 'use client';
 import { useState, useEffect } from 'react';
 import { useGameStore } from '../store/gameStore';
+import { useKnowledgeStore } from '../store/knowledgeStore';
 import { PixelText, PixelButton } from './PixelThemeProvider';
 import { useGameEffects } from './GameEffects';
+import ConstellationView from './knowledge/ConstellationView';
+import Image from 'next/image';
 
 // Progress stages for hill home (visual evolution)
 type HomeStage = 'initial' | 'improving' | 'established';
@@ -14,15 +17,26 @@ interface HillHomeSceneProps {
 
 export default function HillHomeScene({ onComplete }: HillHomeSceneProps) {
   const { player, startGame, completedNodeIds, inventory, updateInsight } = useGameStore();
+  const { 
+    pendingInsights, 
+    transferInsights, 
+    totalMastery, 
+    domainMastery,
+    nodes,
+    connections
+  } = useKnowledgeStore();
   const { playSound, flashScreen, showRewardEffect } = useGameEffects();
   
   // Internal state
   const [activeArea, setActiveArea] = useState<string | null>(null);
   const [showSkillPanel, setShowSkillPanel] = useState(false);
   const [showInventory, setShowInventory] = useState(false);
+  const [showConstellation, setShowConstellation] = useState(false);
   const [timeOfDay, setTimeOfDay] = useState<'dawn' | 'dusk' | 'night'>('dusk');
   const [homeStage, setHomeStage] = useState<HomeStage>('initial');
   const [skillsApplied, setSkillsApplied] = useState(false);
+  const [insightTransferred, setInsightTransferred] = useState(false);
+  const [constellationAnimating, setConstellationAnimating] = useState(false);
   
   // Simple skill upgrade system
   const [availablePoints, setAvailablePoints] = useState(3);
@@ -47,7 +61,10 @@ export default function HillHomeScene({ onComplete }: HillHomeSceneProps) {
     // This is a simple formula - in a full game, this would be more complex
     const calculatedPoints = Math.floor(player.insight / 100);
     setAvailablePoints(calculatedPoints);
-  }, [completedNodeIds, player.insight]);
+    
+    // Track whether there are pending insights to transfer
+    setInsightTransferred(pendingInsights.length === 0);
+  }, [completedNodeIds, player.insight, pendingInsights.length]);
   
   // Time of day cycle animation
   useEffect(() => {
@@ -112,9 +129,37 @@ export default function HillHomeScene({ onComplete }: HillHomeSceneProps) {
   const startDay = () => {
     if (playSound) playSound('click');
     if (flashScreen) flashScreen('white');
+    
+    // Check if there are pending insights that haven't been transferred
+    if (pendingInsights.length > 0 && !insightTransferred) {
+      if (confirm("You have unreviewed constellation insights. Continue anyway?")) {
+        setTimeout(() => {
+          onComplete();
+        }, 300);
+      }
+    } else {
+      setTimeout(() => {
+        onComplete();
+      }, 300);
+    }
+  };
+  
+  // Handle constellation transfer
+  const handleTransferInsights = () => {
+    // Transfer pending insights
+    transferInsights();
+    setInsightTransferred(true);
+    setConstellationAnimating(true);
+    
+    // Play transfer sound
+    if (playSound) playSound('success');
+    
+    // Show transfer effect
+    if (flashScreen) flashScreen('blue');
+    
     setTimeout(() => {
-      onComplete();
-    }, 300);
+      setConstellationAnimating(false);
+    }, 5000); // Allow time for animation to complete
   };
   
   const upgradeSkill = (skill: keyof typeof skills) => {
@@ -322,9 +367,15 @@ export default function HillHomeScene({ onComplete }: HillHomeSceneProps) {
           }}
           onMouseEnter={() => handleAreaHover('telescope')}
           onMouseLeave={() => handleAreaHover(null)}
+          onClick={() => setShowConstellation(true)}
         >
           <div className="w-4 h-8 bg-gray-700 absolute bottom-0 left-2"></div>
           <div className="w-8 h-3 bg-gray-800 absolute top-0 left-0 transform -rotate-45"></div>
+          
+          {/* Glowing indicator if there are pending insights */}
+          {!insightTransferred && (
+            <div className="absolute -top-2 -right-2 w-4 h-4 bg-clinical rounded-full animate-pulse"></div>
+          )}
         </div>
       )}
       
@@ -401,8 +452,12 @@ export default function HillHomeScene({ onComplete }: HillHomeSceneProps) {
           {activeArea === 'home' ? 'Your Living Space - View Inventory' : 
            activeArea === 'study' ? 'Study Area - Upgrade Skills' : 
            activeArea === 'garden' ? 'Garden - Medicinal Plants' : 
-           activeArea === 'telescope' ? 'Telescope - View Night Sky' : 
+           activeArea === 'telescope' ? 'Knowledge Constellation' : 
            activeArea === 'hospital' ? 'Return to Hospital (Start Day)' : activeArea}
+           
+           {activeArea === 'telescope' && !insightTransferred && (
+             <span className="ml-1 text-clinical-light">• New Insights!</span>
+           )}
         </div>
       )}
       
@@ -421,11 +476,20 @@ export default function HillHomeScene({ onComplete }: HillHomeSceneProps) {
         <div className="bg-surface/80 p-4 pixel-borders max-w-sm pointer-events-auto">
           <div className="flex justify-between items-center mb-3">
             <PixelText className="text-xl">Resident Status</PixelText>
-            {skillsApplied && (
-              <span className="text-sm bg-success text-white px-2 py-1">
-                Skills Applied
-              </span>
-            )}
+            
+            <div className="flex space-x-1">
+              {skillsApplied && (
+                <span className="text-sm bg-success text-white px-2 py-1">
+                  Skills Applied
+                </span>
+              )}
+              
+              {!insightTransferred && (
+                <span className="text-sm bg-clinical animate-pulse text-white px-2 py-1">
+                  New Insights
+                </span>
+              )}
+            </div>
           </div>
           
           <div className="grid grid-cols-2 gap-4 mb-4">
@@ -444,12 +508,39 @@ export default function HillHomeScene({ onComplete }: HillHomeSceneProps) {
             </div>
           </div>
           
+          {/* Knowledge mastery overview */}
+          <div className="mb-4">
+            <div className="flex justify-between items-center">
+              <PixelText className="text-text-secondary mb-1">Knowledge Mastery</PixelText>
+              <PixelText className="text-educational-light text-sm">{totalMastery}%</PixelText>
+            </div>
+            <div className="pixel-progress-bg">
+              <div 
+                className="h-full"
+                style={{ 
+                  width: `${totalMastery}%`,
+                  background: 'linear-gradient(to right, var(--clinical-color), var(--educational-color))'
+                }}
+              ></div>
+            </div>
+            
+            {/* Domain indicators */}
+            <div className="flex justify-between mt-1 text-xs text-text-secondary">
+              <div>Clinical: {domainMastery.clinical}%</div>
+              <div>Technical: {domainMastery.technical}%</div>
+              <div>Theory: {domainMastery.theoretical}%</div>
+            </div>
+          </div>
+          
           <div className="flex justify-between">
             <PixelButton
-              className="bg-blue-600 hover:bg-blue-500 text-white"
-              onClick={() => setShowSkillPanel(true)}
+              className={`bg-blue-600 hover:bg-blue-500 text-white ${!insightTransferred && 'animate-pixel-pulse'}`}
+              onClick={() => setShowConstellation(true)}
             >
-              {availablePoints > 0 ? `Study (${availablePoints} Points)` : 'Review Skills'}
+              {!insightTransferred
+                ? `View Constellation (${pendingInsights.length})`
+                : 'View Constellation'
+              }
             </PixelButton>
             
             <PixelButton
@@ -457,6 +548,15 @@ export default function HillHomeScene({ onComplete }: HillHomeSceneProps) {
               onClick={startDay}
             >
               Return to Hospital
+            </PixelButton>
+          </div>
+          
+          <div className="mt-2">
+            <PixelButton
+              className="w-full bg-surface hover:bg-surface-dark text-text-primary"
+              onClick={() => setShowSkillPanel(true)}
+            >
+              {availablePoints > 0 ? `Study (${availablePoints} Points)` : 'Review Skills'}
             </PixelButton>
           </div>
         </div>
@@ -610,6 +710,44 @@ export default function HillHomeScene({ onComplete }: HillHomeSceneProps) {
                     : 'Your hillside home has become a comfortable and functional space.'}
               </PixelText>
             </div>
+          </div>
+        </div>
+      )}
+      
+      {/* Knowledge Constellation Overlay */}
+      {showConstellation && (
+        <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-50">
+          <div className="relative max-w-4xl w-full h-[80vh]">
+            <ConstellationView 
+              onClose={() => setShowConstellation(false)}
+              width={800}
+              height={600}
+              interactive={true}
+              enableJournal={true}
+            />
+            
+            {/* Insight transfer controls */}
+            {!insightTransferred && pendingInsights.length > 0 && (
+              <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 bg-surface pixel-borders p-4 z-10">
+                <div className="flex items-center mb-2">
+                  <div className="w-3 h-3 rounded-full bg-clinical animate-pulse mr-2"></div>
+                  <PixelText className="text-clinical-light">
+                    {pendingInsights.length} New Insight{pendingInsights.length !== 1 ? 's' : ''} to Transfer
+                  </PixelText>
+                </div>
+                
+                <PixelButton
+                  className="bg-clinical hover:bg-clinical-light text-white w-full"
+                  onClick={handleTransferInsights}
+                  disabled={constellationAnimating}
+                >
+                  {constellationAnimating 
+                    ? 'Transferring...' 
+                    : `Transfer Insight${pendingInsights.length !== 1 ? 's' : ''} to Constellation`
+                  }
+                </PixelButton>
+              </div>
+            )}
           </div>
         </div>
       )}
