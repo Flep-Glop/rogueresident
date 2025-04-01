@@ -17,8 +17,6 @@
 │   │   ├── PlayerStats.tsx
 │   │   ├── StartScreen.tsx
 │   │   ├── VictoryScreen.tsx
-│   │   ├── animation
-│   │   │   └── AnimationSystem.tsx
 │   │   ├── audio
 │   │   │   └── SoundManager.tsx
 │   │   ├── challenges
@@ -28,8 +26,6 @@
 │   │   │   ├── CharacterInteractionNode.tsx
 │   │   │   ├── ClinicalChallenge.tsx
 │   │   │   ├── ClinicalChallengeIntro.tsx
-│   │   │   ├── EducationalChallenge.tsx
-│   │   │   ├── QAChallenge.tsx
 │   │   │   └── StorageCloset.tsx
 │   │   └── dialogue
 │   │       └── DialogueSystem.tsx
@@ -59,4 +55,4 @@
 ├── tailwind.config.js
 └── tsconfig.json
 
-11 directories, 48 files
+10 directories, 45 files
