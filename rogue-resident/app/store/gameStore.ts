@@ -116,7 +116,7 @@ export const useGameStore = create<GameState>((set, get) => ({
   ...initialState,
   
   startGame: () => {
-    // Generate a new map when starting the game
+    // Generate a new map
     const newMap = generateMap();
     console.log("Generated new map for game start:", newMap);
     
@@ -124,8 +124,8 @@ export const useGameStore = create<GameState>((set, get) => ({
       gameState: 'in_progress',
       gamePhase: 'day',
       map: newMap,
-      // Don't automatically select a node
-      currentNodeId: null, // Changed from newMap.startNodeId
+      // Always select start node in single-node testing mode
+      currentNodeId: newMap.startNodeId
     });
   },
   
@@ -326,18 +326,19 @@ export const useGameStore = create<GameState>((set, get) => ({
     });
   },
   
-  // Enhanced map functionality
   isNodeAccessible: (nodeId) => {
     const { map, completedNodeIds } = get();
     if (!map) return false;
     
-    // Entrance nodes are always accessible
+    // Find the node
     const node = map.nodes.find(n => n.id === nodeId);
-    if (node?.type === 'entrance') return true;
     
-    // A node is accessible if any node that connects to it has been completed
-    return map.nodes.some(node => 
-      node.connections.includes(nodeId) && completedNodeIds.includes(node.id)
+    // Special cases that are always accessible
+    if (node?.type === 'entrance' || node?.type === 'kapoorCalibration') return true;
+    
+    // Normal connection logic
+    return map.nodes.some(n => 
+      n.connections.includes(nodeId) && completedNodeIds.includes(n.id)
     );
   },
   
