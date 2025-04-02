@@ -75,7 +75,7 @@ export const MEDICAL_EQUIPMENT: Record<string, SpriteData> = {
   },
   'linac': {
     source: 'future',
-    position: gridToPosition('future', 12, 3, 2, 2),
+    position: gridToPosition('future', 12, 3, 1, 1),
     name: 'Linear Accelerator',
     description: 'LINAC 2, the Varian TrueBeam used primarily for head and neck treatments.'
   },

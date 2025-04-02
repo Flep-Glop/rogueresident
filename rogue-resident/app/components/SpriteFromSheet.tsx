@@ -40,20 +40,20 @@ export function SpriteFromSheet({
   const sheetHeight = totalHeight || knownSheet?.height || 320; // Default fallback
   
   return (
+    // In SpriteFromSheet.tsx
     <div className="inline-block overflow-hidden" style={{ width: width * scale, height: height * scale }}>
-      <div 
+    <div 
         className={`pixel-art-sprite ${className}`}
         style={{
-          width: width * scale,
-          height: height * scale,
-          backgroundImage: `url(${sheet})`,
-          backgroundPosition: `-${x}px -${y}px`,
-          backgroundSize: `${sheetWidth}px ${sheetHeight}px`,
-          imageRendering: 'pixelated', // Modern browsers
-          transform: 'translateZ(0)', // Force GPU acceleration for smoother scaling
+        width: width * scale,
+        height: height * scale,
+        backgroundImage: `url(${sheet})`,
+        backgroundPosition: `-${x * scale}px -${y * scale}px`,
+        backgroundSize: `${sheetWidth * scale}px ${sheetHeight * scale}px`,
+        imageRendering: 'pixelated',
         }}
         onClick={onClick}
-      />
+    />
     </div>
   );
 }
