@@ -1,17 +1,15 @@
 // app/components/SimplifiedMap.tsx
 'use client';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useGameStore } from '../store/gameStore';
 import { PixelText, PixelButton } from './PixelThemeProvider';
 import { useGameEffects } from './GameEffects';
-import { Node, NodeState, isNodeState } from '../types/map';
+import { Node, NodeState } from '../types/map';
 import Image from 'next/image';
 
 /**
- * SimplifiedMap component - Renders a focused node progression for prototype testing
- * 
- * This creates a visual rhythm that guides players through meaningful choice points
- * while maintaining narrative context through character associations.
+ * SimplifiedMap component - Renders a focused node progression with Supergiant-inspired
+ * visual language featuring asymmetric portraits, progressive visibility, and dynamic paths.
  */
 export default function SimplifiedMap() {
   const { 
@@ -27,6 +25,7 @@ export default function SimplifiedMap() {
   const { playSound, flashScreen } = useGameEffects();
   const [activeNode, setActiveNode] = useState<string | null>(null);
   const [hoveredNode, setHoveredNode] = useState<string | null>(null);
+  const mapContainerRef = useRef<HTMLDivElement>(null);
   
   // Our map data with narrative-driven node structure
   const mapNodes: Record<string, Node> = {
@@ -38,7 +37,7 @@ export default function SimplifiedMap() {
       type: 'entrance',
       position: { x: 50, y: 10 },
       connections: ['qa-1', 'clinical-1'],
-      isLocked: false,  // Added the missing isLocked property
+      isLocked: false,
       insightReward: 5
     },
     'qa-1': {
@@ -47,9 +46,9 @@ export default function SimplifiedMap() {
       description: 'Dr. Kapoor is conducting monthly output measurements on LINAC 2.',
       character: 'kapoor',
       type: 'qa',
-      position: { x: 30, y: 30 },
+      position: { x: 28, y: 33 }, // Slightly adjusted for organic placement
       connections: ['storage-1'],
-      isLocked: false,  // Added the missing isLocked property
+      isLocked: false,
       insightReward: 15
     },
     'clinical-1': {
@@ -58,9 +57,9 @@ export default function SimplifiedMap() {
       description: 'Review treatment plans with Dr. Garcia.',
       character: 'garcia',
       type: 'clinical',
-      position: { x: 70, y: 30 },
+      position: { x: 72, y: 28 }, // Slightly offset for composition
       connections: ['experimental-1'],
-      isLocked: false,  // Added the missing isLocked property
+      isLocked: false,
       insightReward: 15
     },
     'storage-1': {
@@ -69,9 +68,9 @@ export default function SimplifiedMap() {
       description: 'Jesse might have some useful items here.',
       character: 'jesse',
       type: 'storage',
-      position: { x: 25, y: 50 },
+      position: { x: 25, y: 52 }, // Position adjusted
       connections: ['qualification-1'],
-      isLocked: false,  // Added the missing isLocked property
+      isLocked: false,
       insightReward: 10
     },
     'experimental-1': {
@@ -80,9 +79,9 @@ export default function SimplifiedMap() {
       description: 'Dr. Quinn is testing a modified radiation detector with unusual results.',
       character: 'quinn',
       type: 'experimental',
-      position: { x: 75, y: 50 },
+      position: { x: 75, y: 50 }, // Slight adjustment
       connections: ['qualification-1'],
-      isLocked: false,  // Added the missing isLocked property
+      isLocked: false,
       insightReward: 20
     },
     'qualification-1': {
@@ -93,7 +92,7 @@ export default function SimplifiedMap() {
       type: 'qualification',
       position: { x: 50, y: 70 },
       connections: ['boss-ionix'],
-      isLocked: false,  // Added the missing isLocked property
+      isLocked: false,
       insightReward: 25
     },
     'boss-ionix': {
@@ -104,7 +103,7 @@ export default function SimplifiedMap() {
       type: 'boss-ionix',
       position: { x: 50, y: 90 },
       connections: [],
-      isLocked: false,  // Added the missing isLocked property
+      isLocked: false,
       insightReward: 50
     }
   };
@@ -117,18 +116,36 @@ export default function SimplifiedMap() {
     }
   }, [currentNodeId, activeNode]);
   
-  // Handle node selection
+  // Handle node selection with enhanced feedback
   const handleNodeSelect = (nodeId: string) => {
     // Skip if this node is not accessible yet
     if (!isNodeAccessible(nodeId)) return;
     
     setActiveNode(nodeId);
     
-    // Play selection sound
+    // Enhanced selection feedback
     if (playSound) playSound('node-select');
     
-    // Visual flash effect
-    if (flashScreen) flashScreen('blue');
+    // Ripple effect for selection
+    if (flashScreen) {
+      const nodeType = mapNodes[nodeId].type;
+      const color = nodeType === 'boss-ionix' ? 'red' : 
+                    nodeType === 'qualification' ? 'yellow' : 'blue';
+      flashScreen(color);
+    }
+    
+    // Node selection animation
+    const nodeElement = document.getElementById(`node-${nodeId}`);
+    if (nodeElement) {
+      nodeElement.animate(
+        [
+          { transform: 'scale(1) translateY(0)', filter: 'brightness(1)' },
+          { transform: 'scale(1.15) translateY(-5px)', filter: 'brightness(1.3)' },
+          { transform: 'scale(1) translateY(0)', filter: 'brightness(1)' }
+        ],
+        { duration: 400, easing: 'cubic-bezier(0.2, 0, 0.2, 1)' }
+      );
+    }
     
     // Update game state with selected node
     setCurrentNode(nodeId);
@@ -164,66 +181,83 @@ export default function SimplifiedMap() {
     }
   };
   
-  // Get connection visual style
+  // Get connection visual style with enhanced animation
   const getConnectionStyle = (sourceId: string, targetId: string) => {
     const sourceCompleted = isNodeCompleted(sourceId);
     const targetAccessible = isNodeAccessible(targetId);
+    const sourceState = getNodeState(sourceId);
+    const targetState = getNodeState(targetId);
     
-    let pathColor = 'rgba(75, 85, 99, 0.5)'; // Default gray
+    let pathColor = 'rgba(75, 85, 99, 0.3)'; // Dimmer default 
     let pathWidth = 2;
-    let pathOpacity = 0.5;
+    let pathOpacity = 0.3;
     let pathClass = '';
+    let glowEffect = '';
     
     if (sourceCompleted && targetAccessible) {
-      // Completed and next node is available - highlight this path
-      pathColor = 'rgba(52, 211, 153, 0.8)'; // Success green
+      // Highlight available path with pulsing glow
+      pathColor = 'rgba(52, 211, 153, 0.9)';
       pathWidth = 3;
-      pathOpacity = 0.8;
-      pathClass = 'animate-pulse-slow';
+      pathOpacity = 0.9;
+      pathClass = 'animate-pulse-path';
+      glowEffect = 'filter: drop-shadow(0 0 3px rgba(52, 211, 153, 0.5));';
     } else if (sourceCompleted) {
-      // Completed but next node isn't accessible yet (requires multiple paths)
-      pathColor = 'rgba(52, 211, 153, 0.5)'; // Dimmer success
+      // Completed but next node isn't accessible yet
+      pathColor = 'rgba(52, 211, 153, 0.6)';
       pathWidth = 2;
-      pathOpacity = 0.6;
-    }
-    
-    // Runtime flag for future state - avoids type comparison errors
-    const sourceIsFuture = getNodeState(sourceId) === 'future';
-    const targetIsFuture = getNodeState(targetId) === 'future';
-    
-    if (sourceIsFuture || targetIsFuture) {
-      // Future connections are dimmer
-      pathOpacity = 0.3;
+      pathOpacity = 0.7;
+    } else if (sourceState === 'active' && targetState === 'accessible') {
+      // Current possible route
+      pathColor = 'rgba(79, 107, 187, 0.8)';
+      pathWidth = 2.5;
+      pathOpacity = 0.8;
+      pathClass = 'animate-pulse-path-subtle';
+    } else if (sourceState === 'future' || targetState === 'future') {
+      // Future connections are very dim
+      pathOpacity = 0.2;
+    } else if (sourceState === 'locked' || targetState === 'locked') {
+      // Almost invisible
+      pathOpacity = 0.05;
     }
     
     return {
       color: pathColor,
       width: pathWidth,
       opacity: pathOpacity,
-      className: pathClass
+      className: pathClass,
+      glowEffect
     };
   };
   
-  // Get node classes based on status
+  // Get node classes based on status with enhanced visual distinction
   const getNodeClasses = (nodeId: string, node: Node): string => {
     const state = getNodeState(nodeId);
     const isActive = state === 'active';
     const isHovered = hoveredNode === nodeId;
     
-    // Runtime flags to avoid TypeScript comparison errors
-    const isNodeFuture = state === 'future';
-    const isNodeLocked = state === 'locked';
-    const isInteractive = state === 'active' || state === 'accessible';
-    
+    // Base classes with transition
     let classes = 'transition-all duration-300 relative';
     
-    // Node size and shadow based on state
-    if (isActive) {
-      classes += ' transform scale-110 z-20 shadow-pixel-lg';
-    } else if (isInteractive) {
-      classes += ' hover:scale-105 z-10 shadow-pixel cursor-pointer';
-    } else {
-      classes += ' opacity-50 grayscale z-0';
+    // Visual variations by state - enhanced
+    switch (state) {
+      case 'active':
+        classes += ' transform scale-110 z-30 shadow-pixel-lg brightness-110';
+        break;
+      case 'completed':
+        classes += ' z-20 shadow-pixel opacity-90';
+        break;
+      case 'accessible':
+        classes += ' hover:scale-105 z-10 shadow-pixel cursor-pointer';
+        if (isHovered) classes += ' brightness-110';
+        break;
+      case 'future':
+        // Future nodes are significantly muted but still visible
+        classes += ' opacity-40 grayscale z-0 blur-[1px]';
+        break;
+      case 'locked':
+        // Locked nodes barely visible, creating progressive revealing effect
+        classes += ' opacity-15 grayscale z-0 blur-[2px]';
+        break;
     }
     
     // Node type styles
@@ -244,12 +278,11 @@ export default function SimplifiedMap() {
     return classes;
   };
   
-  // Render a single node
+  // Render a single node with asymmetric character portrait
   const renderNode = (nodeId: string) => {
     const node = mapNodes[nodeId];
     const state = getNodeState(nodeId);
     
-    // Runtime flags for TypeScript type safety
     const isNodeFuture = state === 'future';
     const isNodeLocked = state === 'locked';
     const isActive = state === 'active';
@@ -258,78 +291,137 @@ export default function SimplifiedMap() {
     const isInteractive = isActive || isAccessible;
     const isHovered = hoveredNode === nodeId && isInteractive;
     
+    // Character portrait has higher z-index to break out of the node container
+    const portraitZIndex = isActive ? 40 : isAccessible ? 30 : isCompleted ? 25 : 20;
+    
+    // Generate a unique node ID for DOM selection
+    const uniqueNodeId = `node-${nodeId}`;
+    
+    // Only show partial info for future nodes, and none for locked nodes
+    const showContent = !isNodeLocked;
+    const showFullContent = !isNodeFuture && !isNodeLocked;
+    
     return (
-      <div 
-        key={nodeId}
-        className={`w-64 h-72 pixel-borders ${getNodeClasses(nodeId, node)}`}
-        style={{ borderColor: getNodeColor(node) }}
-        onClick={() => handleNodeSelect(nodeId)}
-        onMouseEnter={() => setHoveredNode(nodeId)}
-        onMouseLeave={() => setHoveredNode(null)}
-      >
-        {/* Node content */}
-        <div className="p-3 h-full flex flex-col">
-          {/* Character portrait */}
-          <div className="relative h-24 mb-2 overflow-hidden rounded-lg">
-            <Image
-              src={getCharacterImage(node.character)}
-              alt={node.character || 'Character'}
-              fill
-              className="object-cover"
-            />
+        <div 
+          id={uniqueNodeId}
+          key={nodeId}
+          className={`w-56 h-20 relative ${getNodeClasses(nodeId, node)}`} // Dramatically shorter height
+          onClick={() => handleNodeSelect(nodeId)}
+          onMouseEnter={() => {
+            setHoveredNode(nodeId);
+            if (isInteractive && playSound) playSound('node-hover');
+          }}
+          onMouseLeave={() => setHoveredNode(null)}
+        >
+          {/* Container - jet black with subtle highlight */}
+          <div 
+            className="absolute inset-0 overflow-hidden" 
+            style={{ 
+              background: 'rgba(10, 12, 16, 0.92)', // Near black for that stark contrast
+              borderLeft: `3px solid ${getNodeColor(node)}`,
+              boxShadow: isActive || isHovered 
+                ? `0 0 12px ${getNodeColor(node)}70, inset 0 0 4px ${getNodeColor(node)}50`
+                : 'none',
+            }}
+          >
+            {/* Highlight sweep effect */}
+            <div 
+              className="absolute inset-0 node-highlight-glow"
+              style={{ opacity: isActive || isHovered ? 0.7 : 0 }}
+            ></div>
+          </div>
+      
+          {/* Character positioned at bottom-left breaking out of node */}
+          <div 
+            className="absolute left-0 bottom-0 transform -translate-x-1/3 translate-y-1/4 z-40"
+            style={{ 
+              width: '80px',
+              height: '80px', 
+            }}
+          >
+            <div 
+              className={`w-full h-full rounded-full overflow-hidden border-2 transition-all duration-300`}
+              style={{ 
+                borderColor: getNodeColor(node),
+                boxShadow: isActive || isHovered ? `0 0 10px ${getNodeColor(node)}80` : 'none',
+              }}
+            >
+              {!isNodeLocked && (
+                <Image
+                  src={getCharacterImage(node.character)}
+                  alt={node.character || 'Character'}
+                  fill
+                  className="object-cover scale-110"
+                />
+              )}
+            </div>
             
-            {/* Completion indicator */}
-            {isCompleted && (
-              <div className="absolute top-0 right-0 bg-success p-1 rounded-bl-lg">
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-white" viewBox="0 0 20 20" fill="currentColor">
-                  <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                </svg>
-              </div>
-            )}
+            {/* Character "ground shadow" for visual anchoring */}
+            <div 
+              className="absolute -bottom-1 left-1/2 transform -translate-x-1/2 w-3/4 h-1 rounded-full blur-sm"
+              style={{ 
+                background: `radial-gradient(ellipse, ${getNodeColor(node)}90 0%, transparent 70%)`,
+                opacity: 0.4
+              }}
+            ></div>
           </div>
           
-          {/* Node title */}
-          <PixelText className={`text-base mb-1 ${
-            node.type === 'boss' || node.type === 'boss-ionix' ? 'text-boss-light' :
-            node.character === 'kapoor' ? 'text-clinical-light' :
-            node.character === 'quinn' ? 'text-educational-light' :
-            node.character === 'jesse' ? 'text-qa-light' :
-            'text-clinical-light'
-          }`}>
-            {!isNodeFuture ? node.title : '???'}
-          </PixelText>
-          
-          {/* Node description - only when node is not future state */}
-          {!isNodeFuture && (
-            <PixelText className="text-xs text-text-secondary mb-3">
-              {node.description}
+          {/* Content - just title and minimal info */}
+          <div className="absolute inset-0 flex flex-col justify-center pl-16 pr-3">
+            <PixelText 
+              className={`
+                text-sm truncate font-medium 
+                ${isActive || isHovered ? 'text-white' : 'text-gray-300'}
+                transition-colors duration-300
+              `}
+            >
+              {showContent ? node.title : '???'}
             </PixelText>
-          )}
-          
-          {/* Rewards indicator */}
-          <div className="mt-auto">
-            <div className="flex items-center space-x-2">
-              {!isNodeFuture && (
-                <div className="bg-surface-dark px-2 py-1 rounded-sm text-xs">
-                  <PixelText>
-                    <span className="text-clinical-light">+{node.insightReward}</span> Insight
-                  </PixelText>
-                </div>
-              )}
+            
+            {/* Just the minimal type indicator - no badge */}
+            <div className="flex items-center mt-1">
+              <div 
+                className="w-2 h-2 rounded-full mr-2" 
+                style={{ backgroundColor: getNodeColor(node) }}
+              ></div>
+              <PixelText className="text-xs text-gray-400">
+                {node.type === 'qa' && 'QA'}
+                {node.type === 'clinical' && 'Clinical'}
+                {node.type === 'educational' && 'Ed'}
+                {node.type === 'experimental' && 'Exp'}
+                {node.type === 'storage' && 'Storage'}
+                {node.type === 'qualification' && 'Qual'}
+                {(node.type === 'boss' || node.type === 'boss-ionix') && 'Boss'}
+                {node.type === 'entrance' && 'Start'}
+              </PixelText>
               
-              {(node.type === 'boss' || node.type === 'boss-ionix') && (
-                <div className="bg-surface-dark px-2 py-1 rounded-sm text-xs">
-                  <PixelText className="text-boss-light">Boss</PixelText>
+              {/* Insight reward as a subtle indicator */}
+              {showFullContent && (
+                <div className="ml-auto mr-1">
+                  <span className="text-xs" style={{ color: getNodeColor(node) }}>
+                    +{node.insightReward}
+                  </span>
                 </div>
               )}
             </div>
           </div>
+          
+          {/* Completion indicator - more subtle and positioned differently */}
+          {isCompleted && (
+            <div 
+              className="absolute top-1/2 right-2 transform -translate-y-1/2 z-30"
+              style={{ color: getNodeColor(node) }}
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+              </svg>
+            </div>
+          )}
         </div>
-      </div>
-    );
+      );
   };
   
-  // Render the connections between nodes
+  // Render the connections between nodes with enhanced visual effects
   const renderConnections = () => {
     return Object.values(mapNodes).flatMap(node => 
       node.connections.map((targetId: string, index: number) => {
@@ -346,7 +438,7 @@ export default function SimplifiedMap() {
         const angle = Math.atan2(targetY - sourceY, targetX - sourceX) * 180 / Math.PI;
         const length = Math.sqrt(Math.pow(targetX - sourceX, 2) + Math.pow(targetY - sourceY, 2));
         
-        // Connection styling
+        // Connection styling with enhanced visual effects
         const style = getConnectionStyle(node.id, targetId);
         
         return (
@@ -363,7 +455,9 @@ export default function SimplifiedMap() {
               transform: `rotate(${angle}deg)`,
               transformOrigin: 'top left',
               scale: `${style.width} 1`,
-              zIndex: 5
+              zIndex: 5,
+              filter: node.id === activeNode || targetId === activeNode ? 
+                'drop-shadow(0 0 5px rgba(255,255,255,0.3))' : 'none'
             }}
           />
         );
@@ -371,20 +465,34 @@ export default function SimplifiedMap() {
     ).filter(Boolean); // Filter out null connections
   };
   
-  // Handle end day click
+  // Handle end day click with enhanced feedback
   const handleEndDay = () => {
     if (playSound) playSound('click');
     if (flashScreen) flashScreen('white');
     
+    // Zoom out effect on the map container
+    if (mapContainerRef.current) {
+      mapContainerRef.current.animate(
+        [
+          { transform: 'scale(1)', filter: 'brightness(1)' },
+          { transform: 'scale(0.95)', filter: 'brightness(1.5)' }
+        ],
+        { duration: 400, easing: 'cubic-bezier(0.4, 0, 0.2, 1)' }
+      );
+    }
+    
     setTimeout(() => {
       completeDay();
-    }, 300);
+    }, 400);
   };
   
   return (
-    <div className="h-full w-full p-8 flex flex-col items-center justify-center bg-background starfield-bg">
-      <div className="text-center mb-8">
-        <PixelText className="text-4xl text-white font-pixel-heading mb-2">
+    <div 
+      ref={mapContainerRef}
+      className="h-full w-full p-8 flex flex-col items-center justify-center bg-background starfield-bg"
+    >
+      <div className="text-center mb-8 relative">
+        <PixelText className="text-4xl text-white font-pixel-heading mb-2 glow-text">
           Medical Physics Department
         </PixelText>
         <PixelText className="text-lg text-blue-300">
@@ -403,7 +511,7 @@ export default function SimplifiedMap() {
           return (
             <div
               key={nodeId}
-              className="absolute transform -translate-x-1/2 -translate-y-1/2"
+              className="absolute transform -translate-x-1/2 -translate-y-1/2 transition-all duration-300"
               style={{
                 left: `${node.position.x}%`,
                 top: `${node.position.y}%`,
@@ -415,7 +523,7 @@ export default function SimplifiedMap() {
         })}
       </div>
       
-      {/* Persistent floating End Day button */}
+      {/* Persistent floating End Day button with enhanced styling */}
       <div className="fixed bottom-6 left-1/2 transform -translate-x-1/2 bg-surface/90 backdrop-blur-sm pixel-borders-thin px-4 py-2 flex items-center space-x-4 z-30">
         <div className="flex items-center">
           <span className="px-2 py-1 bg-danger text-white text-sm mr-2">❤️ {player.health}/{player.maxHealth}</span>
@@ -423,27 +531,30 @@ export default function SimplifiedMap() {
         </div>
         
         <PixelButton
-          className="bg-surface hover:bg-clinical text-text-primary px-4 py-2"
+          className="bg-surface hover:bg-clinical text-text-primary px-4 py-2 relative overflow-hidden group"
           onClick={handleEndDay}
         >
-          End Day
+          <span className="relative z-10">End Day</span>
+          <span className="absolute inset-0 bg-clinical opacity-0 group-hover:opacity-100 transition-opacity duration-300"></span>
         </PixelButton>
       </div>
       
-      {/* Map legend */}
-      <div className="absolute bottom-20 right-4 bg-surface/80 p-2 text-xs pixel-borders-thin">
-        <PixelText>Map Progress</PixelText>
-        <div className="flex items-center space-x-1 mt-1">
-          <div className="w-3 h-3 bg-success"></div>
-          <PixelText className="text-text-secondary">Completed</PixelText>
-        </div>
-        <div className="flex items-center space-x-1 mt-1">
-          <div className="w-3 h-3 bg-clinical"></div>
-          <PixelText className="text-text-secondary">Available</PixelText>
-        </div>
-        <div className="flex items-center space-x-1 mt-1">
-          <div className="w-3 h-3 bg-gray-700"></div>
-          <PixelText className="text-text-secondary">Future</PixelText>
+      {/* Enhanced map legend with better visual hierarchy */}
+      <div className="absolute bottom-20 right-4 bg-surface/80 backdrop-blur-sm p-3 text-xs pixel-borders-thin z-40">
+        <PixelText className="font-semibold mb-2">Map Progress</PixelText>
+        <div className="space-y-2">
+          <div className="flex items-center space-x-2">
+            <div className="w-3 h-3 bg-success rounded-sm"></div>
+            <PixelText className="text-text-secondary">Completed</PixelText>
+          </div>
+          <div className="flex items-center space-x-2">
+            <div className="w-3 h-3 bg-clinical rounded-sm animate-pulse-slow"></div>
+            <PixelText className="text-text-secondary">Available</PixelText>
+          </div>
+          <div className="flex items-center space-x-2">
+            <div className="w-3 h-3 bg-gray-700 rounded-sm"></div>
+            <PixelText className="text-text-secondary">Future</PixelText>
+          </div>
         </div>
       </div>
     </div>

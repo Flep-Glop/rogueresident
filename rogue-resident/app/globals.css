@@ -695,3 +695,209 @@ img.pixel-art,
   min-height: 100%;
   position: relative;
 }
+
+
+/* Add these to your globals.css file */
+
+/* Enhanced animations for node interactions */
+@keyframes pulse-path {
+  0%, 100% { opacity: 0.7; filter: drop-shadow(0 0 2px rgba(52, 211, 153, 0.2)); }
+  50% { opacity: 1; filter: drop-shadow(0 0 5px rgba(52, 211, 153, 0.4)); }
+}
+
+.animate-pulse-path {
+  animation: pulse-path 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+@keyframes pulse-path-subtle {
+  0%, 100% { opacity: 0.6; filter: drop-shadow(0 0 1px rgba(79, 107, 187, 0.1)); }
+  50% { opacity: 0.9; filter: drop-shadow(0 0 3px rgba(79, 107, 187, 0.3)); }
+}
+
+.animate-pulse-path-subtle {
+  animation: pulse-path-subtle 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* Enhanced text glow effect */
+.glow-text {
+  text-shadow: 0 0 5px rgba(255, 255, 255, 0.3);
+  animation: text-glow 4s ease-in-out infinite;
+}
+
+@keyframes text-glow {
+  0%, 100% { text-shadow: 0 0 5px rgba(255, 255, 255, 0.3); }
+  50% { text-shadow: 0 0 15px rgba(100, 155, 255, 0.6); }
+}
+
+/* Enhanced node container with lighting effects */
+.node-container {
+  background: linear-gradient(135deg, 
+    rgba(255,255,255,0.05) 0%, 
+    rgba(255,255,255,0) 50%, 
+    rgba(0,0,0,0.1) 100%
+  );
+  box-shadow: 
+    inset 0 1px 0 0 rgba(255,255,255,0.15),
+    inset -1px -1px 0 0 rgba(0,0,0,0.3),
+    0 4px 8px rgba(0,0,0,0.5);
+}
+
+/* Visual feedback for map interactions */
+@keyframes node-select-ripple {
+  0% { 
+    transform: scale(0.5); 
+    opacity: 0.8; 
+  }
+  100% { 
+    transform: scale(2); 
+    opacity: 0; 
+  }
+}
+
+.node-select-ripple {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 50px;
+  height: 50px;
+  border-radius: 50%;
+  background-color: rgba(255, 255, 255, 0.3);
+  transform: translate(-50%, -50%) scale(0.5);
+  animation: node-select-ripple 0.6s ease-out forwards;
+}
+
+/* Enhanced button with sweep effect */
+.enhanced-button {
+  position: relative;
+  overflow: hidden;
+}
+
+.enhanced-button::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(to right, 
+    rgba(255,255,255,0) 0%, 
+    rgba(255,255,255,0.2) 50%, 
+    rgba(255,255,255,0) 100%);
+  transform: skewX(-25deg);
+  transition: left 0.5s ease-out;
+}
+
+.enhanced-button:hover::after {
+  left: 100%;
+}
+
+/* Character-specific glow effects */
+.glow-kapoor {
+  box-shadow: 0 0 10px rgba(78, 131, 189, 0.3);
+}
+
+.glow-quinn {
+  box-shadow: 0 0 10px rgba(44, 146, 135, 0.3);
+}
+
+.glow-jesse {
+  box-shadow: 0 0 10px rgba(90, 105, 120, 0.3);
+}
+
+.glow-garcia {
+  box-shadow: 0 0 10px rgba(60, 138, 117, 0.3);
+}
+
+/* Add more precise blur utilities */
+.blur-sm {
+  filter: blur(1px);
+}
+
+.blur-md {
+  filter: blur(2px);
+}
+
+.blur-lg {
+  filter: blur(4px);
+}
+
+/* Node state transitions */
+.node-state-transition {
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+              opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+              filter 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+              box-shadow 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Enhanced ring effects for focus states */
+.ring-glow {
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.2),
+              0 0 15px rgba(255, 255, 255, 0.2);
+}
+
+/* Pixel noise overlay for retro effect */
+.pixel-noise {
+  position: absolute;
+  inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
+  opacity: 0.05;
+  pointer-events: none;
+  mix-blend-mode: overlay;
+}
+
+/* Enhanced starfield animation */
+@keyframes subtle-stars {
+  0% { background-position: 0px 0px, 25px 25px, 50px 50px; }
+  100% { background-position: 100px 100px, 125px 125px, 150px 150px; }
+}
+
+.animate-stars {
+  animation: subtle-stars 120s linear infinite;
+}
+
+/* Line clamp utilities with better cross-browser support */
+.line-clamp-1 {
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-clamp: 1; /* Standard property */
+}
+
+.line-clamp-2 {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-clamp: 2; /* Standard property */
+}
+
+.line-clamp-3 {
+  display: -webkit-box;
+  -webkit-line-clamp: 3; 
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-clamp: 3;
+}
+
+/* Add to your CSS for that slick highlight effect */
+.node-highlight-glow {
+  background: linear-gradient(90deg, 
+    transparent 0%,
+    rgba(255, 255, 255, 0.07) 49%, 
+    rgba(255, 255, 255, 0.1) 50%,
+    rgba(255, 255, 255, 0.07) 51%,
+    transparent 100%
+  );
+  opacity: 0;
+  transition: opacity 0.3s ease-out;
+}
+
+.node-container:hover .node-highlight-glow,
+.node-active .node-highlight-glow {
+  opacity: 1;
+}
+
