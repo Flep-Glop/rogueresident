@@ -26,14 +26,14 @@ export const KNOWLEDGE_DOMAINS = {
     textClass: 'text-qa-light',
     icon: '🔧'
   },
-  'theoretical': {
-    name: 'Physics Theory',
+  'radiological': {
+    name: 'Radiation Physics',
     color: '#2c9287',
     lightColor: '#3db3a6',
     darkColor: '#1f6e66',
     bgClass: 'bg-educational',
     textClass: 'text-educational-light',
-    icon: '🔬'
+    icon: '☢️'
   },
   'general': {
     name: 'General Knowledge',
@@ -73,18 +73,20 @@ interface ConstellationViewProps {
   interactive?: boolean;
   enableJournal?: boolean;
   activeNodes?: string[]; // IDs of nodes to highlight (newly discovered/updated)
+  fullscreen?: boolean; // Control fullscreen mode
 }
 
 /**
- * ConstellationView - The interactive knowledge visualization system
+ * ConstellationView - The interactive knowledge visualization system for medical physics concepts
  */
 export default function ConstellationView({ 
   onClose, 
-  width = 800, 
-  height = 600, 
+  width, 
+  height, 
   interactive = true,
   enableJournal = true,
-  activeNodes = []
+  activeNodes = [],
+  fullscreen = true // Default to fullscreen
 }: ConstellationViewProps) {
   // CORE REFS
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -118,6 +120,12 @@ export default function ConstellationView({
   const [zoomLevel, setZoomLevel] = useState(0.8);
   const [cameraPosition, setCameraPosition] = useState({ x: 0, y: 0 });
   
+  // INTERACTION STATE
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+  const [isConnecting, setIsConnecting] = useState(false);
+  const [dimensions, setDimensions] = useState({ width: 800, height: 600 });
+  
   // VISUAL EFFECTS STATE
   const [particleEffects, setParticleEffects] = useState<Array<{
     id: string,
@@ -132,6 +140,38 @@ export default function ConstellationView({
     opacity?: number,
     velocity?: { x: number, y: number }
   }>>([]);
+  
+  // Initialize dimensions based on window size or provided dimensions
+  useEffect(() => {
+    if (fullscreen) {
+      const updateDimensions = () => {
+        // Calculate available space (accounting for margins/padding)
+        // Using window.innerWidth and window.innerHeight as fallbacks
+        const containerWidth = containerRef.current?.parentElement?.clientWidth || window.innerWidth;
+        const containerHeight = containerRef.current?.parentElement?.clientHeight || window.innerHeight;
+        
+        // Subtract some padding to avoid touching the edge of the screen
+        const padding = 24;
+        setDimensions({
+          width: Math.max(800, containerWidth - padding * 2),
+          height: Math.max(600, containerHeight - padding * 2)
+        });
+      };
+      
+      // Set initial dimensions
+      updateDimensions();
+      
+      // Update dimensions on window resize
+      window.addEventListener('resize', updateDimensions);
+      
+      return () => {
+        window.removeEventListener('resize', updateDimensions);
+      };
+    } else if (width && height) {
+      // Use provided dimensions if not fullscreen
+      setDimensions({ width, height });
+    }
+  }, [fullscreen, width, height]);
   
   // MEMOIZE DATA FOR RENDERING
   // Memoize discovered nodes 
@@ -259,7 +299,7 @@ export default function ConstellationView({
       // For demonstration, we'll use placeholder data
       setRecentInsights([
         { conceptId: 'ionization-chambers', amount: 15 },
-        { conceptId: 'quantum-effects', amount: 30 }
+        { conceptId: 'radiation-safety', amount: 30 }
       ]);
     }
   }, [journalEntries]);
@@ -664,11 +704,7 @@ export default function ConstellationView({
     });
   };
 
-  // Mouse state for dragging
-  const [isDragging, setIsDragging] = useState(false);
-  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
-  
-  // INTERACTION HANDLERS - Memoize to prevent re-creation
+  // INTERACTION HANDLERS - With left-click drag panning
 
   // Handle mouse movement for node hover and dragging
   const handleMouseMove = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
@@ -721,15 +757,44 @@ export default function ConstellationView({
     // Update active node
     setActiveNode(hoveredNode || null);
     
-    // Update cursor style
-    canvas.style.cursor = hoveredNode ? 'pointer' : isDragging ? 'grabbing' : 'grab';
+    // Update cursor style based on context
+    if (hoveredNode) {
+      canvas.style.cursor = 'pointer';
+    } else if (isDragging) {
+      canvas.style.cursor = 'grabbing';
+    } else {
+      canvas.style.cursor = 'grab';
+    }
   }, [isDragging, dragStart, cameraPosition, zoomLevel, discoveredNodes]);
 
-  // Handle mouse down for dragging
+  // Handle mouse down for both left-click interactions and dragging
   const handleMouseDown = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
     if (!canvasRef.current || !interactive || !isComponentMounted.current) return;
     
-    // Middle button or right button for panning
+    // Determine if we're over a node
+    const isOverNode = activeNode != null;
+    
+    // Use left button (0) for both node selection and dragging
+    if (e.button === 0) {
+      if (!isOverNode) {
+        // Start dragging if not over a node
+        setIsDragging(true);
+        setDragStart({
+          x: e.clientX,
+          y: e.clientY
+        });
+        
+        if (canvasRef.current) {
+          canvasRef.current.style.cursor = 'grabbing';
+        }
+      } else {
+        // Note: We'll handle node selection in the click handler
+        // This prevents both dragging and node selection at the same time
+        setIsConnecting(true);
+      }
+    }
+    
+    // Middle button (1) or right button (2) for panning (keep existing behavior)
     if (e.button === 1 || e.button === 2) {
       e.preventDefault();
       setIsDragging(true);
@@ -742,25 +807,26 @@ export default function ConstellationView({
         canvasRef.current.style.cursor = 'grabbing';
       }
     }
-  }, [interactive]);
+  }, [interactive, activeNode]);
   
   // Handle mouse up to end dragging
   const handleMouseUp = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
     if (!isComponentMounted.current) return;
     
-    if (e.button === 1 || e.button === 2) {
-      setIsDragging(false);
-      
-      if (canvasRef.current) {
-        canvasRef.current.style.cursor = activeNode ? 'pointer' : 'grab';
-      }
+    // End drag regardless of which button was released
+    setIsDragging(false);
+    setIsConnecting(false);
+    
+    if (canvasRef.current) {
+      canvasRef.current.style.cursor = activeNode ? 'pointer' : 'grab';
     }
   }, [activeNode]);
 
-  // Handle node click
+  // Handle node click - Modified to work with the improved dragging
   const handleClick = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
     if (!canvasRef.current || !activeNode || !interactive || isDragging || !isComponentMounted.current) return;
     
+    // Handle node interaction for connection making
     if (pendingConnection) {
       // Complete connection if clicking a different node
       if (pendingConnection !== activeNode.id) {
@@ -890,25 +956,31 @@ export default function ConstellationView({
     onClose();
   }, [onClose]);
   
-  // COMPONENT RENDERING
-
   return (
     <div 
       ref={containerRef}
       className="relative bg-black pixel-borders"
-      style={{ width, height }}
+      style={{ 
+        width: dimensions.width, 
+        height: dimensions.height,
+        maxWidth: '100%',
+        maxHeight: '100%'
+      }}
     >
       {/* Main canvas */}
       <canvas
         ref={canvasRef}
-        width={width}
-        height={height}
+        width={dimensions.width}
+        height={dimensions.height}
         className="w-full h-full"
         onMouseMove={handleMouseMove}
         onClick={handleClick}
         onMouseDown={handleMouseDown}
         onMouseUp={handleMouseUp}
-        onMouseLeave={() => setIsDragging(false)}
+        onMouseLeave={() => {
+          setIsDragging(false);
+          setIsConnecting(false);
+        }}
         onWheel={handleWheel}
         onContextMenu={(e) => e.preventDefault()} // Prevent context menu on right-click
       />
@@ -1154,8 +1226,9 @@ export default function ConstellationView({
               <div>
                 <PixelText className="text-educational-light mb-1">Navigation Controls</PixelText>
                 <PixelText className="text-sm text-text-secondary">
+                  • Click and drag anywhere to pan the view
                   • Use the mouse wheel to zoom in and out
-                  • Right-click and drag to pan the view
+                  • Right-click and drag also works for panning
                   • Use the +/- buttons to adjust zoom level
                   • Click the ↺ button to reset zoom and position
                 </PixelText>
@@ -1166,7 +1239,7 @@ export default function ConstellationView({
               <PixelText className="text-clinical-light mb-1">Pro Tip</PixelText>
               <PixelText className="text-sm text-text-secondary">
                 The most powerful insights come from connecting concepts across different domains.
-                Try connecting clinical knowledge with theoretical understanding!
+                Try connecting clinical knowledge with radiation physics principles!
               </PixelText>
             </div>
           </div>
