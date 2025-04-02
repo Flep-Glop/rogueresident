@@ -5,7 +5,6 @@
 │   │   ├── CompetencyBinder.tsx
 │   │   ├── GameContainer.tsx
 │   │   ├── GameEffects.tsx
-│   │   ├── GameMap.tsx
 │   │   ├── GameOver.tsx
 │   │   ├── HillHomeScene.tsx
 │   │   ├── Inventory.tsx

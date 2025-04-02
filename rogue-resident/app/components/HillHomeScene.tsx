@@ -10,11 +10,11 @@ import ConstellationView from './knowledge/ConstellationView';
 /**
  * HillHomeScene - Night phase component with constellation focus
  * 
- * This version removes the skill section and emphasizes the constellation
- * as the primary progression system
+ * This version emphasizes the constellation as the primary progression system
+ * and creates a meaningful contrast to the hospital environment
  */
 export default function HillHomeScene({ onComplete }: { onComplete: () => void }) {
-  const { player, completedNodeIds, inventory, updateInsight } = useGameStore();
+  const { player, completedNodeIds, inventory, currentDay } = useGameStore();
   const { 
     pendingInsights, 
     transferInsights, 
@@ -38,22 +38,21 @@ export default function HillHomeScene({ onComplete }: { onComplete: () => void }
     setInsightTransferred(pendingInsights.length === 0);
   }, [completedNodeIds, pendingInsights.length]);
   
-  // Start day phase
+  // Start day phase with more deliberate transition
   const startDay = () => {
     if (playSound) playSound('click');
-    if (flashScreen) flashScreen('white');
     
     // Check if there are pending insights that haven't been transferred
     if (pendingInsights.length > 0 && !insightTransferred) {
-      if (confirm("You have unreviewed constellation insights. Continue anyway?")) {
-        setTimeout(() => {
-          onComplete();
-        }, 300);
+      // Create a more styled confirmation instead of browser confirm
+      const shouldProceed = confirm("You have unreviewed constellation insights. Continue anyway?");
+      if (shouldProceed) {
+        // Proceed with transition
+        onComplete();
       }
     } else {
-      setTimeout(() => {
-        onComplete();
-      }, 300);
+      // No pending insights, proceed with transition
+      onComplete();
     }
   };
   
@@ -129,16 +128,32 @@ export default function HillHomeScene({ onComplete }: { onComplete: () => void }
           </span>
         </div>
         
-        {/* Start day button */}
+        {/* Start day button - made more visual and narrative */}
         <div 
-          className="p-8 bg-surface-dark pixel-borders flex flex-col items-center justify-center min-h-[200px] transition-all duration-300 hover:bg-surface cursor-pointer col-span-2"
+          className="p-8 bg-surface-dark pixel-borders flex flex-col items-center justify-center min-h-[200px] transition-all duration-300 hover:bg-surface cursor-pointer col-span-2 group relative overflow-hidden"
           onClick={startDay}
         >
           <div className="text-4xl mb-4">🏥</div>
           <PixelText className="text-xl mb-2">Return to Hospital</PixelText>
-          <span className="px-3 py-1 bg-gray-700 text-white text-sm mt-2">
-            Start Day
+          <span className="px-3 py-1 bg-clinical text-white text-sm mt-2 group-hover:bg-clinical-light transition-colors">
+            Begin Day {currentDay}
           </span>
+          
+          {/* Subtle indicator about where you're going */}
+          <div className="absolute bottom-3 right-3 opacity-50 text-xs">
+            <PixelText className="text-text-secondary">
+              Morning awaits...
+            </PixelText>
+          </div>
+          
+          {/* Warning about pending insights */}
+          {pendingInsights.length > 0 && !insightTransferred && (
+            <div className="absolute top-3 right-3 text-warning-light text-xs animate-pulse">
+              <PixelText>
+                ⚠️ Insights pending
+              </PixelText>
+            </div>
+          )}
         </div>
       </div>
       

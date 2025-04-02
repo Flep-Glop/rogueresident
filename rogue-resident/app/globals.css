@@ -901,3 +901,26 @@ img.pixel-art,
   opacity: 1;
 }
 
+.node-accessible {
+  animation: node-pulse 3s infinite;
+  box-shadow: 0 0 15px rgba(79, 107, 187, 0.5);
+}
+
+@keyframes node-pulse {
+  0% { box-shadow: 0 0 15px rgba(79, 107, 187, 0.3); }
+  50% { box-shadow: 0 0 20px rgba(79, 107, 187, 0.7); }
+  100% { box-shadow: 0 0 15px rgba(79, 107, 187, 0.3); }
+}
+
+/* In globals.css */
+.line-clamp-1 {
+  -webkit-line-clamp: 1;
+  line-clamp: 1;
+  /* other properties */
+}
+
+.line-clamp-2 {
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  /* other properties */
+}

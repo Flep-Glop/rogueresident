@@ -4,7 +4,9 @@ import { useState, useCallback, createContext, useContext, ReactNode, useRef } f
 
 // Simplified effect types
 type ShakeIntensity = 'light' | 'medium' | 'heavy';
-type FlashColor = 'white' | 'red' | 'green' | 'blue';
+// Update your FlashColor type:
+type FlashColor = 'white' | 'red' | 'green' | 'blue' | 'yellow'; // Add yellow// app/components/GameEffects.tsx
+// Add these to your existing SoundEffect type:
 type SoundEffect = 
   // Basic UI sounds
   | 'click' 
@@ -24,7 +26,10 @@ type SoundEffect =
   | 'challenge-success'
   | 'challenge-failure'
   // Navigation
-  | 'node-select';
+  | 'node-select'
+  | 'node-hover'      // Add this 
+  | 'error'           // Add this
+  | 'phase-transition'; // Add this
 
 // Context interface
 interface GameEffectsContextType {

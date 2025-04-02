@@ -229,7 +229,7 @@ export default function SimplifiedMap() {
     };
   };
   
-  // Get node classes based on status with enhanced visual distinction
+  // In SimplifiedMap.tsx, enhance the getNodeClasses function:
   const getNodeClasses = (nodeId: string, node: Node): string => {
     const state = getNodeState(nodeId);
     const isActive = state === 'active';
@@ -247,7 +247,8 @@ export default function SimplifiedMap() {
         classes += ' z-20 shadow-pixel opacity-90';
         break;
       case 'accessible':
-        classes += ' hover:scale-105 z-10 shadow-pixel cursor-pointer';
+        // Add pulsing glow for accessible nodes
+        classes += ' hover:scale-105 z-10 shadow-pixel cursor-pointer node-accessible';
         if (isHovered) classes += ' brightness-110';
         break;
       case 'future':
@@ -468,22 +469,43 @@ export default function SimplifiedMap() {
   // Handle end day click with enhanced feedback
   const handleEndDay = () => {
     if (playSound) playSound('click');
-    if (flashScreen) flashScreen('white');
     
     // Zoom out effect on the map container
     if (mapContainerRef.current) {
       mapContainerRef.current.animate(
         [
           { transform: 'scale(1)', filter: 'brightness(1)' },
-          { transform: 'scale(0.95)', filter: 'brightness(1.5)' }
+          { transform: 'scale(0.98)', filter: 'brightness(1.1)' }
         ],
         { duration: 400, easing: 'cubic-bezier(0.4, 0, 0.2, 1)' }
       );
     }
     
-    setTimeout(() => {
-      completeDay();
-    }, 400);
+    // Check if player has completed at least one node
+    if (completedNodeIds.length > 0) {
+      setTimeout(() => {
+        completeDay();
+      }, 400);
+    } else {
+      // Provide feedback that they should complete at least one node
+      if (flashScreen) flashScreen('red');
+      if (playSound) playSound('error');
+      
+      // Shake the button to indicate it can't be used yet
+      const endDayButton = document.querySelector('.end-day-button');
+      if (endDayButton) {
+        endDayButton.animate(
+          [
+            { transform: 'translateX(-3px)' },
+            { transform: 'translateX(3px)' },
+            { transform: 'translateX(-3px)' },
+            { transform: 'translateX(3px)' },
+            { transform: 'translateX(0)' }
+          ],
+          { duration: 300, easing: 'ease-in-out' }
+        );
+      }
+    }
   };
   
   return (
@@ -523,21 +545,21 @@ export default function SimplifiedMap() {
         })}
       </div>
       
-      {/* Persistent floating End Day button with enhanced styling */}
       <div className="fixed bottom-6 left-1/2 transform -translate-x-1/2 bg-surface/90 backdrop-blur-sm pixel-borders-thin px-4 py-2 flex items-center space-x-4 z-30">
-        <div className="flex items-center">
-          <span className="px-2 py-1 bg-danger text-white text-sm mr-2">❤️ {player.health}/{player.maxHealth}</span>
-          <span className="px-2 py-1 bg-clinical text-white text-sm">💡 {player.insight}</span>
-        </div>
-        
-        <PixelButton
-          className="bg-surface hover:bg-clinical text-text-primary px-4 py-2 relative overflow-hidden group"
-          onClick={handleEndDay}
-        >
-          <span className="relative z-10">End Day</span>
-          <span className="absolute inset-0 bg-clinical opacity-0 group-hover:opacity-100 transition-opacity duration-300"></span>
-        </PixelButton>
-      </div>
+      {/* Remove the stat indicators and keep only the button */}
+      <PixelButton
+        className={`end-day-button bg-surface hover:bg-clinical text-text-primary px-4 py-2 relative overflow-hidden group ${completedNodeIds.length === 0 ? 'opacity-80' : ''}`}
+        onClick={handleEndDay}
+      >
+        <span className="relative z-10">Return to Hill Home</span>
+        <span className="absolute inset-0 bg-clinical opacity-0 group-hover:opacity-100 transition-opacity duration-300"></span>
+        {completedNodeIds.length === 0 && (
+          <span className="absolute -top-6 left-1/2 transform -translate-x-1/2 text-xs text-warning-light whitespace-nowrap">
+            Complete at least one node first
+          </span>
+        )}
+      </PixelButton>
+    </div>
       
       {/* Enhanced map legend with better visual hierarchy */}
       <div className="absolute bottom-20 right-4 bg-surface/80 backdrop-blur-sm p-3 text-xs pixel-borders-thin z-40">

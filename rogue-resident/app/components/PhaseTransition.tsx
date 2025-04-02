@@ -11,41 +11,72 @@ interface PhaseTransitionProps {
 }
 
 /**
- * Monochromatic phase transition component
+ * Phase transition component that creates a meaningful pause between day and night cycles
  * 
- * Provides a clean, minimalist transition between day and night phases
- * using only black and white for visual clarity
+ * The transition emphasizes the conceptual and physical journey between the hospital and 
+ * hillside home, reinforcing the core game rhythm without being visually intrusive.
  */
 export default function PhaseTransition({ fromPhase, toPhase, onComplete }: PhaseTransitionProps) {
   const [opacity, setOpacity] = useState(0);
   const [showText, setShowText] = useState(false);
+  const [transitionStage, setTransitionStage] = useState(0);
   const { currentDay } = useGameStore();
   
   useEffect(() => {
-    // Fade in
+    // Stage 0: Initial fade in
     setOpacity(0);
-    const fadeInTimer = setTimeout(() => {
-      setOpacity(1);
-      setShowText(true);
-    }, 100);
+    setTransitionStage(0);
     
-    // Show transition for 1.5 seconds, then fade out
-    const fadeOutTimer = setTimeout(() => {
-      setOpacity(0);
-      setShowText(false);
-    }, 1500);
+    const timers = [
+      // Stage 1: Fade in (100ms)
+      setTimeout(() => {
+        setOpacity(1);
+        setShowText(true);
+        setTransitionStage(1);
+      }, 100),
+      
+      // Stage 2: Hold (1500ms)
+      setTimeout(() => {
+        setTransitionStage(2);
+      }, 1600),
+      
+      // Stage 3: Fade out (500ms)
+      setTimeout(() => {
+        setOpacity(0);
+        setShowText(false);
+        setTransitionStage(3);
+      }, 2000),
+      
+      // Stage 4: Complete
+      setTimeout(() => {
+        onComplete();
+        setTransitionStage(4);
+      }, 2500)
+    ];
     
-    // Complete transition
-    const completeTimer = setTimeout(() => {
-      onComplete();
-    }, 2000);
-    
+    // Cleanup all timers
     return () => {
-      clearTimeout(fadeInTimer);
-      clearTimeout(fadeOutTimer);
-      clearTimeout(completeTimer);
+      timers.forEach(timer => clearTimeout(timer));
     };
   }, [onComplete]);
+  
+  // Get the appropriate transition message based on direction
+  const getTransitionMessage = () => {
+    if (fromPhase === 'day' && toPhase === 'night') {
+      return "Returning to hillside home...";
+    } else {
+      return `Heading to the hospital...`;
+    }
+  };
+  
+  // Get the transition title based on direction
+  const getTransitionTitle = () => {
+    if (fromPhase === 'day' && toPhase === 'night') {
+      return "Day Complete";
+    } else {
+      return `Day ${currentDay}`;
+    }
+  };
   
   return (
     <div 
@@ -57,18 +88,13 @@ export default function PhaseTransition({ fromPhase, toPhase, onComplete }: Phas
     >
       {showText && (
         <div className="text-center text-white">
-          <div className="animate-pulse">
-            {fromPhase === 'day' && toPhase === 'night' ? (
-              <>
-                <PixelText className="text-6xl font-pixel-heading mb-4">Day Complete</PixelText>
-                <PixelText className="text-2xl">Returning to your hillside home...</PixelText>
-              </>
-            ) : (
-              <>
-                <PixelText className="text-6xl font-pixel-heading mb-4">Day {currentDay}</PixelText>
-                <PixelText className="text-2xl">Heading to the hospital...</PixelText>
-              </>
-            )}
+          <div className={`transition-opacity duration-300 ${transitionStage === 2 ? 'opacity-50' : 'opacity-100'}`}>
+            <PixelText className="text-6xl font-pixel-heading mb-4">
+              {getTransitionTitle()}
+            </PixelText>
+            <PixelText className="text-2xl">
+              {getTransitionMessage()}
+            </PixelText>
           </div>
         </div>
       )}

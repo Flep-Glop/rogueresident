@@ -4,7 +4,6 @@ import { useEffect, useState } from 'react';
 import { useGameStore } from '../store/gameStore';
 import { useChallengeStore } from '../store/challengeStore';
 import { clinicalChallenges } from '../data/clinicalChallenges';
-import GameMap from './GameMap';
 import SimplifiedMap from './SimplifiedMap'; // Import the enhanced simplified map
 import ChallengeContainer from './challenges/ChallengeContainer';
 import PlayerStats from './PlayerStats';
@@ -13,6 +12,7 @@ import StorageCloset from './challenges/StorageCloset';
 import BossNode from './challenges/BossNode';
 import KapoorLINACCalibration from './challenges/KapoorLINACCalibration';
 import HillHomeScene from './HillHomeScene';
+import PhaseTransition from './PhaseTransition';
 import { PixelText, PixelButton } from './PixelThemeProvider';
 import { useGameEffects } from './GameEffects';
 import CharacterInteractionNode from './challenges/CharacterInteractionNode';
@@ -22,28 +22,35 @@ interface GameContainerProps {
 }
 
 /**
- * GameContainer - Main game interface container with enhanced visual treatments
+ * GameContainer - Main game interface container with enhanced phase transitions
  * 
  * Features:
- * - Elegant phase transitions with visual feedback
+ * - Rhythmic day/night transitions with thematic context
  * - Adaptive sidebar with collapsible behavior
  * - Contextual content rendering based on node types
- * - Visual effects for game state changes
+ * - Preservation of progression state across phases
  */
 export default function GameContainer({ useSimplifiedMap = true }: GameContainerProps) {
-  const { currentNodeId, completedNodeIds, map, gamePhase, player, completeDay } = useGameStore();
+  const { currentNodeId, completedNodeIds, map, gamePhase, player, completeDay, currentDay } = useGameStore();
   const { currentChallenge, startChallenge } = useChallengeStore();
-  const { flashScreen, playSound } = useGameEffects();
-  const [isTransitioning, setIsTransitioning] = useState(false);
+  const { playSound } = useGameEffects();
+  
+  // Phase transition states
+  const [showTransition, setShowTransition] = useState(false);
+  const [transitionFrom, setTransitionFrom] = useState<'day' | 'night'>('day');
+  const [transitionTo, setTransitionTo] = useState<'day' | 'night'>('night');
+  
+  // UI states
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [transitionDirection, setTransitionDirection] = useState<'in' | 'out'>('in');
   
   // Get current node details from map to determine node type
+  // In GameContainer.tsx, modify getCurrentNodeType() to handle the start node:
   const getCurrentNodeType = () => {
     if (!currentNodeId || !map) return null;
     
     // Special handling for simplified map
     if (useSimplifiedMap) {
+      if (currentNodeId === 'start') return 'entrance';  // Add this line
       if (currentNodeId === 'qa-1') return 'kapoor-calibration';
       if (currentNodeId === 'experimental-1') return 'quinn-experiment';
       if (currentNodeId === 'boss-ionix') return 'boss-ionix';
@@ -64,86 +71,146 @@ export default function GameContainer({ useSimplifiedMap = true }: GameContainer
     return currentNode.type;
   };
   
-  // Start challenge when node is selected
+  // In GameContainer.tsx
   useEffect(() => {
     if (currentNodeId && !currentChallenge && !completedNodeIds.includes(currentNodeId)) {
       const nodeType = getCurrentNodeType();
       console.log(`Starting interaction with ${nodeType} node: ${currentNodeId}`);
       
-      if (nodeType === 'clinical') {
-        // For clinical nodes, start a challenge
-        const randomChallenge = 
-          clinicalChallenges[Math.floor(Math.random() * clinicalChallenges.length)];
+      // Type-specific initializers that maintain the content pipeline
+      switch(nodeType) {
+        case 'clinical':
+          // Randomized clinical challenges
+          const randomChallenge = 
+            clinicalChallenges[Math.floor(Math.random() * clinicalChallenges.length)];
+          
+          startChallenge({
+            id: currentNodeId,
+            type: 'clinical',
+            content: randomChallenge,
+          });
+          break;
         
-        startChallenge({
-          id: currentNodeId,
-          type: 'clinical',
-          content: randomChallenge,
-        });
+        // Add entrance node handling
+        case 'entrance':
+          startChallenge({
+            id: currentNodeId,
+            type: 'entrance',
+            content: {
+              title: "Department Entrance",
+              character: "kapoor",
+              initialized: true
+            }
+          });
+          break;
+
+        case 'kapoor-calibration':
+          // Kapoor's LINAC calibration needs specific initialization
+          startChallenge({
+            id: currentNodeId,
+            type: 'calibration',
+            content: {
+              title: "LINAC Output Calibration",
+              character: "kapoor",
+              steps: ["setup", "measurement", "analysis"],
+              currentStep: "setup"
+            }
+          });
+          break;
+          
+        case 'storage':
+          startChallenge({
+            id: currentNodeId,
+            type: 'storage',
+            content: { initialized: true }
+          });
+          break;
+          
+        case 'quinn-experiment':
+        case 'experimental':
+          startChallenge({
+            id: currentNodeId,
+            type: 'experimental',
+            content: { character: "quinn", initialized: true }
+          });
+          break;
+          
+        case 'qualification':
+          startChallenge({
+            id: currentNodeId,
+            type: 'qualification',
+            content: { 
+              title: "Qualification Test",
+              character: "kapoor",
+              initialized: true 
+            }
+          });
+          break;
+          
+        case 'boss-ionix':
+          startChallenge({
+            id: currentNodeId,
+            type: 'boss',
+            content: { 
+              title: "IONIX Challenge",
+              character: "quinn",
+              phase: 1,
+              initialized: true 
+            }
+          });
+          break;
+          
+        default:
+          console.log(`No specialized initialization for node type: ${nodeType}`);
+          // For unknown types, create minimal challenge state
+          if (nodeType) {
+            startChallenge({
+              id: currentNodeId,
+              type: nodeType,
+              content: { initialized: true }
+            });
+          }
       }
-      // Other node types are handled by their respective components
     }
   }, [currentNodeId, currentChallenge, completedNodeIds, startChallenge, map]);
-  
-  // Handle transition to night phase with enhanced visual feedback
-  const handleDayCompletion = () => {
-    setIsTransitioning(true);
-    setTransitionDirection('out');
-    
-    // Play transition sound effect
-    if (playSound) playSound('phase-transition');
-    
-    // Apply screen transition effect
-    if (flashScreen) flashScreen('white');
-    
-    // Short delay for transition effect
-    setTimeout(() => {
-      completeDay();
-      setTransitionDirection('in');
-      setTimeout(() => {
-        setIsTransitioning(false);
-      }, 300);
-    }, 500);
-  };
 
-  // Handle transition back to day phase from night with enhanced visual feedback
-  const handleNightCompletion = () => {
-    setIsTransitioning(true);
-    setTransitionDirection('out');
+  // Handle transition to night phase
+  const handleDayCompletion = () => {
+    // Mark that we're transitioning from day to night
+    setTransitionFrom('day');
+    setTransitionTo('night');
+    setShowTransition(true);
     
-    // Play transition sound effect
+    // Play transition sound
     if (playSound) playSound('phase-transition');
+  };
+  
+  // Handle transition back to day phase
+  const handleNightCompletion = () => {
+    // Mark that we're transitioning from night to day
+    setTransitionFrom('night');
+    setTransitionTo('day');
+    setShowTransition(true);
     
-    // Apply screen transition effect
-    if (flashScreen) flashScreen('white');
-    
-    // Short delay for transition effect
-    setTimeout(() => {
+    // Play transition sound
+    if (playSound) playSound('phase-transition');
+  };
+  
+  // Called when the phase transition animation completes
+  const handleTransitionComplete = () => {
+    // Update the game state based on transition direction
+    if (transitionFrom === 'day' && transitionTo === 'night') {
+      completeDay();
+    } else if (transitionFrom === 'night' && transitionTo === 'day') {
       useGameStore.getState().completeNight();
-      setTransitionDirection('in');
-      setTimeout(() => {
-        setIsTransitioning(false);
-      }, 300);
-    }, 500);
+    }
+    
+    // Hide the transition component
+    setShowTransition(false);
   };
   
   // Determine what to render in the main content area
   const renderMainContent = () => {
-    // If we're transitioning, show a loading screen with direction
-    if (isTransitioning) {
-      return (
-        <div className="flex items-center justify-center h-full bg-background">
-          <div className={`text-center transition-all duration-500 transform
-            ${transitionDirection === 'out' ? 'scale-90 opacity-0' : 'scale-100 opacity-100'}`}>
-            <div className="animate-spin w-12 h-12 border-4 border-clinical border-t-transparent rounded-full mx-auto mb-4"></div>
-            <PixelText className="text-lg text-text-primary glow-text">
-              {gamePhase === 'day' ? 'Night Approaches...' : 'Dawn Breaks...'}
-            </PixelText>
-          </div>
-        </div>
-      );
-    }
-    
     // Based on game phase, render different content
     switch (gamePhase) {
       case 'night':
@@ -183,11 +250,11 @@ export default function GameContainer({ useSimplifiedMap = true }: GameContainer
         }
         
         // Default: show the map (either simplified or original)
-        return useSimplifiedMap ? <SimplifiedMap /> : <GameMap />;
+        return useSimplifiedMap ? <SimplifiedMap /> : <SimplifiedMap />;
         
       default:
-        return useSimplifiedMap ? <SimplifiedMap /> : <GameMap />;
-    }
+        return useSimplifiedMap ? <SimplifiedMap /> : <SimplifiedMap />;
+      }
   };
 
   // Toggle sidebar with animation
@@ -200,7 +267,16 @@ export default function GameContainer({ useSimplifiedMap = true }: GameContainer
 
   return (
     <div className="flex flex-col h-screen bg-background">
-      <header className="p-4 bg-dark-gray/90 backdrop-blur-sm border-b border-border sticky top-0 z-50">
+      {/* Phase Transition Component (Overlay) */}
+      {showTransition && (
+        <PhaseTransition 
+          fromPhase={transitionFrom} 
+          toPhase={transitionTo} 
+          onComplete={handleTransitionComplete} 
+        />
+      )}
+    
+      <header className="p-4 bg-dark-gray/90 backdrop-blur-sm border-b border-border sticky top-0 z-40">
         <div className="flex justify-between items-center">
           <PixelText className="text-2xl text-text-primary font-pixel-heading glow-text">
             Rogue Resident
@@ -211,7 +287,7 @@ export default function GameContainer({ useSimplifiedMap = true }: GameContainer
             <div className="px-3 py-1 rounded-full bg-surface-dark flex items-center space-x-2">
               <div className={`w-2 h-2 rounded-full ${gamePhase === 'day' ? 'bg-yellow-300' : 'bg-blue-400'} animate-pulse-slow`}></div>
               <PixelText className="text-sm">
-                {gamePhase === 'day' ? 'Day Phase' : gamePhase === 'night' ? 'Night Phase' : ''}
+                {gamePhase === 'day' ? `Day ${currentDay} - Hospital` : gamePhase === 'night' ? 'Night - Hill Home' : ''}
               </PixelText>
             </div>
             
