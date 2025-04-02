@@ -5,7 +5,7 @@ import { useState, useCallback, createContext, useContext, ReactNode, useRef } f
 // Simplified effect types
 type ShakeIntensity = 'light' | 'medium' | 'heavy';
 // Update your FlashColor type:
-type FlashColor = 'white' | 'red' | 'green' | 'blue' | 'yellow'; // Add yellow// app/components/GameEffects.tsx
+type FlashColor = 'white' | 'red' | 'green' | 'blue' | 'yellow'; // Add-yellow// app/components/GameEffects.tsx
 // Add these to your existing SoundEffect type:
 type SoundEffect = 
   // Basic UI sounds
