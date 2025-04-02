@@ -63,6 +63,13 @@ export default function SimplifiedMap() {
   
   // Enhanced node selection with clear logging
   const handleNodeSelect = (nodeId: string) => {
+    const isFirstNode = map && map.nodes.length === 1;
+  
+    if (!isFirstNode && !isNodeAccessible(nodeId)) {
+      console.log(`Node ${nodeId} is not accessible`);
+      return;
+    }
+
     // Skip if node doesn't exist in the map
     if (!map || !map.nodes.find(node => node.id === nodeId)) {
       console.warn(`Node ${nodeId} not found in map`);
@@ -74,7 +81,7 @@ export default function SimplifiedMap() {
       console.log(`Node ${nodeId} is not accessible`);
       return;
     }
-    
+    console.log("After selection, currentNodeId =", currentNodeId);
     console.log(`Node selected: ${nodeId}`);
     
     // Update active node in local state
