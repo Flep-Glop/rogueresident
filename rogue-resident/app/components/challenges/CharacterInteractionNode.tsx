@@ -228,6 +228,9 @@ export default function CharacterInteractionNode() {
   const [insightGained, setInsightGained] = useState(0);
   const [knowledgeGained, setKnowledgeGained] = useState('');
   const [feedbackMessage, setFeedbackMessage] = useState('');
+  // Add these state variables at the top of your component with other useState declarations
+  const [currentReaction, setCurrentReaction] = useState<ReactionType | null>(null);
+  const [isShaking, setIsShaking] = useState(false);
   
   const { completeNode, currentNodeId, updateInsight } = useGameStore();
   const { playSound, flashScreen } = useGameEffects();
@@ -258,12 +261,13 @@ export default function CharacterInteractionNode() {
     setRelationshipChange(relChange);
     
     // Select appropriate reaction type based on relationship change and insight gain
+    // Revised reaction mapping that uses your existing types
     const reactionType: ReactionType = 
       relChange > 0 ? 'positive' :
       relChange < 0 ? 'negative' :
       option.insightGain && option.insightGain > 20 ? 'approval' :
-      option.insightGain && option.insightGain < 10 ? 'confusion' :
-      'neutral';
+      option.insightGain && option.insightGain < 10 ? 'confusion' : 
+      'approval'; // Default to a subtle approval rather than using 'neutral'
       
     // Explicitly set current reaction with debug logging
     console.log(`Setting ${character.name}'s reaction: ${reactionType}`);
