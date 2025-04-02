@@ -2,9 +2,11 @@
 'use client';
 import { useState, useEffect } from 'react';
 import { useGameStore } from '../../store/gameStore';
-import { PixelText, PixelButton } from '../PixelThemeProvider';
+import { PixelButton, PixelText } from '../PixelThemeProvider';
 import { useGameEffects } from '../GameEffects';
 import { DialogueNode, DialogueOption, Character } from '../dialogue/DialogueSystem';
+// Add this type import if not already present
+import type { ReactionType } from '../dialogue/DialogueSystem';
 
 // Interaction stages
 type InteractionStage = 'intro' | 'dialogue' | 'choice' | 'response' | 'conclusion';
@@ -244,15 +246,38 @@ export default function CharacterInteractionNode() {
   const character = CHARACTER_DATA[currentCharacter];
   const dialogue = CHARACTER_DIALOGUES[currentCharacter as Character];
   
-  // Handle choice selection
+  // Replace the entire existing handleChoiceSelect function
   const handleChoiceSelect = (option: DialogueOption) => {
     setSelectedOption(option);
     
+    // Enhanced visual response handling
     // Calculate relationship change (simplified for prototype)
     const relChange = option.insightGain && option.insightGain >= 30 ? 1 : 
-                     option.insightGain && option.insightGain <= 15 ? -1 : 0;
+                    option.insightGain && option.insightGain <= 15 ? -1 : 0;
     
     setRelationshipChange(relChange);
+    
+    // Select appropriate reaction type based on relationship change and insight gain
+    const reactionType: ReactionType = 
+      relChange > 0 ? 'positive' :
+      relChange < 0 ? 'negative' :
+      option.insightGain && option.insightGain > 20 ? 'approval' :
+      option.insightGain && option.insightGain < 10 ? 'confusion' :
+      'neutral';
+      
+    // Explicitly set current reaction with debug logging
+    console.log(`Setting ${character.name}'s reaction: ${reactionType}`);
+    setCurrentReaction(reactionType);
+    
+    // Force animation refresh by clearing and resetting with timeout
+    // This is critical for ensuring the animation triggers even when selecting the same reaction type
+    setIsShaking(false);
+    setTimeout(() => {
+      setIsShaking(true);
+      
+      // Clear shake after animation completes
+      setTimeout(() => setIsShaking(false), 500);
+    }, 10);
     
     // Track insight and knowledge gains
     setInsightGained(option.insightGain || 0);
@@ -274,17 +299,21 @@ export default function CharacterInteractionNode() {
     
     setStage('response');
     
-    // Play appropriate sound
-    if (playSound) {
-      if (relChange > 0) {
-        playSound('success');
-        flashScreen?.('green');
-      } else if (relChange < 0) {
-        playSound('failure');
-        flashScreen?.('red');
-      } else {
-        playSound('click');
+    // Play appropriate sound with enhanced error handling
+    try {
+      if (playSound) {
+        if (relChange > 0) {
+          playSound('success');
+          if (flashScreen) flashScreen('green');
+        } else if (relChange < 0) {
+          playSound('failure');
+          if (flashScreen) flashScreen('red');
+        } else {
+          playSound('click');
+        }
       }
+    } catch (error) {
+      console.error("Error playing sound effect:", error);
     }
   };
   

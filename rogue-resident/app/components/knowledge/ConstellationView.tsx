@@ -250,13 +250,18 @@ export default function ConstellationView({
     }
   }, [journalEntries]);
 
+  // Add this to ConstellationView.tsx - replace the existing animation effect
+
   // ANIMATION LOOP
-  // Handle particle animations and movement
+  // Handle particle animations and movement with proper cleanup
   useEffect(() => {
-    let animating = false;
+    let isActive = true;
+    let framId: number | null = null;
     
     const animate = () => {
-      if (!canvasRef.current) return;
+      if (!canvasRef.current || !isActive) return;
+      
+      let animating = false;
       
       // Update particle positions and properties
       setParticleEffects(prev => {
@@ -295,28 +300,25 @@ export default function ConstellationView({
           }
         }).filter(p => p.life > 0); // Remove dead particles
         
-        if (updatedParticles.length === 0) {
-          animating = false;
-        }
-        
         return updatedParticles;
       });
       
-      // Continue animation if particles still exist
-      if (animating) {
-        animationFrameRef.current = requestAnimationFrame(animate);
+      // Continue animation if particles still exist or stop
+      if (animating && isActive) {
+        framId = requestAnimationFrame(animate);
       }
     };
     
     // Start animation if we have particles
-    if (particleEffects.length > 0 && !animationFrameRef.current) {
-      animationFrameRef.current = requestAnimationFrame(animate);
+    if (particleEffects.length > 0) {
+      framId = requestAnimationFrame(animate);
     }
     
+    // Proper cleanup - critical for preventing the error
     return () => {
-      if (animationFrameRef.current) {
-        cancelAnimationFrame(animationFrameRef.current);
-        animationFrameRef.current = null;
+      isActive = false;
+      if (framId !== null) {
+        cancelAnimationFrame(framId);
       }
     };
   }, [particleEffects.length]);

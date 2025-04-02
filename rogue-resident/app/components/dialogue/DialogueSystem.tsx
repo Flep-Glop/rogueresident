@@ -59,17 +59,34 @@ const DialogueContext = createContext<DialogueContextType>({
 // Custom hook
 export const useDialogue = () => useContext(DialogueContext);
 
-// Character Reaction Component 
+// Character Reaction Component with enhanced visibility
 const CharacterReaction = ({ type, isActive, character }: { type: ReactionType, isActive: boolean, character: Character }) => {
-  const [visible, setVisible] = useState(isActive);
+  const [visible, setVisible] = useState(false);
+  const [animationClass, setAnimationClass] = useState('');
   
   useEffect(() => {
     if (isActive) {
+      console.log(`Reaction triggered: ${type} for ${character}`); // Debug log
       setVisible(true);
-      const timer = setTimeout(() => setVisible(false), 1500);
-      return () => clearTimeout(timer);
+      setAnimationClass('reaction-enter');
+      
+      // First remove enter animation after it completes
+      const enterTimer = setTimeout(() => {
+        setAnimationClass('reaction-active');
+      }, 300);
+      
+      // Then remove the emote after display period
+      const exitTimer = setTimeout(() => {
+        setAnimationClass('reaction-exit');
+        setTimeout(() => setVisible(false), 300); // After exit animation
+      }, 2000);
+      
+      return () => {
+        clearTimeout(enterTimer);
+        clearTimeout(exitTimer);
+      };
     }
-  }, [isActive]);
+  }, [isActive, type, character]);
   
   if (!visible) return null;
   
@@ -90,7 +107,20 @@ const CharacterReaction = ({ type, isActive, character }: { type: ReactionType, 
   };
   
   return (
-    <div className={`absolute top-2 right-2 animate-bounce text-2xl font-pixel z-10 ${colors[character]}`}>
+    <div 
+      className={`absolute top-0 right-0 ${animationClass} ${colors[character]} z-50`}
+      style={{
+        fontSize: '28px',
+        fontFamily: 'var(--font-pixel)',
+        padding: '6px 10px',
+        background: 'rgba(0,0,0,0.4)',
+        borderRadius: '8px',
+        boxShadow: '0 0 8px rgba(0,0,0,0.5), 0 0 3px rgba(255,255,255,0.3) inset',
+        textShadow: '2px 2px 0 rgba(0,0,0,0.8)',
+        transform: 'translateY(-50%)',
+        pointerEvents: 'none'
+      }}
+    >
       {symbols[type]}
     </div>
   );
@@ -366,9 +396,10 @@ export function DialogueProvider({ children }: { children: ReactNode }) {
             style={{ borderColor: characterData[currentNode.character].color }}
           >
             {/* Character portrait area with reaction */}
+            {/* Character portrait - Enhanced with reaction handling */}
             <div className={`absolute -top-16 -left-2 w-16 h-16 ${isShaking ? 'character-shake' : ''}`}>
               <div className="character-portrait-mini bg-surface-dark relative">
-                {/* Character portrait would go here */}
+                {/* Character portrait */}
                 <div className="w-full h-full flex items-center justify-center text-3xl">
                   {currentNode.character === 'kapoor' && '👨🏽‍⚕️'}
                   {currentNode.character === 'jesse' && '👨‍🔧'}
@@ -378,11 +409,26 @@ export function DialogueProvider({ children }: { children: ReactNode }) {
                 
                 {/* Character reaction */}
                 {currentReaction && (
-                  <CharacterReaction 
-                    type={currentReaction} 
-                    isActive={!!currentReaction}
-                    character={currentNode.character}
-                  />
+                  <div 
+                    className={`
+                      absolute top-0 right-0 z-50 px-2 py-1 text-xl font-pixel
+                      ${currentNode.character === 'kapoor' ? 'text-clinical-light' : 
+                        currentNode.character === 'jesse' ? 'text-qa-light' : 
+                        currentNode.character === 'quinn' ? 'text-educational-light' : 
+                        'text-white'}
+                      bg-black/70 rounded-bl-md animate-pulse
+                    `}
+                    style={{
+                      textShadow: '1px 1px 2px black'
+                    }}
+                  >
+                    {currentReaction === 'positive' && '!'}
+                    {currentReaction === 'negative' && '...'}
+                    {currentReaction === 'surprise' && '?!'}
+                    {currentReaction === 'confusion' && '?'}
+                    {currentReaction === 'approval' && '✓'}
+                    {currentReaction === 'annoyance' && '#@$!'}
+                  </div>
                 )}
               </div>
             </div>
