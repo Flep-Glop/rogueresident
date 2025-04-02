@@ -1,7 +1,9 @@
 // app/store/gameStore.ts
 import { create } from 'zustand';
 import { Item } from '../data/items';
-import { generateMap, GameMap, Node } from '../utils/mapGenerator';
+import { Node, NodeState, GameMap, mapUtils } from '../types/map';
+// Import the enhanced generator function
+import { generateMap } from '../utils/mapGenerator';
 
 // Game phase types
 export type GamePhase = 'day' | 'night' | 'game_over' | 'victory';
@@ -18,7 +20,16 @@ type GameState = {
   currentNodeId: string | null;
   completedNodeIds: string[];
   inventory: Item[];
+  
+  // Use 'map' for consistency - this is the same as the old 'map' property
   map: GameMap | null;
+  
+  // Map navigation state
+  mapViewState?: {
+    offsetX: number;
+    offsetY: number;
+    zoom: number;
+  };
   
   // Day tracking
   currentDay: number;
@@ -58,6 +69,10 @@ type GameState = {
   setGamePhase: (phase: GamePhase) => void;
   completeDay: () => void;
   completeNight: () => void;
+  
+  // Enhanced map functionality
+  isNodeAccessible: (nodeId: string) => boolean;
+  getNodeState: (nodeId: string) => NodeState;
 };
 
 // Initial state for reuse in resetGame
@@ -73,6 +88,13 @@ const initialState = {
   completedNodeIds: [],
   inventory: [],
   map: null,
+  
+  // Map viewport state
+  mapViewState: {
+    offsetX: 0,
+    offsetY: 0,
+    zoom: 1,
+  },
   
   // Day tracking
   currentDay: 1,
@@ -93,20 +115,18 @@ const initialState = {
 export const useGameStore = create<GameState>((set, get) => ({
   ...initialState,
   
-  // In gameStore.ts - Modify the startGame function
   startGame: () => {
     // Generate a new map when starting the game
     const newMap = generateMap();
     console.log("Generated new map for game start:", newMap);
     
-    set(state => ({ 
-      ...state, 
+    set({ 
       gameState: 'in_progress',
       gamePhase: 'day',
       map: newMap,
       // Don't automatically select a node
-      currentNodeId: null // Changed from newMap.startNodeId
-    }));
+      currentNodeId: null, // Changed from newMap.startNodeId
+    });
   },
   
   setCurrentNode: (nodeId) => {
@@ -251,7 +271,7 @@ export const useGameStore = create<GameState>((set, get) => ({
     
     // Check if all non-boss nodes are completed
     const allNodesCompleted = map.nodes
-      .filter(node => node.type !== 'boss')
+      .filter(node => node.type !== 'boss' && node.type !== 'boss-ionix')
       .every(node => completedNodeIds.includes(node.id));
       
     // Check if player has enough completed nodes to progress
@@ -293,18 +313,54 @@ export const useGameStore = create<GameState>((set, get) => ({
     
     // In a full implementation, this would apply upgrades and 
     // possibly restore some health
-    set((state) => ({
+    set({
       map: newMap,
-      currentNodeId: newMap.startNodeId,
+      currentNodeId: null, // Don't auto-select anymore
       // Reset completedNodeIds for the new day
       completedNodeIds: [],
       // In a real implementation, would apply more sophisticated health restoration
       player: {
-        ...state.player,
-        health: Math.min(state.player.maxHealth, state.player.health + 1) // Restore 1 health
+        ...get().player,
+        health: Math.min(get().player.maxHealth, get().player.health + 1) // Restore 1 health
       }
-    }));
+    });
   },
+  
+  // Enhanced map functionality
+  isNodeAccessible: (nodeId) => {
+    const { map, completedNodeIds } = get();
+    if (!map) return false;
+    
+    // Entrance nodes are always accessible
+    const node = map.nodes.find(n => n.id === nodeId);
+    if (node?.type === 'entrance') return true;
+    
+    // A node is accessible if any node that connects to it has been completed
+    return map.nodes.some(node => 
+      node.connections.includes(nodeId) && completedNodeIds.includes(node.id)
+    );
+  },
+  
+  getNodeState: (nodeId) => {
+    const { currentNodeId, completedNodeIds, map } = get();
+    
+    if (!map) return 'locked'; 
+    
+    // Start node is always accessible
+    const node = map.nodes.find(n => n.id === nodeId);
+    
+    if (!node) return 'locked';
+    if (currentNodeId === nodeId) return 'active';
+    if (completedNodeIds.includes(nodeId)) return 'completed';
+    if (get().isNodeAccessible(nodeId)) return 'accessible';
+    
+    // Check if this node is connected to an accessible node
+    const isConnectedToAccessible = map.nodes.some(n => 
+      get().isNodeAccessible(n.id) && n.connections.includes(nodeId)
+    );
+    
+    return isConnectedToAccessible ? 'future' : 'locked';
+  }
 }));
 
 // Helper function to calculate bonuses from inventory

@@ -6,7 +6,7 @@ import { useGameEffects } from '../GameEffects';
 import { useKnowledgeStore } from '../../store/knowledgeStore';
 import ConnectionSuggestions from './ConnectionSuggestions';
 
-// Knowledge domains with direct color values for canvas rendering
+// In ConstellationView.tsx
 export const KNOWLEDGE_DOMAINS = {
   'clinical': {
     name: 'Clinical Practice',
@@ -34,6 +34,15 @@ export const KNOWLEDGE_DOMAINS = {
     bgClass: 'bg-educational',
     textClass: 'text-educational-light',
     icon: '☢️'
+  },
+  'theoretical': {
+    name: 'Theoretical Concepts',
+    color: '#9370db', // Medium purple
+    lightColor: '#b19ee0',
+    darkColor: '#6a4a9f',
+    bgClass: 'bg-experimental',
+    textClass: 'text-experimental-light',
+    icon: '💫'
   },
   'general': {
     name: 'General Knowledge',

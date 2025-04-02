@@ -537,3 +537,161 @@ img.pixel-art,
   from { transform: translateY(-50%) scale(1); }
   to { transform: translateY(-50%) scale(1.1); }
 }
+
+
+/* Add to app/globals.css or create a new stylesheet */
+
+/* Starfield background for the map */
+.starfield-bg {
+  background-color: #0f1117;
+  background-image: 
+    radial-gradient(1px 1px at 25% 25%, rgba(255, 255, 255, 0.1) 1px, transparent 0),
+    radial-gradient(1px 1px at 50% 50%, rgba(255, 255, 255, 0.15) 1px, transparent 0),
+    radial-gradient(1px 1px at 75% 75%, rgba(255, 255, 255, 0.1) 1px, transparent 0),
+    radial-gradient(2px 2px at 10% 80%, rgba(100, 155, 255, 0.12) 1px, transparent 0),
+    radial-gradient(2px 2px at 60% 10%, rgba(100, 155, 255, 0.12) 1px, transparent 0);
+  background-size: 50px 50px, 100px 100px, 150px 150px, 200px 200px, 250px 250px;
+}
+
+/* Add color variables for the different node types */
+:root {
+  /* Existing colors */
+  --clinical-color: #4f6bbb;
+  --clinical-light: #7b90d9;
+  --clinical-dark: #2a3a66;
+  
+  --qa-color: #58a1d8;
+  --qa-light: #79c0f3;
+  --qa-dark: #2c5272;
+  
+  --educational-color: #a45ec7;
+  --educational-light: #c78be6;
+  --educational-dark: #5c336f;
+  
+  --boss-color: #d95763;
+  --boss-light: #f27d87;
+  --boss-dark: #7a2f36;
+  
+  /* New colors */
+  --warning-color: #e6a23c;
+  --warning-light: #f8cc74;
+  --warning-dark: #8a611d;
+  
+  --clinical-alt-color: #3c8a75;
+  --clinical-alt-light: #58c9ad;
+  --clinical-alt-dark: #1f4a3e;
+  
+  --success: #34d399;
+}
+
+/* Pulse animations for path indicators */
+@keyframes pulse-slow {
+  0%, 100% {
+    opacity: 0.6;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.animate-pulse-slow {
+  animation: pulse-slow 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* Node hover transitions */
+.scale-115 {
+  transform: scale(1.15) translate(-50%, -50%);
+}
+
+/* Pixel borders for nodes */
+.pixel-borders {
+  border-style: solid;
+  border-width: 3px;
+  border-image: linear-gradient(45deg, var(--clinical-color), var(--clinical-light)) 1;
+  box-shadow: 
+    0 0 0 1px rgba(0, 0, 0, 0.4),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.1);
+}
+
+.pixel-borders-thin {
+  border-style: solid;
+  border-width: 2px;
+  border-image: linear-gradient(45deg, #2a3a66, #4f6bbb) 1;
+  box-shadow: 
+    0 0 0 1px rgba(0, 0, 0, 0.4),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.1);
+}
+
+/* Shadow effects for nodes */
+.shadow-pixel {
+  box-shadow: 
+    0 4px 6px -1px rgba(0, 0, 0, 0.5),
+    0 2px 4px -1px rgba(0, 0, 0, 0.6),
+    0 0 0 1px rgba(255, 255, 255, 0.05),
+    0 0 0 1px rgba(0, 0, 0, 0.6),
+    inset 0 0 20px rgba(100, 155, 255, 0.05);
+}
+
+.shadow-pixel-lg {
+  box-shadow: 
+    0 10px 15px -3px rgba(0, 0, 0, 0.6),
+    0 4px 6px -2px rgba(0, 0, 0, 0.7),
+    0 0 0 1px rgba(255, 255, 255, 0.1),
+    0 0 0 2px rgba(0, 0, 0, 0.5),
+    inset 0 0 30px rgba(100, 155, 255, 0.1);
+}
+
+/* Line clamp for truncating text */
+.line-clamp-1 {
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* Add to app/globals.css */
+
+/* Line clamp with proper cross-browser support */
+.line-clamp-1 {
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  line-clamp: 1; /* Standard property */
+}
+
+.line-clamp-2 {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  line-clamp: 2; /* Standard property */
+}
+
+.line-clamp-3 {
+  display: -webkit-box;
+  -webkit-line-clamp: 3; 
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  line-clamp: 3;
+}
+
+/* Ensure we have proper transition timing for the interactive nodes */
+.transition-all {
+  transition-property: all;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Adjust this class to handle null ref elegantly */
+.starfield-bg {
+  background-color: #0f1117;
+  background-image: 
+    radial-gradient(1px 1px at 25% 25%, rgba(255, 255, 255, 0.1) 1px, transparent 0),
+    radial-gradient(1px 1px at 50% 50%, rgba(255, 255, 255, 0.15) 1px, transparent 0),
+    radial-gradient(1px 1px at 75% 75%, rgba(255, 255, 255, 0.1) 1px, transparent 0),
+    radial-gradient(2px 2px at 10% 80%, rgba(100, 155, 255, 0.12) 1px, transparent 0),
+    radial-gradient(2px 2px at 60% 10%, rgba(100, 155, 255, 0.12) 1px, transparent 0);
+  background-size: 50px 50px, 100px 100px, 150px 150px, 200px 200px, 250px 250px;
+  min-height: 100%;
+  position: relative;
+}

@@ -1,107 +1,401 @@
 // utils/mapGenerator.ts
 import { nanoid } from 'nanoid';
+import { GameMap, Node, NodeType, NodePosition } from '../types/map';
 
-export type NodeType = 'clinical' | 'qa' | 'educational' | 'storage' | 'vendor' | 'boss';
+// Sample character associations for node types
+const CHARACTER_ASSOCIATIONS: Record<NodeType, string> = {
+  'clinical': 'kapoor',
+  'qa': 'jesse',
+  'educational': 'quinn',
+  'storage': 'jesse', 
+  'vendor': 'jesse',
+  'experimental': 'quinn',
+  'qualification': 'kapoor',
+  'entrance': 'kapoor',
+  'boss': 'quinn',
+  'boss-ionix': 'quinn'
+};
 
-export interface Node {
-  id: string;
-  type: NodeType;
-  position: { x: number; y: number };
-  connections: string[]; // IDs of connected nodes
-  isLocked: boolean;
-}
+// Sample descriptions for node types
+const NODE_DESCRIPTIONS: Record<NodeType, string[]> = {
+  'clinical': [
+    'A complex treatment planning case requires review.',
+    'Dr. Kapoor is reviewing patient dose distributions.',
+    'Review treatment plans with the radiation oncologist.'
+  ],
+  'qa': [
+    'Equipment calibration is needed on LINAC 2.',
+    'Daily QA procedures must be performed.',
+    'Jesse needs help with monthly output measurements.'
+  ],
+  'educational': [
+    'Dr. Quinn is explaining a new radiation physics concept.',
+    'A training session on proper dosimetry techniques.',
+    'Review the latest research findings with the physics team.'
+  ],
+  'storage': [
+    'The equipment storage room might have useful tools.',
+    'Jesse mentioned some spare parts in the storage closet.',
+    'Check the storage area for calibration equipment.'
+  ],
+  'vendor': [
+    'A vendor rep is demonstrating new QA equipment.',
+    'Purchase supplies or equipment upgrades.',
+    'Evaluate new measurement devices from vendors.'
+  ],
+  'experimental': [
+    'Dr. Quinn is testing an unusual radiation detector.',
+    'An experimental procedure with uncertain outcomes.',
+    'Help with a research project using novel techniques.'
+  ],
+  'qualification': [
+    'Demonstrate your knowledge before proceeding further.',
+    'A testing station to verify your understanding.',
+    'Dr. Kapoor needs to confirm your competency level.'
+  ],
+  'entrance': [
+    'Your day begins here at the hospital entrance.',
+    'The main entrance to the Medical Physics Department.',
+    'Start your rounds from the department entrance.'
+  ],
+  'boss': [
+    'A challenging synthesis of all your medical physics knowledge.',
+    'A complex case requiring all your expertise.',
+    'The department head wants to evaluate your overall competency.'
+  ],
+  'boss-ionix': [
+    "Dr. Quinn's experimental ion chamber has developed unusual properties.",
+    "The IONIX system requires careful calibration and understanding.",
+    "A quantum-sensitive ion chamber with unexpected behavior."
+  ]
+};
 
-export interface GameMap {
-  nodes: Node[];
-  startNodeId: string;
-  bossNodeId: string;
-}
+// Sample titles for node types
+const NODE_TITLES: Record<NodeType, string[]> = {
+  'clinical': [
+    'Patient Treatment Plan Review',
+    'Dose Distribution Analysis',
+    'Clinical Treatment Verification'
+  ],
+  'qa': [
+    'LINAC Output Calibration',
+    'Equipment Quality Assurance',
+    'Beam Profile Measurement'
+  ],
+  'educational': [
+    'Radiobiology Lecture',
+    'Radiation Safety Training',
+    'Treatment Optimization Seminar'
+  ],
+  'storage': [
+    'Equipment Storage Room',
+    'Supply Closet',
+    'Measurement Device Storage'
+  ],
+  'vendor': [
+    'Equipment Supplier Demo',
+    'Vendor Showcase',
+    'Technology Marketplace'
+  ],
+  'experimental': [
+    'Experimental Detection Methods',
+    'Research Protocol Testing',
+    'Quantum Dosimetry Experiment'
+  ],
+  'qualification': [
+    'Competency Verification',
+    'Knowledge Assessment',
+    'Qualification Test'
+  ],
+  'entrance': [
+    'Department Entrance',
+    'Hospital Entry Point',
+    'Medical Physics Wing Entrance'
+  ],
+  'boss': [
+    'Department Review Challenge',
+    'Comprehensive Knowledge Test',
+    'Chief Physicist Evaluation'
+  ],
+  'boss-ionix': [
+    'IONIX Calibration Challenge',
+    'Quantum Ion Chamber Mastery',
+    'Experimental Detector Evaluation'
+  ]
+};
 
-// For prototype, generate a simple map with predefined structure
+// Reward scaling based on node type
+const INSIGHT_REWARDS: Record<NodeType, number> = {
+  'entrance': 5,
+  'clinical': 15,
+  'qa': 15,
+  'educational': 20,
+  'storage': 10,
+  'vendor': 15,
+  'experimental': 25,
+  'qualification': 30,
+  'boss': 40,
+  'boss-ionix': 50
+};
+
+// Enhanced function to generate a procedural map for the game
 export function generateMap(): GameMap {
-  const nodeTypes: NodeType[] = ['clinical', 'qa', 'storage', 'vendor'];
+  // For the prototype phase, use our handcrafted map
+  return generatePrototypeMap();
+}
+
+// Generate a rich visual prototype map with node distribution for testing
+function generatePrototypeMap(): GameMap {
+  // Create nodes with meaningful spatial relationships and connected pathways
+  const nodes: Node[] = [
+    {
+      id: 'start',
+      title: 'Department Entrance',
+      description: 'Your day begins here at the hospital entrance.',
+      character: 'kapoor',
+      type: 'entrance',
+      position: { x: 50, y: 10 },
+      connections: ['qa-1', 'clinical-1'],
+      isLocked: false,
+      insightReward: 5
+    },
+    {
+      id: 'qa-1',
+      title: 'LINAC Output Calibration',
+      description: 'Dr. Kapoor is conducting monthly output measurements on LINAC 2.',
+      character: 'kapoor',
+      type: 'qa',
+      position: { x: 30, y: 30 },
+      connections: ['storage-1'],
+      isLocked: false,
+      insightReward: 15
+    },
+    {
+      id: 'clinical-1',
+      title: 'Patient Plan Review',
+      description: 'Review treatment plans with Dr. Garcia.',
+      character: 'garcia',
+      type: 'clinical',
+      position: { x: 70, y: 30 },
+      connections: ['experimental-1'],
+      isLocked: false,
+      insightReward: 15
+    },
+    {
+      id: 'storage-1',
+      title: 'Equipment Storage',
+      description: 'Jesse might have some useful items here.',
+      character: 'jesse',
+      type: 'storage',
+      position: { x: 25, y: 50 },
+      connections: ['qualification-1'],
+      isLocked: false,
+      insightReward: 10
+    },
+    {
+      id: 'experimental-1',
+      title: 'Experimental Detection',
+      description: 'Dr. Quinn is testing a modified radiation detector with unusual results.',
+      character: 'quinn',
+      type: 'experimental',
+      position: { x: 75, y: 50 },
+      connections: ['qualification-1'],
+      isLocked: false,
+      insightReward: 20
+    },
+    {
+      id: 'qualification-1',
+      title: 'Qualification Test',
+      description: 'Demonstrate your knowledge before facing Ionix.',
+      character: 'kapoor',
+      type: 'qualification',
+      position: { x: 50, y: 70 },
+      connections: ['boss-ionix'],
+      isLocked: false,
+      insightReward: 25
+    },
+    {
+      id: 'boss-ionix',
+      title: 'IONIX Challenge',
+      description: "Dr. Quinn's experimental ion chamber needs calibration. Demonstrate your mastery.",
+      character: 'quinn',
+      type: 'boss-ionix',
+      position: { x: 50, y: 90 },
+      connections: [],
+      isLocked: false,
+      insightReward: 50
+    },
+  ];
+  
+  return {
+    nodes,
+    startNodeId: 'start',
+    bossNodeId: 'boss-ionix',
+    dimensions: {
+      width: 100,
+      height: 100
+    }
+  };
+}
+
+// Generate a fully procedural map with dynamic node placement and connections
+function generateProceduralMap(): GameMap {
+  const nodeTypes: NodeType[] = ['clinical', 'qa', 'educational', 'storage', 'vendor', 'experimental'];
   
   // Create a simple map with 12 nodes (3 rows of 4 nodes)
   const nodes: Node[] = [];
   
-  // Start node (row 0, position 1)
+  // Start node (entrance)
   const startNodeId = nanoid();
-  nodes.push({
-    id: startNodeId,
-    type: 'clinical',
-    position: { x: 1, y: 0 },
-    connections: [],
-    isLocked: false,
-  });
+  nodes.push(createEnhancedNode(
+    startNodeId,
+    'entrance',
+    { x: 50, y: 10 }, // Center-top position
+    [],
+    false
+  ));
   
-  // Middle nodes (rows 1-2)
-  for (let row = 1; row < 3; row++) {
-    for (let col = 0; col < 4; col++) {
-      const nodeId = nanoid();
-      
-      // Make one storage closet in each row for the prototype
-      let randomType: NodeType;
-      if (col === 0) {
-        randomType = 'storage';
-      } else {
-        // For simplicity in the prototype, only use clinical and storage nodes
-        // You can uncomment this for more variety once those node types are implemented
-        // randomType = nodeTypes[Math.floor(Math.random() * nodeTypes.length)];
-        randomType = 'clinical';
-      }
-      
-      nodes.push({
-        id: nodeId,
-        type: randomType,
-        position: { x: col, y: row },
-        connections: [],
-        isLocked: true,
-      });
-    }
+  // Generate middle layer nodes (row 1)
+  const row1Nodes: Node[] = [];
+  for (let i = 0; i < 3; i++) {
+    const nodeId = nanoid();
+    // Distribute horizontally with variation
+    const xPos = 25 + (i * 25) + (Math.random() * 10 - 5);
+    const nodeType = pickRandomNodeType(nodeTypes);
+    
+    row1Nodes.push(createEnhancedNode(
+      nodeId,
+      nodeType,
+      { x: xPos, y: 30 + (Math.random() * 10 - 5) },
+      [],
+      false
+    ));
   }
+  nodes.push(...row1Nodes);
   
-  // Boss node (row 3, position 2)
+  // Generate middle layer nodes (row 2)
+  const row2Nodes: Node[] = [];
+  for (let i = 0; i < 4; i++) {
+    const nodeId = nanoid();
+    // Distribute horizontally with variation
+    const xPos = 20 + (i * 20) + (Math.random() * 10 - 5);
+    const nodeType = pickRandomNodeType(nodeTypes);
+    
+    row2Nodes.push(createEnhancedNode(
+      nodeId,
+      nodeType,
+      { x: xPos, y: 55 + (Math.random() * 10 - 5) },
+      [],
+      false
+    ));
+  }
+  nodes.push(...row2Nodes);
+  
+  // Add qualification node(s)
+  const qualNodeId = nanoid();
+  nodes.push(createEnhancedNode(
+    qualNodeId,
+    'qualification',
+    { x: 50, y: 75 },
+    [],
+    false
+  ));
+  
+  // Boss node
   const bossNodeId = nanoid();
-  nodes.push({
-    id: bossNodeId,
-    type: 'boss',
-    position: { x: 2, y: 3 },
-    connections: [],
-    isLocked: true,
-  });
+  nodes.push(createEnhancedNode(
+    bossNodeId,
+    'boss-ionix',
+    { x: 50, y: 90 }, // Center-bottom position
+    [],
+    false
+  ));
   
   // Connect nodes
-  // First connect start node to first row
-  const firstRowNodes = nodes.filter(node => node.position.y === 1);
-  nodes.find(n => n.id === startNodeId)!.connections = firstRowNodes.slice(0, 2).map(n => n.id);
+  // Start node connects to 2 row1 nodes
+  const startNode = nodes.find(n => n.id === startNodeId)!;
+  startNode.connections = row1Nodes.slice(0, 2).map(n => n.id);
   
-  // Connect first row to second row
-  firstRowNodes.forEach((node, idx) => {
-    const secondRowStart = Math.max(0, idx - 1);
-    const secondRowEnd = Math.min(firstRowNodes.length - 1, idx + 1);
-    const connectedNodes = nodes
-      .filter(n => n.position.y === 2)
-      .slice(secondRowStart, secondRowEnd + 1);
+  // Row 1 connects to row 2 with branching
+  row1Nodes.forEach((node, idx) => {
+    // Each row1 node connects to 1-2 row2 nodes
+    const connections = [];
+    const baseIdx = Math.min(Math.max(0, idx), row2Nodes.length - 2);
     
-    node.connections = connectedNodes.map(n => n.id);
+    // Always connect to at least one node
+    connections.push(row2Nodes[baseIdx].id);
+    
+    // 60% chance to connect to a second node
+    if (Math.random() < 0.6) {
+      const secondIdx = baseIdx + 1;
+      connections.push(row2Nodes[secondIdx].id);
+    }
+    
+    node.connections = connections;
   });
   
-  // Connect second row to boss
-  const secondRowNodes = nodes.filter(node => node.position.y === 2);
-  secondRowNodes.forEach(node => {
-    if (node.position.x >= 1 && node.position.x <= 2) {
-      node.connections = [bossNodeId];
-    }
+  // Row 2 connects to qualification node
+  row2Nodes.forEach(node => {
+    node.connections = [qualNodeId];
   });
+  
+  // Qualification node connects to boss
+  const qualNode = nodes.find(n => n.id === qualNodeId)!;
+  qualNode.connections = [bossNodeId];
   
   return {
     nodes,
     startNodeId,
     bossNodeId,
+    dimensions: {
+      width: 100,
+      height: 100
+    }
   };
 }
 
-// Helper function to get node type given a node ID
+// Helper function to create an enhanced node with all required properties
+function createEnhancedNode(
+  id: string,
+  type: NodeType,
+  position: NodePosition,
+  connections: string[],
+  isLocked: boolean
+): Node {
+  // Select random title and description based on node type
+  const titles = NODE_TITLES[type] || ['Unknown Node'];
+  const descriptions = NODE_DESCRIPTIONS[type] || ['No description available'];
+  
+  // Get character association
+  const character = CHARACTER_ASSOCIATIONS[type] || 'kapoor';
+  
+  // Get insight reward
+  const insightReward = INSIGHT_REWARDS[type] || 10;
+  
+  return {
+    id,
+    type,
+    title: titles[Math.floor(Math.random() * titles.length)],
+    description: descriptions[Math.floor(Math.random() * descriptions.length)],
+    character,
+    position,
+    connections,
+    isLocked,
+    insightReward
+  };
+}
+
+// Helper function to pick a random node type, excluding certain types
+function pickRandomNodeType(nodeTypes: NodeType[]): NodeType {
+  return nodeTypes[Math.floor(Math.random() * nodeTypes.length)];
+}
+
+// Helper function to get node details given a node ID
+export function getNodeDetails(map: GameMap, nodeId: string): Node | null {
+  return map.nodes.find(n => n.id === nodeId) || null;
+}
+
+// For backward compatibility during the transition
 export function getNodeTypeById(map: GameMap, nodeId: string): NodeType | null {
   const node = map.nodes.find(n => n.id === nodeId);
   return node ? node.type : null;
