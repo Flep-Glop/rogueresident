@@ -19,7 +19,8 @@ export default function SimplifiedMap() {
     player,
     completeDay,
     getNodeState,
-    isNodeAccessible
+    isNodeAccessible,
+    map
   } = useGameStore();
   
   const { playSound, flashScreen } = useGameEffects();
@@ -27,97 +28,47 @@ export default function SimplifiedMap() {
   const [hoveredNode, setHoveredNode] = useState<string | null>(null);
   const mapContainerRef = useRef<HTMLDivElement>(null);
   
-  // Our map data with narrative-driven node structure
-  const mapNodes: Record<string, Node> = {
-    'start': {
-      id: 'start',
-      title: 'Department Entrance',
-      description: 'Your day begins here at the hospital entrance.',
-      character: 'kapoor',
-      type: 'entrance',
-      position: { x: 50, y: 10 },
-      connections: ['qa-1', 'clinical-1'],
-      isLocked: false,
-      insightReward: 5
-    },
-    'qa-1': {
-      id: 'qa-1',
-      title: 'LINAC Output Calibration',
-      description: 'Dr. Kapoor is conducting monthly output measurements on LINAC 2.',
-      character: 'kapoor',
-      type: 'qa',
-      position: { x: 28, y: 33 }, // Slightly adjusted for organic placement
-      connections: ['storage-1'],
-      isLocked: false,
-      insightReward: 15
-    },
-    'clinical-1': {
-      id: 'clinical-1',
-      title: 'Patient Plan Review',
-      description: 'Review treatment plans with Dr. Garcia.',
-      character: 'garcia',
-      type: 'clinical',
-      position: { x: 72, y: 28 }, // Slightly offset for composition
-      connections: ['experimental-1'],
-      isLocked: false,
-      insightReward: 15
-    },
-    'storage-1': {
-      id: 'storage-1',
-      title: 'Equipment Storage',
-      description: 'Jesse might have some useful items here.',
-      character: 'jesse',
-      type: 'storage',
-      position: { x: 25, y: 52 }, // Position adjusted
-      connections: ['qualification-1'],
-      isLocked: false,
-      insightReward: 10
-    },
-    'experimental-1': {
-      id: 'experimental-1',
-      title: 'Experimental Detection',
-      description: 'Dr. Quinn is testing a modified radiation detector with unusual results.',
-      character: 'quinn',
-      type: 'experimental',
-      position: { x: 75, y: 50 }, // Slight adjustment
-      connections: ['qualification-1'],
-      isLocked: false,
-      insightReward: 20
-    },
-    'qualification-1': {
-      id: 'qualification-1',
-      title: 'Qualification Test',
-      description: 'Demonstrate your knowledge before facing Ionix.',
-      character: 'kapoor',
-      type: 'qualification',
-      position: { x: 50, y: 70 },
-      connections: ['boss-ionix'],
-      isLocked: false,
-      insightReward: 25
-    },
-    'boss-ionix': {
-      id: 'boss-ionix',
-      title: 'IONIX Challenge',
-      description: "Dr. Quinn's experimental ion chamber needs calibration. Demonstrate your mastery.",
-      character: 'quinn',
-      type: 'boss-ionix',
-      position: { x: 50, y: 90 },
-      connections: [],
-      isLocked: false,
-      insightReward: 50
+  // Use the map from the game store if available, otherwise use the local backup
+  const mapNodes: Record<string, Node> = {};
+  
+  useEffect(() => {
+    // Initialize mapNodes from actual game map
+    if (map && map.nodes) {
+      map.nodes.forEach(node => {
+        mapNodes[node.id] = node;
+      });
     }
-  };
+    
+    console.log("Map nodes initialized:", Object.keys(mapNodes));
+  }, [map]);
   
   // Set initial active node if none selected
   useEffect(() => {
-    if (!currentNodeId && !activeNode) {
-      // Start at node-0 (entrance)
-      setActiveNode('start');
+    if (!currentNodeId && !activeNode && map) {
+      // Auto-select the kapoorCalibrationNode if available, otherwise use map's startNodeId
+      const calibrationNode = map.nodes.find(node => node.type === 'kapoorCalibration');
+      const nodeToSelect = calibrationNode?.id || map.startNodeId;
+      
+      console.log(`Auto-selecting node: ${nodeToSelect}`);
+      setActiveNode(nodeToSelect);
+      
+      // Auto-select with a brief delay for visual flair
+      const timer = setTimeout(() => {
+        handleNodeSelect(nodeToSelect);
+      }, 800);
+      
+      return () => clearTimeout(timer);
     }
-  }, [currentNodeId, activeNode]);
+  }, [currentNodeId, activeNode, map]);
   
-  // Replace the handleNodeSelect function in SimplifiedMap.tsx
+  // Enhanced node selection with clear logging
   const handleNodeSelect = (nodeId: string) => {
+    // Skip if node doesn't exist in the map
+    if (!map || !map.nodes.find(node => node.id === nodeId)) {
+      console.warn(`Node ${nodeId} not found in map`);
+      return;
+    }
+    
     // Skip if node is not accessible
     if (!isNodeAccessible(nodeId)) {
       console.log(`Node ${nodeId} is not accessible`);
@@ -134,10 +85,13 @@ export default function SimplifiedMap() {
     
     // Visual feedback for selection
     if (flashScreen) {
-      const nodeType = mapNodes[nodeId].type;
-      const color = nodeType === 'boss-ionix' ? 'red' : 
-                  nodeType === 'qualification' ? 'yellow' : 'blue';
-      flashScreen(color);
+      const node = map.nodes.find(n => n.id === nodeId);
+      if (node) {
+        const color = node.type === 'kapoorCalibration' ? 'blue' :
+                      node.type === 'boss-ionix' ? 'red' : 
+                      node.type === 'qualification' ? 'yellow' : 'blue';
+        flashScreen(color);
+      }
     }
     
     // Node selection animation
@@ -176,6 +130,7 @@ export default function SimplifiedMap() {
   
   // Get node color based on character
   const getNodeColor = (node: Node): string => {
+    if (node.type === 'kapoorCalibration') return 'var(--clinical-color)';
     if (node.type === 'boss' || node.type === 'boss-ionix') return 'var(--boss-color)';
     if (node.type === 'qualification') return 'var(--warning-color)';
     
@@ -236,7 +191,7 @@ export default function SimplifiedMap() {
     };
   };
   
-  // In SimplifiedMap.tsx, enhance the getNodeClasses function:
+  // Enhanced node class generator
   const getNodeClasses = (nodeId: string, node: Node): string => {
     const state = getNodeState(nodeId);
     const isActive = state === 'active';
@@ -268,8 +223,10 @@ export default function SimplifiedMap() {
         break;
     }
     
-    // Node type styles
-    if (node.type === 'boss' || node.type === 'boss-ionix') {
+    // Node type styles with special highlight for calibration node
+    if (node.type === 'kapoorCalibration') {
+      classes += ' bg-clinical-dark'; 
+    } else if (node.type === 'boss' || node.type === 'boss-ionix') {
       classes += ' bg-boss-dark';
     } else if (node.type === 'qualification') {
       classes += ' bg-warning-dark';
@@ -287,8 +244,7 @@ export default function SimplifiedMap() {
   };
   
   // Render a single node with asymmetric character portrait
-  const renderNode = (nodeId: string) => {
-    const node = mapNodes[nodeId];
+  const renderNode = (nodeId: string, node: Node) => {
     const state = getNodeState(nodeId);
     
     const isNodeFuture = state === 'future';
@@ -298,9 +254,7 @@ export default function SimplifiedMap() {
     const isAccessible = state === 'accessible';
     const isInteractive = isActive || isAccessible;
     const isHovered = hoveredNode === nodeId && isInteractive;
-    
-    // Character portrait has higher z-index to break out of the node container
-    const portraitZIndex = isActive ? 40 : isAccessible ? 30 : isCompleted ? 25 : 20;
+    const isCalibrationNode = node.type === 'kapoorCalibration';
     
     // Generate a unique node ID for DOM selection
     const uniqueNodeId = `node-${nodeId}`;
@@ -309,11 +263,15 @@ export default function SimplifiedMap() {
     const showContent = !isNodeLocked;
     const showFullContent = !isNodeFuture && !isNodeLocked;
     
+    // Adjust node size - make calibration node larger
+    const nodeWidth = isCalibrationNode ? 'w-64' : 'w-56';
+    const nodeHeight = isCalibrationNode ? 'h-28' : 'h-20';
+    
     return (
         <div 
           id={uniqueNodeId}
           key={nodeId}
-          className={`w-56 h-20 relative ${getNodeClasses(nodeId, node)}`} // Dramatically shorter height
+          className={`${nodeWidth} ${nodeHeight} relative ${getNodeClasses(nodeId, node)}`}
           onClick={() => handleNodeSelect(nodeId)}
           onMouseEnter={() => {
             setHoveredNode(nodeId);
@@ -358,7 +316,8 @@ export default function SimplifiedMap() {
                 <Image
                   src={getCharacterImage(node.character)}
                   alt={node.character || 'Character'}
-                  fill
+                  width={80}
+                  height={80}
                   className="object-cover scale-110"
                 />
               )}
@@ -378,7 +337,7 @@ export default function SimplifiedMap() {
           <div className="absolute inset-0 flex flex-col justify-center pl-16 pr-3">
             <PixelText 
               className={`
-                text-sm truncate font-medium 
+                ${isCalibrationNode ? 'text-lg' : 'text-sm'} truncate font-medium 
                 ${isActive || isHovered ? 'text-white' : 'text-gray-300'}
                 transition-colors duration-300
               `}
@@ -393,6 +352,7 @@ export default function SimplifiedMap() {
                 style={{ backgroundColor: getNodeColor(node) }}
               ></div>
               <PixelText className="text-xs text-gray-400">
+                {node.type === 'kapoorCalibration' && 'Calibration'}
                 {node.type === 'qa' && 'QA'}
                 {node.type === 'clinical' && 'Clinical'}
                 {node.type === 'educational' && 'Ed'}
@@ -414,6 +374,11 @@ export default function SimplifiedMap() {
             </div>
           </div>
           
+          {/* Special indicator for calibration nodes */}
+          {isCalibrationNode && !isCompleted && (
+            <div className="absolute -top-2 -right-2 w-4 h-4 rounded-full bg-clinical animate-pulse"></div>
+          )}
+          
           {/* Completion indicator - more subtle and positioned differently */}
           {isCompleted && (
             <div 
@@ -431,9 +396,11 @@ export default function SimplifiedMap() {
   
   // Render the connections between nodes with enhanced visual effects
   const renderConnections = () => {
-    return Object.values(mapNodes).flatMap(node => 
+    if (!map || !map.nodes) return null;
+    
+    return map.nodes.flatMap(node => 
       node.connections.map((targetId: string, index: number) => {
-        const targetNode = mapNodes[targetId];
+        const targetNode = map.nodes.find(n => n.id === targetId);
         if (!targetNode) return null;
         
         // Calculate line positions
@@ -515,6 +482,32 @@ export default function SimplifiedMap() {
     }
   };
   
+  // Check if we're showing the single node calibration experience
+  const isSingleNodeMode = map?.nodes.length === 1 && map.nodes[0].type === 'kapoorCalibration';
+  
+  // Adjust title based on mode
+  const titleText = isSingleNodeMode
+    ? "LINAC Calibration Session"
+    : "Medical Physics Department";
+    
+  const subtitleText = isSingleNodeMode
+    ? "Begin the calibration session with Dr. Kapoor"
+    : "Navigate through challenges to reach your goal";
+  
+  // If map is not loaded yet, show loading state
+  if (!map || !map.nodes || map.nodes.length === 0) {
+    return (
+      <div className="h-full w-full flex items-center justify-center bg-background">
+        <div className="text-center bg-surface-dark p-6 pixel-borders">
+          <PixelText className="text-lg mb-2">Loading map data...</PixelText>
+          <div className="w-16 h-2 bg-surface mx-auto">
+            <div className="w-1/2 h-full bg-clinical animate-pulse"></div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+  
   return (
     <div 
       ref={mapContainerRef}
@@ -522,70 +515,95 @@ export default function SimplifiedMap() {
     >
       <div className="text-center mb-8 relative">
         <PixelText className="text-4xl text-white font-pixel-heading mb-2 glow-text">
-          Medical Physics Department
+          {titleText}
         </PixelText>
         <PixelText className="text-lg text-blue-300">
-          Navigate through challenges to reach Ionix
+          {subtitleText}
         </PixelText>
       </div>
       
-      {/* Node map with branching paths */}
-      <div className="relative w-full h-[600px] max-w-5xl mx-auto">
-        {/* Connection paths first (so they're behind nodes) */}
-        {renderConnections()}
-        
-        {/* Position nodes by percentage coordinates */}
-        {Object.keys(mapNodes).map(nodeId => {
-          const node = mapNodes[nodeId];
-          return (
+      {/* Node map - show either single node or full map */}
+      {isSingleNodeMode ? (
+        // Single calibration node centered
+        <div className="relative w-full h-64 max-w-xl mx-auto">
+          {/* Position node at center */}
+          <div
+            className="absolute transform -translate-x-1/2 -translate-y-1/2"
+            style={{
+              left: '50%',
+              top: '50%',
+            }}
+          >
+            {renderNode(map.nodes[0].id, map.nodes[0])}
+          </div>
+        </div>
+      ) : (
+        // Full node map with branching paths
+        <div className="relative w-full h-[600px] max-w-5xl mx-auto">
+          {/* Connection paths first (so they're behind nodes) */}
+          {renderConnections()}
+          
+          {/* Position nodes by percentage coordinates */}
+          {map.nodes.map(node => (
             <div
-              key={nodeId}
+              key={node.id}
               className="absolute transform -translate-x-1/2 -translate-y-1/2 transition-all duration-300"
               style={{
                 left: `${node.position.x}%`,
                 top: `${node.position.y}%`,
               }}
             >
-              {renderNode(nodeId)}
+              {renderNode(node.id, node)}
             </div>
-          );
-        })}
+          ))}
+        </div>
+      )}
+      
+      {/* Return to Hill Home button */}
+      <div className="fixed bottom-6 left-1/2 transform -translate-x-1/2 bg-surface/90 backdrop-blur-sm pixel-borders-thin px-4 py-2 flex items-center space-x-4 z-30">
+        <PixelButton
+          className={`end-day-button bg-surface hover:bg-clinical text-text-primary px-4 py-2 relative overflow-hidden group ${completedNodeIds.length === 0 ? 'opacity-80' : ''}`}
+          onClick={handleEndDay}
+        >
+          <span className="relative z-10">Return to Hill Home</span>
+          <span className="absolute inset-0 bg-clinical opacity-0 group-hover:opacity-100 transition-opacity duration-300"></span>
+          {completedNodeIds.length === 0 && (
+            <span className="absolute -top-6 left-1/2 transform -translate-x-1/2 text-xs text-warning-light whitespace-nowrap">
+              Complete at least one node first
+            </span>
+          )}
+        </PixelButton>
       </div>
       
-      <div className="fixed bottom-6 left-1/2 transform -translate-x-1/2 bg-surface/90 backdrop-blur-sm pixel-borders-thin px-4 py-2 flex items-center space-x-4 z-30">
-      {/* Remove the stat indicators and keep only the button */}
-      <PixelButton
-        className={`end-day-button bg-surface hover:bg-clinical text-text-primary px-4 py-2 relative overflow-hidden group ${completedNodeIds.length === 0 ? 'opacity-80' : ''}`}
-        onClick={handleEndDay}
-      >
-        <span className="relative z-10">Return to Hill Home</span>
-        <span className="absolute inset-0 bg-clinical opacity-0 group-hover:opacity-100 transition-opacity duration-300"></span>
-        {completedNodeIds.length === 0 && (
-          <span className="absolute -top-6 left-1/2 transform -translate-x-1/2 text-xs text-warning-light whitespace-nowrap">
-            Complete at least one node first
-          </span>
-        )}
-      </PixelButton>
-    </div>
-      
-      {/* Enhanced map legend with better visual hierarchy */}
-      <div className="absolute bottom-20 right-4 bg-surface/80 backdrop-blur-sm p-3 text-xs pixel-borders-thin z-40">
-        <PixelText className="font-semibold mb-2">Map Progress</PixelText>
-        <div className="space-y-2">
-          <div className="flex items-center space-x-2">
-            <div className="w-3 h-3 bg-success rounded-sm"></div>
-            <PixelText className="text-text-secondary">Completed</PixelText>
-          </div>
-          <div className="flex items-center space-x-2">
-            <div className="w-3 h-3 bg-clinical rounded-sm animate-pulse-slow"></div>
-            <PixelText className="text-text-secondary">Available</PixelText>
-          </div>
-          <div className="flex items-center space-x-2">
-            <div className="w-3 h-3 bg-gray-700 rounded-sm"></div>
-            <PixelText className="text-text-secondary">Future</PixelText>
+      {/* Map legend with better visual hierarchy - only show for multi-node maps */}
+      {!isSingleNodeMode && (
+        <div className="absolute bottom-20 right-4 bg-surface/80 backdrop-blur-sm p-3 text-xs pixel-borders-thin z-40">
+          <PixelText className="font-semibold mb-2">Map Progress</PixelText>
+          <div className="space-y-2">
+            <div className="flex items-center space-x-2">
+              <div className="w-3 h-3 bg-success rounded-sm"></div>
+              <PixelText className="text-text-secondary">Completed</PixelText>
+            </div>
+            <div className="flex items-center space-x-2">
+              <div className="w-3 h-3 bg-clinical rounded-sm animate-pulse-slow"></div>
+              <PixelText className="text-text-secondary">Available</PixelText>
+            </div>
+            <div className="flex items-center space-x-2">
+              <div className="w-3 h-3 bg-gray-700 rounded-sm"></div>
+              <PixelText className="text-text-secondary">Future</PixelText>
+            </div>
           </div>
         </div>
-      </div>
+      )}
+      
+      {/* Debug mode indicator in development */}
+      {process.env.NODE_ENV !== 'production' && (
+        <div className="fixed top-20 left-2 bg-black/70 text-white text-xs px-2 py-1 z-50">
+          Mode: {isSingleNodeMode ? 'Single Calibration Node' : 'Full Map'} | 
+          Nodes: {map.nodes.length} | 
+          Current: {currentNodeId || 'none'}
+        </div>
+      )}
     </div>
   );
 }

@@ -45,47 +45,34 @@ export default function GameContainer({ useSimplifiedMap = true }: GameContainer
   // UI states
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   
-  // Replace the entire getCurrentNodeType function with this implementation
+  // In the getCurrentNodeType function - add explicit support for kapoorCalibration type
   const getCurrentNodeType = () => {
-    if (!currentNodeId || !map) return null;
-    
-    // Direct node ID to type mapping for simplified map
-    const nodeTypeMap = {
-      'start': 'entrance',
-      'qa-1': 'kapoor-calibration',
-      'experimental-1': 'quinn-experiment',
-      'storage-1': 'storage',
-      'clinical-1': 'clinical', 
-      'qualification-1': 'qualification',
-      'boss-ionix': 'boss-ionix'
-    };
-    
-    // If we have a direct mapping, use it
-    if (nodeTypeMap[currentNodeId]) {
-      console.log(`Node ${currentNodeId} mapped to type: ${nodeTypeMap[currentNodeId]}`);
-      return nodeTypeMap[currentNodeId];
+    if (!currentNodeId || !map) {
+      console.log("No current node or map available");
+      return null;
     }
     
-    // Fallback to map-based lookup for non-simplified cases
+    // Explicit logging to debug routing
     const currentNode = map.nodes.find(node => node.id === currentNodeId);
     if (!currentNode) {
       console.warn(`Current node ${currentNodeId} not found in map!`);
       return null;
     }
     
+    console.log(`Node ${currentNodeId} has type: ${currentNode.type}`);
     return currentNode.type;
   };
   
-  // Replace the entire useEffect that handles node selection with this implementation
+  // In your useEffect for node selection, update the routing logic
   useEffect(() => {
     if (currentNodeId && !currentChallenge && !completedNodeIds.includes(currentNodeId)) {
       const nodeType = getCurrentNodeType();
       console.log(`Starting interaction with ${nodeType} node: ${currentNodeId}`);
       
-      // Based on node ID directly (more reliable than type)
-      switch(currentNodeId) {
-        case 'qa-1':
-          // Kapoor's LINAC calibration
+      // Direct routing for specific node types
+      switch(nodeType) {
+        case 'kapoorCalibration':
+          console.log("Launching KapoorCalibration experience");
           startChallenge({
             id: currentNodeId,
             type: 'calibration',
@@ -172,7 +159,6 @@ export default function GameContainer({ useSimplifiedMap = true }: GameContainer
           
         default:
           console.log(`Using generic initialization for node: ${currentNodeId}`);
-          // For unknown node IDs, create minimal challenge state
           if (nodeType) {
             startChallenge({
               id: currentNodeId,
@@ -183,7 +169,7 @@ export default function GameContainer({ useSimplifiedMap = true }: GameContainer
       }
     }
   }, [currentNodeId, currentChallenge, completedNodeIds, startChallenge, map]);
-
+    
   // Handle transition to night phase
   const handleDayCompletion = () => {
     // Mark that we're transitioning from day to night
@@ -219,40 +205,108 @@ export default function GameContainer({ useSimplifiedMap = true }: GameContainer
     setShowTransition(false);
   };
   
+  // Enhanced renderMainContent with dual-approach node resolution 
+  // Uses both explicit ID routing and type-based adaptive routing
+
   const renderMainContent = () => {
-    // First check if we're in night phase
+    // First check if we're in night phase - preserve the rhythm of the day/night cycle
     if (gamePhase === 'night') {
       return <HillHomeScene onComplete={handleNightCompletion} />;
     }
     
-    // If we have a selected unfinished node, route directly by node ID
+    // If we have a selected unfinished node, determine appropriate content to render
     if (currentNodeId && !completedNodeIds.includes(currentNodeId)) {
-      console.log(`Rendering content for node: ${currentNodeId}`);
+      // Get node type for more semantic routing decisions
+      const nodeType = getCurrentNodeType();
+      console.log(`Rendering content for node: ${currentNodeId} (type: ${nodeType || 'unknown'})`);
       
-      // Direct routing by node ID
+      // Type-based routing for our specialized experiences
+      if (nodeType === 'kapoorCalibration') {
+        console.log("Launching specialized Kapoor Calibration sequence");
+        return <KapoorCalibration />;
+      }
+      
+      // Explicit ID-based routing with fallbacks for legacy compatibility
+      // This hybrid approach ensures robustness during the transition
       switch (currentNodeId) {
-        case 'qa-1':
+        case 'kapoorCalibrationNode':
           return <KapoorCalibration />;
+          
+        case 'qa-1':
+          // Legacy calibration node ID
+          return <KapoorCalibration />;
+          
         case 'experimental-1':
           return <CharacterInteractionNode character="quinn" />;
+          
         case 'storage-1':
           return <StorageCloset />;
+          
         case 'clinical-1':
           return <CharacterInteractionNode character="kapoor" />;
+          
         case 'boss-ionix':
           return <BossNode />;
+          
         case 'qualification-1':
-          // Insert appropriate component here
           return <CharacterInteractionNode character="kapoor" />;
+          
         case 'start':
-          // Handle entrance/start node
           return <CharacterInteractionNode character="kapoor" />;
+          
+        default:
+          // Adaptive fallback based on node type when no explicit routing exists
+          console.log(`No explicit routing for node ID "${currentNodeId}", attempting type-based routing...`);
+          
+          if (nodeType === 'qa' || nodeType === 'calibration') {
+            return <KapoorCalibration />;
+          } else if (nodeType === 'storage') {
+            return <StorageCloset />;
+          } else if (nodeType === 'boss' || nodeType === 'boss-ionix') {
+            return <BossNode />;
+          } else {
+            // Last-resort character-based routing
+            const node = map?.nodes.find(n => n.id === currentNodeId);
+            if (node?.character) {
+              console.log(`Falling back to character-based interaction for ${node.character}`);
+              return <CharacterInteractionNode character={node.character as any} />;
+            }
+            
+            // If all else fails, show a helpful error with recovery option
+            console.warn(`Unable to resolve appropriate component for node: ${currentNodeId}`);
+            return (
+              <div className="p-6 bg-surface-dark pixel-borders flex flex-col items-center justify-center min-h-[400px]">
+                <PixelText className="text-xl text-warning-light mb-4">Encounter Resolution Issue</PixelText>
+                <PixelText className="text-text-secondary text-center mb-6">
+                  The system couldn't determine how to render this node type.
+                  <br />
+                  Node ID: {currentNodeId}
+                  <br />
+                  Type: {nodeType || 'unknown'}
+                </PixelText>
+                <PixelButton
+                  className="bg-clinical text-white"
+                  onClick={() => setCurrentNode(null)} // Return to map view
+                >
+                  Return to Map
+                </PixelButton>
+              </div>
+            );
+          }
       }
     }
     
-    // Default: show the map
+    // Default: show the map as our hub space
+    // This acts as both our fallback and our intentional "between encounters" state
     return <SimplifiedMap />;
   };
+
+  // Add a debug overlay to help during development
+  {process.env.NODE_ENV !== 'production' && (
+    <div className="fixed bottom-0 left-0 bg-black/70 text-white p-2 font-mono text-xs z-50">
+      Current Node: {currentNodeId || 'none'} | Type: {getCurrentNodeType() || 'none'}
+    </div>
+  )}
 
   // Toggle sidebar with animation
   const toggleSidebar = () => {

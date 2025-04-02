@@ -12,6 +12,7 @@ export interface NodePosition {
  * Expanded node types to support richer gameplay patterns
  */
 export type NodeType = 
+  | 'kapoorCalibration' // Primary calibration node - direct to specialized experience
   | 'clinical'     // Patient-focused challenges
   | 'qa'           // Equipment QA challenges
   | 'educational'  // Learning-focused nodes

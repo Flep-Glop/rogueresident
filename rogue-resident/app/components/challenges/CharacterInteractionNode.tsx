@@ -219,7 +219,12 @@ const CHARACTER_DIALOGUES: Record<Character, DialogueNode[]> = {
   'player': []
 };
 
-export default function CharacterInteractionNode() {
+// Component props with optional character specification
+interface CharacterInteractionNodeProps {
+  character?: keyof typeof CHARACTER_DATA;
+}
+
+export default function CharacterInteractionNode({ character: characterProp }: CharacterInteractionNodeProps) {
   const [stage, setStage] = useState<InteractionStage>('intro');
   const [currentCharacter, setCurrentCharacter] = useState<keyof typeof CHARACTER_DATA>('kapoor');
   const [dialogueIndex, setDialogueIndex] = useState(0);
@@ -237,16 +242,24 @@ export default function CharacterInteractionNode() {
   
   // Select random character for the interaction if none provided
   useEffect(() => {
-    const characters = Object.keys(CHARACTER_DATA) as Array<keyof typeof CHARACTER_DATA>;
-    const randomCharacter = characters[Math.floor(Math.random() * characters.length)];
-    setCurrentCharacter(randomCharacter);
+    // If a character prop is provided, use it
+    if (characterProp && CHARACTER_DATA[characterProp]) {
+      setCurrentCharacter(characterProp);
+      console.log(`Using provided character: ${characterProp}`);
+    } else {
+      // Fallback to random selection
+      const characters = Object.keys(CHARACTER_DATA) as Array<keyof typeof CHARACTER_DATA>;
+      const randomCharacter = characters[Math.floor(Math.random() * characters.length)];
+      setCurrentCharacter(randomCharacter);
+      console.log(`No valid character provided, using random: ${randomCharacter}`);
+    }
     
     // Play introduction sound
     if (playSound) playSound('challenge-start');
-  }, [playSound]);
+  }, [playSound, characterProp]);
   
   // Get character data and dialogue
-  const character = CHARACTER_DATA[currentCharacter];
+  const characterData = CHARACTER_DATA[currentCharacter];
   const dialogue = CHARACTER_DIALOGUES[currentCharacter as Character];
   
   // Replace the entire existing handleChoiceSelect function
@@ -270,7 +283,7 @@ export default function CharacterInteractionNode() {
       'approval'; // Default to a subtle approval rather than using 'neutral'
       
     // Explicitly set current reaction with debug logging
-    console.log(`Setting ${character.name}'s reaction: ${reactionType}`);
+    console.log(`Setting ${characterData.name}'s reaction: ${reactionType}`);
     setCurrentReaction(reactionType);
     
     // Force animation refresh by clearing and resetting with timeout
@@ -294,11 +307,11 @@ export default function CharacterInteractionNode() {
     
     // Set feedback message based on relationship change
     if (relChange > 0) {
-      setFeedbackMessage(`${character.name} seems impressed by your insight.`);
+      setFeedbackMessage(`${characterData.name} seems impressed by your insight.`);
     } else if (relChange < 0) {
-      setFeedbackMessage(`${character.name} seems somewhat disappointed by your approach.`);
+      setFeedbackMessage(`${characterData.name} seems somewhat disappointed by your approach.`);
     } else {
-      setFeedbackMessage(`${character.name} acknowledges your response.`);
+      setFeedbackMessage(`${characterData.name} acknowledges your response.`);
     }
     
     setStage('response');
@@ -325,7 +338,7 @@ export default function CharacterInteractionNode() {
   const completeInteraction = () => {
     if (currentNodeId) {
       // Apply character's insight multiplier to the base insight gain
-      const adjustedInsight = Math.round(insightGained * character.insightMultiplier);
+      const adjustedInsight = Math.round(insightGained * characterData.insightMultiplier);
       
       // Update game state
       updateInsight(adjustedInsight);
@@ -387,7 +400,7 @@ export default function CharacterInteractionNode() {
             className="min-h-[200px] p-6 mb-6 pixel-borders-thin"
             style={{ 
               backgroundColor: 'var(--surface-dark)',
-              borderColor: character.primaryColor 
+              borderColor: characterData.primaryColor 
             }}
           >
             <PixelText>{currentDialogue.text}</PixelText>
@@ -401,7 +414,7 @@ export default function CharacterInteractionNode() {
               className="min-h-[120px] p-6 mb-4 pixel-borders-thin"
               style={{ 
                 backgroundColor: 'var(--surface-dark)',
-                borderColor: character.primaryColor 
+                borderColor: characterData.primaryColor 
               }}
             >
               <PixelText>{currentDialogue.text}</PixelText>
@@ -441,7 +454,7 @@ export default function CharacterInteractionNode() {
               className="min-h-[120px] p-6 mb-4 pixel-borders-thin"
               style={{ 
                 backgroundColor: 'var(--surface-dark)',
-                borderColor: character.primaryColor 
+                borderColor: characterData.primaryColor 
               }}
             >
               <PixelText>{selectedOption?.responseText}</PixelText>
@@ -456,11 +469,11 @@ export default function CharacterInteractionNode() {
             <div className="grid grid-cols-2 gap-3">
               <div className="bg-surface p-3 pixel-borders-thin">
                 <PixelText className="text-text-secondary text-sm">Insight Gained:</PixelText>
-                <PixelText className={`text-lg ${character.textColor}`}>
-                  +{Math.round(insightGained * character.insightMultiplier)} 
-                  {character.insightMultiplier !== 1 && (
+                <PixelText className={`text-lg ${characterData.textColor}`}>
+                  +{Math.round(insightGained * characterData.insightMultiplier)} 
+                  {characterData.insightMultiplier !== 1 && (
                     <span className="text-xs ml-1">
-                      ({character.insightMultiplier > 1 ? `+${(character.insightMultiplier - 1) * 100}%` : `${(character.insightMultiplier - 1) * 100}%`})
+                      ({characterData.insightMultiplier > 1 ? `+${(characterData.insightMultiplier - 1) * 100}%` : `${(characterData.insightMultiplier - 1) * 100}%`})
                     </span>
                   )}
                 </PixelText>
@@ -468,7 +481,7 @@ export default function CharacterInteractionNode() {
               
               <div className="bg-surface p-3 pixel-borders-thin">
                 <PixelText className="text-text-secondary text-sm">Knowledge Progress:</PixelText>
-                <PixelText className={`text-lg ${character.textColor}`}>
+                <PixelText className={`text-lg ${characterData.textColor}`}>
                   {knowledgeGained || 'None'}
                 </PixelText>
               </div>
@@ -483,7 +496,7 @@ export default function CharacterInteractionNode() {
               className="min-h-[120px] p-6 mb-4 pixel-borders-thin"
               style={{ 
                 backgroundColor: 'var(--surface-dark)',
-                borderColor: character.primaryColor 
+                borderColor: characterData.primaryColor 
               }}
             >
               <PixelText>{dialogue[dialogue.length - 1].text}</PixelText>
@@ -495,14 +508,14 @@ export default function CharacterInteractionNode() {
               <div className="grid grid-cols-2 gap-3 mb-3">
                 <div className="bg-surface-dark p-2 pixel-borders-thin">
                   <PixelText className="text-text-secondary text-sm">Total Insight:</PixelText>
-                  <PixelText className={`text-lg ${character.textColor}`}>
-                    +{Math.round(insightGained * character.insightMultiplier)}
+                  <PixelText className={`text-lg ${characterData.textColor}`}>
+                    +{Math.round(insightGained * characterData.insightMultiplier)}
                   </PixelText>
                 </div>
                 
                 <div className="bg-surface-dark p-2 pixel-borders-thin">
                   <PixelText className="text-text-secondary text-sm">Knowledge Gained:</PixelText>
-                  <PixelText className={`text-lg ${character.textColor}`}>
+                  <PixelText className={`text-lg ${characterData.textColor}`}>
                     {knowledgeGained || 'None'}
                   </PixelText>
                 </div>
@@ -510,7 +523,7 @@ export default function CharacterInteractionNode() {
               
               <PixelText className="text-text-secondary text-sm italic">
                 In the full game, these insights would contribute to your knowledge constellation
-                and relationship development with {character.name}.
+                and relationship development with {characterData.name}.
               </PixelText>
             </div>
           </div>
@@ -522,7 +535,7 @@ export default function CharacterInteractionNode() {
   };
   
   // If no character or dialogue, show loading state
-  if (!character || !dialogue || dialogue.length === 0) {
+  if (!characterData || !dialogue || dialogue.length === 0) {
     return (
       <div className="flex items-center justify-center h-full bg-background">
         <div className="p-6 bg-surface pixel-borders text-center">
@@ -537,23 +550,23 @@ export default function CharacterInteractionNode() {
   return (
     <div 
       className="p-6 max-w-4xl mx-auto bg-surface pixel-borders"
-      style={{ borderColor: character.primaryColor }}
+      style={{ borderColor: characterData.primaryColor }}
     >
       {/* Character header */}
       <div className="flex items-center mb-6">
         <div 
           className="w-16 h-16 mr-4 flex items-center justify-center text-3xl"
           style={{ 
-            backgroundColor: character.darkColor,
-            border: `2px solid ${character.primaryColor}`
+            backgroundColor: characterData.darkColor,
+            border: `2px solid ${characterData.primaryColor}`
           }}
         >
-          {character.portrait}
+          {characterData.portrait}
         </div>
         
         <div>
-          <PixelText className={`text-2xl ${character.textColor}`}>{character.name}</PixelText>
-          <PixelText className="text-text-secondary">{character.title}</PixelText>
+          <PixelText className={`text-2xl ${characterData.textColor}`}>{characterData.name}</PixelText>
+          <PixelText className="text-text-secondary">{characterData.title}</PixelText>
         </div>
       </div>
       
@@ -563,7 +576,7 @@ export default function CharacterInteractionNode() {
       {/* Continue button */}
       <div className="flex justify-end">
         <PixelButton
-          className={`${character.bgColor} text-white hover:opacity-90`}
+          className={`${characterData.bgColor} text-white hover:opacity-90`}
           onClick={handleContinue}
         >
           {stage === 'intro' ? 'Continue' : 

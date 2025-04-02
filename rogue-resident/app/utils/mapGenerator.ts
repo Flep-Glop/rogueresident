@@ -4,6 +4,7 @@ import { GameMap, Node, NodeType, NodePosition } from '../types/map';
 
 // Sample character associations for node types
 const CHARACTER_ASSOCIATIONS: Record<NodeType, string> = {
+  'kapoorCalibration': 'kapoor', // Explicit association for our featured node
   'clinical': 'kapoor',
   'qa': 'jesse',
   'educational': 'quinn',
@@ -18,6 +19,11 @@ const CHARACTER_ASSOCIATIONS: Record<NodeType, string> = {
 
 // Sample descriptions for node types
 const NODE_DESCRIPTIONS: Record<NodeType, string[]> = {
+  'kapoorCalibration': [
+    'Dr. Kapoor is conducting monthly output measurements on LINAC 2.',
+    'A precision calibration session with the department\'s Chief Medical Physicist.',
+    'Critical calibration procedures that ensure accurate dose delivery to patients.'
+  ],
   'clinical': [
     'A complex treatment planning case requires review.',
     'Dr. Kapoor is reviewing patient dose distributions.',
@@ -72,6 +78,11 @@ const NODE_DESCRIPTIONS: Record<NodeType, string[]> = {
 
 // Sample titles for node types
 const NODE_TITLES: Record<NodeType, string[]> = {
+  'kapoorCalibration': [
+    'LINAC Output Calibration',
+    'Precision Dosimetry Session',
+    'Calibration Protocol Review'
+  ],
   'clinical': [
     'Patient Treatment Plan Review',
     'Dose Distribution Analysis',
@@ -126,6 +137,7 @@ const NODE_TITLES: Record<NodeType, string[]> = {
 
 // Reward scaling based on node type
 const INSIGHT_REWARDS: Record<NodeType, number> = {
+  'kapoorCalibration': 50, // High reward for our focused calibration experience
   'entrance': 5,
   'clinical': 15,
   'qa': 15,
@@ -140,11 +152,39 @@ const INSIGHT_REWARDS: Record<NodeType, number> = {
 
 // Enhanced function to generate a procedural map for the game
 export function generateMap(): GameMap {
-  // For the prototype phase, use our handcrafted map
-  return generatePrototypeMap();
+  // For the prototype phase, use our focused calibration map
+  return generateKapoorCalibrationMap();
 }
 
-// Generate a rich visual prototype map with node distribution for testing
+// Generate a focused map with just the Kapoor calibration node
+function generateKapoorCalibrationMap(): GameMap {
+  // Create nodes with meaningful spatial relationships and connected pathways
+  const nodes: Node[] = [
+    {
+      id: 'kapoorCalibrationNode',
+      title: 'LINAC Output Calibration',
+      description: 'Dr. Kapoor is conducting monthly output measurements on LINAC 2.',
+      character: 'kapoor',
+      type: 'kapoorCalibration',
+      position: { x: 50, y: 50 }, // Center of the map
+      connections: [], // No connections needed for single-node flow
+      isLocked: false,
+      insightReward: INSIGHT_REWARDS['kapoorCalibration']
+    }
+  ];
+  
+  return {
+    nodes,
+    startNodeId: 'kapoorCalibrationNode', // This is now our only node
+    bossNodeId: 'kapoorCalibrationNode', // Setting this to the same node since we only have one
+    dimensions: {
+      width: 100,
+      height: 100
+    }
+  };
+}
+
+// Original prototype map generation - kept for reference or future expansion
 function generatePrototypeMap(): GameMap {
   // Create nodes with meaningful spatial relationships and connected pathways
   const nodes: Node[] = [
