@@ -271,3 +271,12 @@
   pointer-events: none;
   mix-blend-mode: overlay;
 }
+
+
+/* Add this to pixel-assets.css */
+.pixel-art-sprite {
+  image-rendering: pixelated;
+  image-rendering: -moz-crisp-edges;
+  image-rendering: crisp-edges;
+  -ms-interpolation-mode: nearest-neighbor;
+}

@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { useGameStore } from '../../store/gameStore';
 import { useKnowledgeStore } from '../../store/knowledgeStore';
 import { useJournalStore } from '../../store/journalStore';
@@ -9,38 +9,12 @@ import { useGameEffects } from '../GameEffects';
 import KnowledgeUpdate from '../knowledge/KnowledgeUpdate';
 import Image from 'next/image';
 
-// Dialogue stage representation
-interface DialogueStage {
-  id: string;
-  text: string;
-  contextNote?: string;
-  equipment?: {
-    imageSrc: string;
-    alt: string;
-    description: string;
-  };
-  options?: DialogueOption[];
-  nextStageId?: string;
-  isConclusion?: boolean;
-}
+// Import our new hooks
+import { useTypewriter } from '../../hooks/useTypewriter';
+import { useDialogueFlow, DialogueStage, DialogueOption } from '../../hooks/useDialogueFlow';
+import { useCharacterInteraction } from '../../hooks/useCharacterInteraction';
 
-// Option for player responses
-interface DialogueOption {
-  id: string;
-  text: string;
-  nextStageId: string;
-  insightGain?: number;
-  approach?: 'humble' | 'precision' | 'confidence';
-  relationshipChange?: number;
-  knowledgeGain?: {
-    conceptId: string;
-    domainId: string;
-    amount: number;
-  };
-  responseText?: string;
-  triggersBackstory?: boolean;
-}
-
+// Define knowledge gain event type
 interface KnowledgeGainEvent {
   conceptName: string;
   domainName: string;
@@ -62,28 +36,7 @@ export default function KapoorCalibration() {
   const { playSound, flashScreen, showRewardEffect } = useGameEffects();
   
   // Core state
-  const [currentStageId, setCurrentStageId] = useState('intro');
-  const [selectedOption, setSelectedOption] = useState<DialogueOption | null>(null);
-  const [showResponse, setShowResponse] = useState(false);
-  const [totalInsightGained, setTotalInsightGained] = useState(0);
   const [encounterComplete, setEncounterComplete] = useState(false);
-  const [isTyping, setIsTyping] = useState(false);
-  const [displayedText, setDisplayedText] = useState('');
-  const [showBackstory, setShowBackstory] = useState(false);
-  const [backstoryText, setBackstoryText] = useState('');
-  
-  // Dialogue flow tracking
-  const [kapoorRespect, setKapoorRespect] = useState(0);
-  const [approachCount, setApproachCount] = useState({
-    humble: 0,
-    precision: 0,
-    confidence: 0
-  });
-  
-  // Knowledge tracking
-  const [showKnowledgeGain, setShowKnowledgeGain] = useState(false);
-  const [currentKnowledgeGain, setCurrentKnowledgeGain] = useState<KnowledgeGainEvent | null>(null);
-  const [knowledgeQueue, setKnowledgeQueue] = useState<KnowledgeGainEvent[]>([]);
   const [masteryConcepts, setMasteryConcepts] = useState<Record<string, boolean>>({
     'electron_equilibrium_understood': false,
     'ptp_correction_understood': false,
@@ -104,11 +57,6 @@ export default function KapoorCalibration() {
     primaryColor: "var(--clinical-color)",
     textClass: "text-clinical-light",
     bgClass: "bg-clinical"
-  };
-  
-  // Helper to get the current stage
-  const getCurrentStage = (): DialogueStage => {
-    return dialogueStages.find(stage => stage.id === currentStageId) || dialogueStages[0];
   };
   
   // Full dialogue sequence - this defines the entire encounter flow
@@ -426,8 +374,102 @@ export default function KapoorCalibration() {
     }
   ];
   
-  // Current stage for rendering
-  const currentStage = getCurrentStage();
+  // Initialize the character interaction hook
+  const {
+    characterRespect: kapoorRespect,
+    showKnowledgeGain,
+    currentKnowledgeGain,
+    totalInsightGained,
+    processKnowledgeQueue,
+    handleCharacterOptionSelected,
+    completeKnowledgeGain
+  } = useCharacterInteraction({
+    onInsightGain: (amount) => {
+      updateInsight(amount);
+      if (amount >= 10 && showRewardEffect) {
+        showRewardEffect(amount, window.innerWidth / 2, window.innerHeight / 2);
+      }
+    }
+  });
+  
+  // Initialize the dialogue flow hook
+  const {
+    currentStage,
+    currentStageId,
+    selectedOption,
+    showResponse,
+    showBackstory,
+    backstoryText,
+    handleOptionSelect,
+    handleContinue: progressDialogue,
+    showBackstorySegment,
+    setCurrentStageId
+  } = useDialogueFlow({
+    stages: dialogueStages,
+    onOptionSelected: (option) => {
+      // Play sound for selection
+      if (playSound) playSound('click');
+      
+      // Process option with character interaction hook
+      handleCharacterOptionSelected(option);
+      
+      // Track concept mastery
+      if (option.knowledgeGain?.conceptId) {
+        const { conceptId } = option.knowledgeGain;
+        
+        // Update mastery tracking for this concept
+        if (masteryConcepts[conceptId] !== undefined) {
+          setMasteryConcepts(prev => ({
+            ...prev,
+            [conceptId]: true
+          }));
+        }
+      }
+    },
+    onStageChange: (newStageId, prevStageId) => {
+      // Check if we need to trigger backstory
+      if (selectedOption?.triggersBackstory && kapoorRespect >= 2) {
+        const backstoryId = selectedOption.id === 'correct-ptp' 
+          ? 'backstory-ptp'
+          : 'backstory-calibration';
+          
+        const backstoryStage = dialogueStages.find(s => s.id === backstoryId);
+        
+        if (backstoryStage) {
+          showBackstorySegment(backstoryStage.text);
+          
+          // Additional insight for witnessing backstory
+          updateInsight(5);
+          
+          // Don't need to update kapoorRespect here since it's handled
+          // in the character interaction hook
+        }
+      }
+    }
+  });
+  
+  // Initialize typewriter hook for main dialogue
+  const textToShow = showResponse && selectedOption?.responseText 
+    ? selectedOption.responseText
+    : currentStage.text;
+    
+  const { 
+    displayText: displayedText, 
+    isTyping, 
+    complete: skipTyping 
+  } = useTypewriter(textToShow);
+  
+  // Initialize typewriter hook for backstory
+  const { 
+    displayText: displayedBackstoryText,
+    isTyping: isTypingBackstory,
+    complete: skipBackstoryTyping
+  } = useTypewriter(backstoryText);
+  
+  // Process knowledge queue when needed
+  useEffect(() => {
+    processKnowledgeQueue();
+  }, [showKnowledgeGain, processKnowledgeQueue]);
   
   // Set conclusion text based on performance when reaching conclusion stage
   useEffect(() => {
@@ -444,142 +486,20 @@ export default function KapoorCalibration() {
         setJournalRewardTier('technical');
       }
     }
-  }, [currentStage, kapoorRespect]);
+  }, [currentStage, kapoorRespect, setCurrentStageId]);
   
-  // Text typing effect
-  useEffect(() => {
-    // If showing backstory, use that text
-    if (showBackstory) {
-      const backstoryStage = selectedOption?.id === 'correct-ptp' 
-        ? dialogueStages.find(s => s.id === 'backstory-ptp')
-        : dialogueStages.find(s => s.id === 'backstory-calibration');
-      
-      if (backstoryStage) {
-        let index = 0;
-        setBackstoryText('');
-        setIsTyping(true);
-        
-        const interval = setInterval(() => {
-          if (index < backstoryStage.text.length) {
-            setBackstoryText(prev => prev + backstoryStage.text.charAt(index));
-            index++;
-          } else {
-            clearInterval(interval);
-            setIsTyping(false);
-          }
-        }, 25);
-        
-        return () => clearInterval(interval);
-      }
-      
-      return;
-    }
-    
-    // Normal dialogue typing
-    if (!currentStage) return;
-    
-    // Text to display - either response from previous choice or new dialogue
-    const textToShow = showResponse && selectedOption?.responseText 
-      ? selectedOption.responseText
-      : currentStage.text;
-      
-    let index = 0;
-    setDisplayedText('');
-    setIsTyping(true);
-    
-    const interval = setInterval(() => {
-      if (index < textToShow.length) {
-        setDisplayedText(prev => prev + textToShow.charAt(index));
-        index++;
-      } else {
-        clearInterval(interval);
-        setIsTyping(false);
-      }
-    }, 25); // Text speed - lower is faster
-    
-    return () => clearInterval(interval);
-  }, [currentStage, showResponse, selectedOption, showBackstory]);
-  
-  // Process knowledge updates sequentially
-  useEffect(() => {
-    if (knowledgeQueue.length > 0 && !showKnowledgeGain) {
-      // Get the first item from queue
-      const nextKnowledge = knowledgeQueue[0];
-      setCurrentKnowledgeGain(nextKnowledge);
-      setShowKnowledgeGain(true);
-      
-      // Remove this item from queue
-      setKnowledgeQueue(prev => prev.slice(1));
-    }
-  }, [knowledgeQueue, showKnowledgeGain]);
-  
-  // Handle player choice selection
-  const handleChoiceSelect = (option: DialogueOption) => {
-    setSelectedOption(option);
-    setShowResponse(true);
-    
-    // Play sound for selection
-    if (playSound) playSound('click');
-    
-    // Update approach counts
-    if (option.approach) {
-      setApproachCount(prev => ({
-        ...prev,
-        [option.approach!]: prev[option.approach!] + 1
-      }));
-    }
-    
-    // Update relationship with Kapoor
-    if (option.relationshipChange) {
-      setKapoorRespect(prev => prev + option.relationshipChange);
-    }
-    
-    // Apply insight gain
-    if (option.insightGain) {
-      const gain = option.insightGain;
-      updateInsight(gain);
-      setTotalInsightGained(prev => prev + gain);
-      
-      // Show visual effect for substantial insight gains
-      if (gain >= 10 && showRewardEffect) {
-        showRewardEffect(gain, window.innerWidth / 2, window.innerHeight / 2);
-      }
-    }
-    
-    // Track concept mastery
-    if (option.knowledgeGain) {
-      const { conceptId, domainId, amount } = option.knowledgeGain;
-      
-      // Update mastery tracking for this concept
-      if (conceptId && masteryConcepts[conceptId] !== undefined) {
-        setMasteryConcepts(prev => ({
-          ...prev,
-          [conceptId]: true
-        }));
-      }
-      
-      // Queue knowledge update visualization
-      setKnowledgeQueue(prev => [
-        ...prev,
-        {
-          conceptName: getConceptName(conceptId),
-          domainName: getDomainName(domainId),
-          domainColor: getDomainColor(domainId),
-          amount
-        }
-      ]);
-    }
-  };
-  
-  // Handle continue after response
+  // Handle continue button click
   const handleContinue = () => {
-    // If showing backstory, return to main dialogue
-    if (showBackstory) {
-      setShowBackstory(false);
+    // If actively typing, skip to the end
+    if (showBackstory && isTypingBackstory) {
+      skipBackstoryTyping();
+      return;
+    } else if (!showBackstory && isTyping) {
+      skipTyping();
       return;
     }
     
-    // If journal reward is active, complete the challenge
+    // If journal reward is active, handle that special case
     if (showJournalReward) {
       if (journalAnimationStage === 'display') {
         setJournalAnimationStage('exit');
@@ -591,31 +511,14 @@ export default function KapoorCalibration() {
       return;
     }
     
-    // If showing response, transition to next dialogue stage
-    if (showResponse) {
-      setShowResponse(false);
-      
-      // Check if the option triggers a backstory
-      if (selectedOption?.triggersBackstory && kapoorRespect >= 2) {
-        setShowBackstory(true);
-        // Additional insight for witnessing backstory
-        updateInsight(5);
-        setTotalInsightGained(prev => prev + 5);
-        // Relationship bonus for personal disclosure
-        setKapoorRespect(prev => prev + 1);
-      } else {
-        // Normal progression to next stage
-        setCurrentStageId(selectedOption?.nextStageId || 'conclusion');
-      }
-      
-      setSelectedOption(null);
-    } 
     // If at conclusion stage, proceed to journal presentation
-    else if (currentStage.isConclusion) {
+    if (currentStage.isConclusion && !showResponse) {
       setCurrentStageId('journal-presentation');
+      return;
     }
+    
     // If at journal presentation, show journal reward
-    else if (currentStageId === 'journal-presentation') {
+    if (currentStageId === 'journal-presentation' && !showResponse) {
       setShowJournalReward(true);
       setJournalAnimationStage('enter');
       setTimeout(() => {
@@ -652,15 +555,17 @@ export default function KapoorCalibration() {
           tags: ['kapoor', 'calibration', 'linac', 'qa']
         });
       }
+      
+      return;
     }
-    // Otherwise just advance text if still typing
-    else if (isTyping) {
-      // Skip to end of text if still typing
-      setIsTyping(false);
-      setDisplayedText(showResponse && selectedOption?.responseText 
-        ? selectedOption.responseText 
-        : currentStage.text);
-    }
+    
+    // Normal dialogue progression
+    progressDialogue();
+  };
+  
+  // Handle player choice selection
+  const handleChoiceSelect = (option: DialogueOption) => {
+    handleOptionSelect(option);
   };
   
   // Handle completion of the challenge node
@@ -683,33 +588,6 @@ export default function KapoorCalibration() {
                   kapoorRespect >= 0 ? 'B' : 'C';
                   
     completeChallenge(grade);
-  };
-  
-  // Helper functions for concept display
-  const getConceptName = (conceptId: string): string => {
-    switch(conceptId) {
-      case 'electron_equilibrium_understood': return 'Electron Equilibrium';
-      case 'ptp_correction_understood': return 'PTP Correction';
-      case 'output_calibration_tolerance': return 'Output Calibration Tolerance';
-      case 'clinical_dose_significance': return 'Clinical Dose Significance';
-      default: return conceptId;
-    }
-  };
-  
-  const getDomainName = (domainId: string): string => {
-    switch(domainId) {
-      case 'radiation-physics': return 'Radiation Physics';
-      case 'quality-assurance': return 'Quality Assurance';
-      default: return domainId;
-    }
-  };
-  
-  const getDomainColor = (domainId: string): string => {
-    switch(domainId) {
-      case 'radiation-physics': return 'var(--clinical-color)';
-      case 'quality-assurance': return 'var(--qa-color)';
-      default: return 'var(--clinical-color)';
-    }
   };
   
   // If encounter is complete, show summary screen
@@ -794,7 +672,7 @@ export default function KapoorCalibration() {
         domainName={currentKnowledgeGain.domainName}
         domainColor={currentKnowledgeGain.domainColor}
         gainAmount={currentKnowledgeGain.amount}
-        onComplete={() => setShowKnowledgeGain(false)}
+        onComplete={completeKnowledgeGain}
       />
     );
   }
@@ -946,7 +824,7 @@ export default function KapoorCalibration() {
               <div>
                 <div className="border-l-4 border-clinical pl-2 py-1 mb-2">
                   <PixelText className={`italic ${kapoor.textClass}`}>
-                    {backstoryText}{isTyping ? '|' : ''}
+                    {displayedBackstoryText}{isTypingBackstory ? '|' : ''}
                   </PixelText>
                 </div>
               </div>
@@ -972,12 +850,12 @@ export default function KapoorCalibration() {
               className={`float-right ${kapoor.bgClass} text-white hover:opacity-90`}
               onClick={handleContinue}
             >
-              {isTyping ? "Skip" : "Continue"}
+              {(isTyping || isTypingBackstory) ? "Skip" : "Continue"}
             </PixelButton>
           ) : (
             currentStage.options ? (
               <div className="space-y-2">
-                {currentStage.options.map((option, index) => (
+                {currentStage.options.map((option) => (
                   <button
                     key={option.id}
                     className="w-full text-left p-3 bg-surface hover:bg-surface-dark pixel-borders-thin"

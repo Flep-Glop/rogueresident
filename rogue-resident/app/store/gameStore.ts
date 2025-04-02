@@ -125,7 +125,7 @@ export const useGameStore = create<GameState>((set, get) => ({
       gamePhase: 'day',
       map: newMap,
       // Always select start node in single-node testing mode
-      currentNodeId: newMap.startNodeId
+      currentNodeId: null
     });
   },
   
