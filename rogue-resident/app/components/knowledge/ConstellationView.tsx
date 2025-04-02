@@ -77,12 +77,6 @@ interface ConstellationViewProps {
 
 /**
  * ConstellationView - The interactive knowledge visualization system
- * 
- * Core to the game's progression, this component visualizes player knowledge as a
- * constellation of stars, with connections representing relationships between concepts.
- * 
- * The visual language borrows from star charts and neural networks, emphasizing the
- * organic growth of knowledge and insight through pattern recognition.
  */
 export default function ConstellationView({ 
   onClose, 
@@ -96,11 +90,13 @@ export default function ConstellationView({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const animationFrameRef = useRef<number | null>(null);
+  const isComponentMounted = useRef(true);
   
-  // HOOKS AND STORE ACCESS - Fixed with useCallback to prevent infinite updates
-  const { playSound, flashScreen, showRewardEffect } = useGameEffects();
+  // STORE ACCESS - Use stable selectors with useCallback
+  // Direct store for actions to avoid re-renders
+  const knowledgeStore = useRef(useKnowledgeStore.getState());
   
-  // Use individual selectors with useCallback for each store value
+  // Set up selectors with useCallback to avoid recreation on each render
   const nodes = useKnowledgeStore(useCallback(state => state.nodes, []));
   const connections = useKnowledgeStore(useCallback(state => state.connections, []));
   const totalMastery = useKnowledgeStore(useCallback(state => state.totalMastery, []));
@@ -109,8 +105,8 @@ export default function ConstellationView({
   const newlyDiscovered = useKnowledgeStore(useCallback(state => state.newlyDiscovered, []));
   const journalEntries = useKnowledgeStore(useCallback(state => state.journalEntries, []));
 
-  // Get the action functions directly to avoid unnecessary re-renders
-  const { transferInsights, resetNewlyDiscovered, updateMastery, createConnection } = useKnowledgeStore.getState();
+  // HOOKS
+  const { playSound, flashScreen, showRewardEffect } = useGameEffects();
   
   // STATE MANAGEMENT
   const [activeNode, setActiveNode] = useState<ConceptNode | null>(null);
@@ -119,8 +115,7 @@ export default function ConstellationView({
   const [journalVisible, setJournalVisible] = useState(false);
   const [recentInsights, setRecentInsights] = useState<{conceptId: string, amount: number}[]>([]);
   const [showHelp, setShowHelp] = useState(false);
-  const [zoomLevel, setZoomLevel] = useState(0.8); // Reduced initial zoom for better overview
-  // Added camera position state for panning
+  const [zoomLevel, setZoomLevel] = useState(0.8);
   const [cameraPosition, setCameraPosition] = useState({ x: 0, y: 0 });
   
   // VISUAL EFFECTS STATE
@@ -138,73 +133,50 @@ export default function ConstellationView({
     velocity?: { x: number, y: number }
   }>>([]);
   
-  // FILTER AND MEMOIZE DATA
-  // Get discovered nodes for rendering
+  // MEMOIZE DATA FOR RENDERING
+  // Memoize discovered nodes 
   const discoveredNodes = useMemo(() => 
     nodes.filter(node => node.discovered), 
     [nodes]
   );
   
-  // Get discovered connections
+  // Memoize discovered connections
   const discoveredConnections = useMemo(() => 
     connections.filter(conn => conn.discovered), 
     [connections]
   );
 
-  // EFFECTS
+  // Track component mounted state for cleanup
+  useEffect(() => {
+    isComponentMounted.current = true;
+    
+    return () => {
+      isComponentMounted.current = false;
+      
+      // Cleanup any active animation frame
+      if (animationFrameRef.current !== null) {
+        cancelAnimationFrame(animationFrameRef.current);
+        animationFrameRef.current = null;
+      }
+    };
+  }, []);
 
   // Focus on active nodes passed from parent
   useEffect(() => {
-    if (activeNodes.length > 0 && nodes.length > 0) {
-      // Find the first active node that exists in our nodes list
-      const nodeToFocus = nodes.find(n => activeNodes.includes(n.id));
-      if (nodeToFocus) {
-        setSelectedNode(nodeToFocus);
-        
-        // Create particle effects for all active nodes
-        const newParticles: typeof particleEffects = [];
-        
-        activeNodes.forEach(nodeId => {
-          const node = nodes.find(n => n.id === nodeId);
-          if (node?.position) {
-            // Create multiple particles for each active node
-            for (let i = 0; i < 15; i++) {
-              const angle = Math.random() * Math.PI * 2;
-              const distance = Math.random() * 100 + 50;
-              
-              newParticles.push({
-                id: `particle-${nodeId}-${i}-${Date.now()}`,
-                x: node.position.x + Math.cos(angle) * distance,
-                y: node.position.y + Math.sin(angle) * distance,
-                targetX: node.position.x,
-                targetY: node.position.y,
-                color: KNOWLEDGE_DOMAINS[node.domain].color,
-                size: Math.random() * 3 + 1,
-                life: 100,
-                maxLife: 100
-              });
-            }
-          }
-        });
-        
-        setParticleEffects(prev => [...prev, ...newParticles]);
-        
-        // Play discovery sound effect
-        if (playSound) playSound('success');
-      }
-    }
-  }, [activeNodes, nodes, playSound]);
-  
-  // Also highlight newly discovered nodes from knowledgeStore
-  useEffect(() => {
-    if (newlyDiscovered.length > 0 && nodes.length > 0) {
-      // Create particle effects for newly discovered nodes
+    if (!isComponentMounted.current || activeNodes.length === 0 || nodes.length === 0) return;
+    
+    // Find the first active node that exists in our nodes list
+    const nodeToFocus = nodes.find(n => activeNodes.includes(n.id));
+    if (nodeToFocus) {
+      setSelectedNode(nodeToFocus);
+      
+      // Create particle effects for all active nodes
       const newParticles: typeof particleEffects = [];
       
-      newlyDiscovered.forEach(nodeId => {
+      activeNodes.forEach(nodeId => {
         const node = nodes.find(n => n.id === nodeId);
         if (node?.position) {
-          // Create multiple particles for each newly discovered node
+          // Create multiple particles for each active node
           for (let i = 0; i < 15; i++) {
             const angle = Math.random() * Math.PI * 2;
             const distance = Math.random() * 100 + 50;
@@ -224,12 +196,54 @@ export default function ConstellationView({
         }
       });
       
+      if (newParticles.length > 0) {
+        setParticleEffects(prev => [...prev, ...newParticles]);
+        
+        // Play discovery sound effect
+        if (playSound) playSound('success');
+      }
+    }
+  }, [activeNodes, nodes, playSound]);
+  
+  // Also highlight newly discovered nodes from knowledgeStore
+  useEffect(() => {
+    if (!isComponentMounted.current || newlyDiscovered.length === 0 || nodes.length === 0) return;
+    
+    // Create particle effects for newly discovered nodes
+    const newParticles: typeof particleEffects = [];
+    
+    newlyDiscovered.forEach(nodeId => {
+      const node = nodes.find(n => n.id === nodeId);
+      if (node?.position) {
+        // Create multiple particles for each newly discovered node
+        for (let i = 0; i < 15; i++) {
+          const angle = Math.random() * Math.PI * 2;
+          const distance = Math.random() * 100 + 50;
+          
+          newParticles.push({
+            id: `particle-${nodeId}-${i}-${Date.now()}`,
+            x: node.position.x + Math.cos(angle) * distance,
+            y: node.position.y + Math.sin(angle) * distance,
+            targetX: node.position.x,
+            targetY: node.position.y,
+            color: KNOWLEDGE_DOMAINS[node.domain].color,
+            size: Math.random() * 3 + 1,
+            life: 100,
+            maxLife: 100
+          });
+        }
+      }
+    });
+    
+    if (newParticles.length > 0) {
       setParticleEffects(prev => [...prev, ...newParticles]);
     }
   }, [newlyDiscovered, nodes]);
   
   // Track recent insights for journal
   useEffect(() => {
+    if (!isComponentMounted.current) return;
+    
     // Extract most recent journal entries for display
     if (journalEntries.length > 0) {
       const recentEntries = journalEntries
@@ -250,21 +264,22 @@ export default function ConstellationView({
     }
   }, [journalEntries]);
 
-  // Add this to ConstellationView.tsx - replace the existing animation effect
-
   // ANIMATION LOOP
   // Handle particle animations and movement with proper cleanup
   useEffect(() => {
-    let isActive = true;
-    let framId: number | null = null;
+    if (!isComponentMounted.current || particleEffects.length === 0) return;
+    
+    let active = true;
     
     const animate = () => {
-      if (!canvasRef.current || !isActive) return;
+      if (!active || !isComponentMounted.current) return;
       
       let animating = false;
       
-      // Update particle positions and properties
       setParticleEffects(prev => {
+        // Skip update if component unmounted during animation frame
+        if (!active) return prev;
+        
         const updatedParticles = prev.map(particle => {
           // Move particle toward target
           const dx = particle.targetX - particle.x;
@@ -304,30 +319,31 @@ export default function ConstellationView({
       });
       
       // Continue animation if particles still exist or stop
-      if (animating && isActive) {
-        framId = requestAnimationFrame(animate);
+      if (animating && active && isComponentMounted.current) {
+        animationFrameRef.current = requestAnimationFrame(animate);
+      } else {
+        animationFrameRef.current = null;
       }
     };
     
-    // Start animation if we have particles
-    if (particleEffects.length > 0) {
-      framId = requestAnimationFrame(animate);
-    }
+    // Start animation
+    animationFrameRef.current = requestAnimationFrame(animate);
     
-    // Proper cleanup - critical for preventing the error
+    // Cleanup function
     return () => {
-      isActive = false;
-      if (framId !== null) {
-        cancelAnimationFrame(framId);
+      active = false;
+      if (animationFrameRef.current !== null) {
+        cancelAnimationFrame(animationFrameRef.current);
+        animationFrameRef.current = null;
       }
     };
-  }, [particleEffects.length]);
+  }, [particleEffects.length]); // Only depends on length changing
 
   // RENDERING FUNCTIONS
 
   // Draw constellation on canvas
   useEffect(() => {
-    if (!canvasRef.current) return;
+    if (!canvasRef.current || !isComponentMounted.current) return;
     
     const canvas = canvasRef.current;
     const ctx = canvas.getContext('2d');
@@ -648,15 +664,15 @@ export default function ConstellationView({
     });
   };
 
-  // Mouse state for dragging the camera view
+  // Mouse state for dragging
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
   
-  // INTERACTION HANDLERS
+  // INTERACTION HANDLERS - Memoize to prevent re-creation
 
   // Handle mouse movement for node hover and dragging
-  const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (!canvasRef.current || !interactive) return;
+  const handleMouseMove = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (!canvasRef.current || !interactive || !isComponentMounted.current) return;
     
     const canvas = canvasRef.current;
     const rect = canvas.getBoundingClientRect();
@@ -666,7 +682,7 @@ export default function ConstellationView({
       const dx = e.clientX - dragStart.x;
       const dy = e.clientY - dragStart.y;
       
-      // Update camera position (scaled by zoom level)
+      // Update camera position
       setCameraPosition(prev => ({
         x: prev.x + dx,
         y: prev.y + dy
@@ -707,13 +723,13 @@ export default function ConstellationView({
     
     // Update cursor style
     canvas.style.cursor = hoveredNode ? 'pointer' : isDragging ? 'grabbing' : 'grab';
-  };
+  }, [isDragging, dragStart, cameraPosition, zoomLevel, discoveredNodes]);
 
   // Handle mouse down for dragging
-  const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (!canvasRef.current || !interactive) return;
+  const handleMouseDown = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (!canvasRef.current || !interactive || !isComponentMounted.current) return;
     
-    // Middle button or right button for panning (or spacebar + left button in a more complete implementation)
+    // Middle button or right button for panning
     if (e.button === 1 || e.button === 2) {
       e.preventDefault();
       setIsDragging(true);
@@ -726,10 +742,12 @@ export default function ConstellationView({
         canvasRef.current.style.cursor = 'grabbing';
       }
     }
-  };
+  }, [interactive]);
   
   // Handle mouse up to end dragging
-  const handleMouseUp = (e: React.MouseEvent<HTMLCanvasElement>) => {
+  const handleMouseUp = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (!isComponentMounted.current) return;
+    
     if (e.button === 1 || e.button === 2) {
       setIsDragging(false);
       
@@ -737,11 +755,11 @@ export default function ConstellationView({
         canvasRef.current.style.cursor = activeNode ? 'pointer' : 'grab';
       }
     }
-  };
+  }, [activeNode]);
 
   // Handle node click
-  const handleClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (!canvasRef.current || !activeNode || !interactive || isDragging) return;
+  const handleClick = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (!canvasRef.current || !activeNode || !interactive || isDragging || !isComponentMounted.current) return;
     
     if (pendingConnection) {
       // Complete connection if clicking a different node
@@ -761,14 +779,14 @@ export default function ConstellationView({
             if (flashScreen) flashScreen('blue');
             
             // Create new connection in store
-            createConnection(pendingConnection, activeNode.id);
+            knowledgeStore.current.createConnection(pendingConnection, activeNode.id);
             
             // Grant insights based on nodes' mastery
             const insightGain = Math.floor((sourceNode.mastery + activeNode.mastery) / 10) + 5;
             
             // Boost mastery for both nodes
-            updateMastery(pendingConnection, Math.min(5, 100 - sourceNode.mastery));
-            updateMastery(activeNode.id, Math.min(5, 100 - activeNode.mastery));
+            knowledgeStore.current.updateMastery(pendingConnection, Math.min(5, 100 - sourceNode.mastery));
+            knowledgeStore.current.updateMastery(activeNode.id, Math.min(5, 100 - activeNode.mastery));
             
             // Create visual effect where connection is created
             const midX = ((sourceNode.position?.x || 0) + (activeNode.position?.x || 0)) / 2;
@@ -826,11 +844,11 @@ export default function ConstellationView({
         if (playSound) playSound('click');
       }
     }
-  };
+  }, [activeNode, discoveredNodes, discoveredConnections, pendingConnection, selectedNode, playSound, flashScreen, showRewardEffect, isDragging]);
 
   // Handle zoom with mouse wheel
-  const handleWheel = (e: React.WheelEvent<HTMLCanvasElement>) => {
-    if (!interactive) return;
+  const handleWheel = useCallback((e: React.WheelEvent<HTMLCanvasElement>) => {
+    if (!interactive || !isComponentMounted.current) return;
     
     // Prevent default scrolling
     e.preventDefault();
@@ -840,7 +858,37 @@ export default function ConstellationView({
     const newZoom = Math.max(0.5, Math.min(2, zoomLevel + delta));
     
     setZoomLevel(newZoom);
-  };
+  }, [zoomLevel, interactive]);
+  
+  // Handler for creating connections from the suggestions panel
+  const handleCreateConnectionFromSuggestion = useCallback((sourceId: string, targetId: string) => {
+    if (!isComponentMounted.current) return;
+    
+    // Find the source node and set it as selected
+    const sourceNode = discoveredNodes.find(n => n.id === sourceId);
+    setSelectedNode(sourceNode || null);
+    
+    // Start the connection process from this node
+    setPendingConnection(sourceId);
+    
+    // Play sound effect
+    if (playSound) playSound('click');
+  }, [discoveredNodes, playSound]);
+  
+  // Handle closing the constellation view
+  const handleClose = useCallback(() => {
+    if (!isComponentMounted.current || !onClose) return;
+    
+    // Reset selected nodes before closing
+    setSelectedNode(null);
+    setActiveNode(null);
+    setPendingConnection(null);
+    
+    // Clean up newly discovered highlights
+    knowledgeStore.current.resetNewlyDiscovered();
+    
+    onClose();
+  }, [onClose]);
   
   // COMPONENT RENDERING
 
@@ -881,17 +929,7 @@ export default function ConstellationView({
       {interactive && (
         <div className="absolute top-4 right-4 w-64 z-10">
           <ConnectionSuggestions 
-            onSelectConnection={(sourceId, targetId) => {
-              // Find the source node and set it as selected
-              const sourceNode = discoveredNodes.find(n => n.id === sourceId);
-              setSelectedNode(sourceNode || null);
-              
-              // Start the connection process from this node
-              setPendingConnection(sourceId);
-              
-              // Play sound effect
-              if (playSound) playSound('click');
-            }}
+            onSelectConnection={handleCreateConnectionFromSuggestion}
             maxSuggestions={3}
           />
         </div>
@@ -959,17 +997,7 @@ export default function ConstellationView({
         {onClose && (
           <PixelButton
             className="bg-surface hover:bg-danger text-text-primary"
-            onClick={() => {
-              // Reset selected nodes before closing
-              setSelectedNode(null);
-              setActiveNode(null);
-              setPendingConnection(null);
-              
-              // Clean up newly discovered highlights
-              resetNewlyDiscovered();
-              
-              onClose();
-            }}
+            onClick={handleClose}
           >
             Close
           </PixelButton>
@@ -1047,7 +1075,7 @@ export default function ConstellationView({
                   
                   return (
                     <div 
-                      key={index}
+                      key={`insight-${index}-${insight.conceptId}`}
                       className="p-3 pixel-borders-thin bg-surface-dark"
                     >
                       <div className="flex justify-between items-start">

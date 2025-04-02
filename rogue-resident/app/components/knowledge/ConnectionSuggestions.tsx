@@ -1,6 +1,6 @@
 // app/components/knowledge/ConnectionSuggestions.tsx
 'use client';
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { PixelText, PixelButton } from '../PixelThemeProvider';
 import { useKnowledgeStore } from '../../store/knowledgeStore';
 import { getPotentialConnections } from '../../utils/knowledgeRequirements';
@@ -15,13 +15,11 @@ export default function ConnectionSuggestions({
   onSelectConnection, 
   maxSuggestions = 3 
 }: ConnectionSuggestionsProps) {
-  // CRITICAL FIX: Use hooks at the top level with consistent ordering
-  const { nodes } = useKnowledgeStore(state => ({
-    nodes: state.nodes
-  }));
-  
+  // Use stable selectors with useCallback to prevent infinite re-renders
+  const nodes = useKnowledgeStore(useCallback(state => state.nodes, []));
   const { playSound } = useGameEffects();
   
+  // Local state for UI
   const [suggestions, setSuggestions] = useState<Array<{
     sourceId: string, 
     targetId: string, 
@@ -30,22 +28,19 @@ export default function ConnectionSuggestions({
     targetName: string
   }>>([]);
   
-  // Use useMemo for computations, not for hook composition
-  const processedNodes = useMemo(() => nodes, [nodes]);
-  
-  // Update suggestions when nodes change
+  // Memoize potential connections calculation to avoid recalculating on every render
   useEffect(() => {
-    if (!processedNodes) return;
+    if (!nodes) return;
     
-    // Get potential connections from utility
+    // Use the existing utility function to get potential connections
     const potentialConnections = getPotentialConnections();
     
     // Limit to max suggestions and add node names
     const topSuggestions = potentialConnections
       .slice(0, maxSuggestions)
       .map(conn => {
-        const sourceNode = processedNodes.find(n => n.id === conn.sourceId);
-        const targetNode = processedNodes.find(n => n.id === conn.targetId);
+        const sourceNode = nodes.find(n => n.id === conn.sourceId);
+        const targetNode = nodes.find(n => n.id === conn.targetId);
         
         return {
           ...conn,
@@ -55,20 +50,19 @@ export default function ConnectionSuggestions({
       });
     
     setSuggestions(topSuggestions);
-  }, [processedNodes, maxSuggestions]);
+  }, [nodes, maxSuggestions]);
   
-  // Handle selection with proper error boundaries
-  const handleConnectionSelect = (sourceId: string, targetId: string) => {
+  // Memoize handlers to avoid re-creation on render
+  const handleConnectionSelect = useCallback((sourceId: string, targetId: string) => {
     if (playSound) playSound('click');
     if (onSelectConnection) {
       try {
         onSelectConnection(sourceId, targetId);
       } catch (error) {
         console.error("Error selecting connection:", error);
-        // Optionally show error toast here
       }
     }
-  };
+  }, [playSound, onSelectConnection]);
   
   // No suggestions to show
   if (suggestions.length === 0) {
@@ -89,7 +83,7 @@ export default function ConnectionSuggestions({
       
       <div className="p-3 space-y-3">
         {suggestions.map((suggestion, index) => (
-          <div key={index} className="bg-surface p-3 pixel-borders-thin">
+          <div key={`suggestion-${suggestion.sourceId}-${suggestion.targetId}-${index}`} className="bg-surface p-3 pixel-borders-thin">
             <div className="flex justify-between items-start mb-2">
               <PixelText className="text-sm">
                 {suggestion.sourceName} <span className="text-text-secondary">⟷</span> {suggestion.targetName}
