@@ -1,6 +1,6 @@
 // app/components/knowledge/ConnectionSuggestions.tsx
 'use client';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { PixelText, PixelButton } from '../PixelThemeProvider';
 import { useKnowledgeStore } from '../../store/knowledgeStore';
 import { getPotentialConnections } from '../../utils/knowledgeRequirements';
@@ -23,9 +23,11 @@ export default function ConnectionSuggestions({
     targetName: string
   }>>([]);
   
-  const { nodes } = useKnowledgeStore(state => ({
-    nodes: state.nodes
-  }));
+  // Memoize the selector function to prevent infinite loops
+  const nodes = useMemo(() => 
+    useKnowledgeStore(state => state.nodes), 
+    []
+  );
   
   const { playSound } = useGameEffects();
   

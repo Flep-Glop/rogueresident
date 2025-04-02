@@ -1,6 +1,6 @@
 // app/components/knowledge/ConstellationView.tsx
 'use client';
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { PixelText, PixelButton } from '../PixelThemeProvider';
 import { useGameEffects } from '../GameEffects';
 import { useKnowledgeStore } from '../../store/knowledgeStore';
@@ -97,19 +97,20 @@ export default function ConstellationView({
   const containerRef = useRef<HTMLDivElement>(null);
   const animationFrameRef = useRef<number | null>(null);
   
-  // HOOKS AND STORE ACCESS
+  // HOOKS AND STORE ACCESS - Fixed with useCallback to prevent infinite updates
   const { playSound, flashScreen, showRewardEffect } = useGameEffects();
-  const { 
-    nodes, 
-    connections,
-    totalMastery,
-    domainMastery,
-    createConnection,
-    updateMastery,
-    newlyDiscovered,
-    resetNewlyDiscovered,
-    journalEntries
-  } = useKnowledgeStore();
+  
+  // Use individual selectors with useCallback for each store value
+  const nodes = useKnowledgeStore(useCallback(state => state.nodes, []));
+  const connections = useKnowledgeStore(useCallback(state => state.connections, []));
+  const totalMastery = useKnowledgeStore(useCallback(state => state.totalMastery, []));
+  const domainMastery = useKnowledgeStore(useCallback(state => state.domainMastery, [])); 
+  const pendingInsights = useKnowledgeStore(useCallback(state => state.pendingInsights, []));
+  const newlyDiscovered = useKnowledgeStore(useCallback(state => state.newlyDiscovered, []));
+  const journalEntries = useKnowledgeStore(useCallback(state => state.journalEntries, []));
+
+  // Get the action functions directly to avoid unnecessary re-renders
+  const { transferInsights, resetNewlyDiscovered, updateMastery, createConnection } = useKnowledgeStore.getState();
   
   // STATE MANAGEMENT
   const [activeNode, setActiveNode] = useState<ConceptNode | null>(null);
@@ -118,7 +119,9 @@ export default function ConstellationView({
   const [journalVisible, setJournalVisible] = useState(false);
   const [recentInsights, setRecentInsights] = useState<{conceptId: string, amount: number}[]>([]);
   const [showHelp, setShowHelp] = useState(false);
-  const [zoomLevel, setZoomLevel] = useState(1);
+  const [zoomLevel, setZoomLevel] = useState(0.8); // Reduced initial zoom for better overview
+  // Added camera position state for panning
+  const [cameraPosition, setCameraPosition] = useState({ x: 0, y: 0 });
   
   // VISUAL EFFECTS STATE
   const [particleEffects, setParticleEffects] = useState<Array<{
@@ -331,9 +334,11 @@ export default function ConstellationView({
     // Clear canvas
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     
-    // Apply zoom transform
+    // Apply zoom and camera position transform
     ctx.save();
+    ctx.translate(canvas.width / 2 + cameraPosition.x, canvas.height / 2 + cameraPosition.y);
     ctx.scale(zoomLevel, zoomLevel);
+    ctx.translate(-canvas.width / 2, -canvas.height / 2);
     
     // Draw deep space background
     drawStarryBackground(ctx, canvas.width, canvas.height);
@@ -361,7 +366,8 @@ export default function ConstellationView({
     activeNodes, 
     newlyDiscovered, 
     particleEffects,
-    zoomLevel
+    zoomLevel,
+    cameraPosition
   ]);
 
   // Helper: Draw starry background
@@ -640,16 +646,46 @@ export default function ConstellationView({
     });
   };
 
+  // Mouse state for dragging the camera view
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+  
   // INTERACTION HANDLERS
 
-  // Handle mouse movement for node hover
+  // Handle mouse movement for node hover and dragging
   const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
     if (!canvasRef.current || !interactive) return;
     
     const canvas = canvasRef.current;
     const rect = canvas.getBoundingClientRect();
-    const x = (e.clientX - rect.left) / zoomLevel;
-    const y = (e.clientY - rect.top) / zoomLevel;
+    
+    // Handle dragging to move the camera
+    if (isDragging) {
+      const dx = e.clientX - dragStart.x;
+      const dy = e.clientY - dragStart.y;
+      
+      // Update camera position (scaled by zoom level)
+      setCameraPosition(prev => ({
+        x: prev.x + dx,
+        y: prev.y + dy
+      }));
+      
+      // Update drag start position
+      setDragStart({
+        x: e.clientX,
+        y: e.clientY
+      });
+      
+      return;
+    }
+    
+    // Apply inverse transforms to get the correct mouse position in the canvas space
+    const canvasX = (e.clientX - rect.left);
+    const canvasY = (e.clientY - rect.top);
+    
+    // Convert to scene coordinates
+    const sceneX = (canvasX - (canvas.width / 2 + cameraPosition.x)) / zoomLevel + canvas.width / 2;
+    const sceneY = (canvasY - (canvas.height / 2 + cameraPosition.y)) / zoomLevel + canvas.height / 2;
     
     // Check if mouse is over any node
     const hoveredNode = discoveredNodes.find(node => {
@@ -657,8 +693,8 @@ export default function ConstellationView({
       
       const baseSize = 10 + (node.mastery / 100) * 10;
       const distance = Math.sqrt(
-        Math.pow(node.position.x - x, 2) + 
-        Math.pow(node.position.y - y, 2)
+        Math.pow(node.position.x - sceneX, 2) + 
+        Math.pow(node.position.y - sceneY, 2)
       );
       
       return distance <= baseSize + 5; // Add margin for easier hovering
@@ -668,12 +704,42 @@ export default function ConstellationView({
     setActiveNode(hoveredNode || null);
     
     // Update cursor style
-    canvas.style.cursor = hoveredNode ? 'pointer' : 'default';
+    canvas.style.cursor = hoveredNode ? 'pointer' : isDragging ? 'grabbing' : 'grab';
+  };
+
+  // Handle mouse down for dragging
+  const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (!canvasRef.current || !interactive) return;
+    
+    // Middle button or right button for panning (or spacebar + left button in a more complete implementation)
+    if (e.button === 1 || e.button === 2) {
+      e.preventDefault();
+      setIsDragging(true);
+      setDragStart({
+        x: e.clientX,
+        y: e.clientY
+      });
+      
+      if (canvasRef.current) {
+        canvasRef.current.style.cursor = 'grabbing';
+      }
+    }
+  };
+  
+  // Handle mouse up to end dragging
+  const handleMouseUp = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (e.button === 1 || e.button === 2) {
+      setIsDragging(false);
+      
+      if (canvasRef.current) {
+        canvasRef.current.style.cursor = activeNode ? 'pointer' : 'grab';
+      }
+    }
   };
 
   // Handle node click
   const handleClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (!canvasRef.current || !activeNode || !interactive) return;
+    if (!canvasRef.current || !activeNode || !interactive || isDragging) return;
     
     if (pendingConnection) {
       // Complete connection if clicking a different node
@@ -790,7 +856,11 @@ export default function ConstellationView({
         className="w-full h-full"
         onMouseMove={handleMouseMove}
         onClick={handleClick}
+        onMouseDown={handleMouseDown}
+        onMouseUp={handleMouseUp}
+        onMouseLeave={() => setIsDragging(false)}
         onWheel={handleWheel}
+        onContextMenu={(e) => e.preventDefault()} // Prevent context menu on right-click
       />
       
       {/* Controls and info panels */}
@@ -841,7 +911,7 @@ export default function ConstellationView({
         </div>
       </div>
       
-      {/* Zoom controls */}
+      {/* Zoom and camera controls */}
       <div className="absolute bottom-20 right-4 flex flex-col space-y-2 z-10">
         <PixelButton
           className="w-8 h-8 flex items-center justify-center bg-surface-dark"
@@ -857,7 +927,10 @@ export default function ConstellationView({
         </PixelButton>
         <PixelButton
           className="w-8 h-8 flex items-center justify-center bg-surface-dark"
-          onClick={() => setZoomLevel(1)}
+          onClick={() => {
+            setZoomLevel(0.8); // Reset to initial zoom level
+            setCameraPosition({ x: 0, y: 0 }); // Reset camera position
+          }}
         >
           ↺
         </PixelButton>
@@ -1052,8 +1125,9 @@ export default function ConstellationView({
                 <PixelText className="text-educational-light mb-1">Navigation Controls</PixelText>
                 <PixelText className="text-sm text-text-secondary">
                   • Use the mouse wheel to zoom in and out
+                  • Right-click and drag to pan the view
                   • Use the +/- buttons to adjust zoom level
-                  • Click the ↺ button to reset zoom
+                  • Click the ↺ button to reset zoom and position
                 </PixelText>
               </div>
             </div>

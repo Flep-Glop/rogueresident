@@ -15,6 +15,7 @@ import KapoorLINACCalibration from './challenges/KapoorLINACCalibration'; // Imp
 import HillHomeScene from './HillHomeScene';
 import { PixelText, PixelButton } from './PixelThemeProvider';
 import { useGameEffects } from './GameEffects';
+import CharacterInteractionNode from './challenges/CharacterInteractionNode';
 
 interface GameContainerProps {
   useSimplifiedMap?: boolean; // Optional flag to use the simplified 3-node map
@@ -25,6 +26,7 @@ export default function GameContainer({ useSimplifiedMap = false }: GameContaine
   const { currentChallenge, startChallenge } = useChallengeStore();
   const { flashScreen, playSound } = useGameEffects();
   const [isTransitioning, setIsTransitioning] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   
   // Get current node details from map to determine node type
   const getCurrentNodeType = () => {
@@ -138,6 +140,11 @@ export default function GameContainer({ useSimplifiedMap = false }: GameContaine
             return <KapoorLINACCalibration />;
           }
           
+          // Handle Dr. Quinn's experimental node
+          if (nodeType === 'quinn-experiment' && !completedNodeIds.includes(currentNodeId)) {
+            return <CharacterInteractionNode />;
+          }
+          
           // For other node types, pass through to existing handling
         }
         
@@ -163,8 +170,13 @@ export default function GameContainer({ useSimplifiedMap = false }: GameContaine
           <div className="relative h-full">
             {useSimplifiedMap ? <SimplifiedMap /> : <GameMap />}
             
-            {/* Day completion button */}
-            <div className="absolute bottom-4 right-4">
+            {/* Floating bottom bar with End Day button and game stats */}
+            <div className="fixed bottom-4 left-1/2 transform -translate-x-1/2 bg-surface/90 pixel-borders-thin px-4 py-2 flex items-center space-x-4 z-30">
+              <div className="flex items-center">
+                <span className="px-2 py-1 bg-danger text-white text-sm mr-2">❤️ {player.health}/{player.maxHealth}</span>
+                <span className="px-2 py-1 bg-clinical text-white text-sm">💡 {player.insight}</span>
+              </div>
+              
               <PixelButton
                 className="bg-surface hover:bg-clinical text-text-primary px-4 py-2"
                 onClick={handleDayCompletion}
@@ -180,29 +192,60 @@ export default function GameContainer({ useSimplifiedMap = false }: GameContaine
     }
   };
 
+  // Toggle sidebar
+  const toggleSidebar = () => {
+    setSidebarCollapsed(!sidebarCollapsed);
+  };
+
   return (
     <div className="flex flex-col h-screen bg-background">
       <header className="p-4 bg-dark-gray border-b border-border">
         <div className="flex justify-between items-center">
           <PixelText className="text-2xl text-text-primary font-pixel-heading">Rogue Resident</PixelText>
           
-          {/* Game phase indicator */}
-          <div className="px-3 py-1 rounded-full bg-surface-dark">
-            <PixelText className="text-sm">
-              {gamePhase === 'day' ? '☀️ Day Phase' : gamePhase === 'night' ? '🌙 Night Phase' : ''}
-            </PixelText>
+          <div className="flex items-center space-x-4">
+            {/* Game phase indicator */}
+            <div className="px-3 py-1 rounded-full bg-surface-dark">
+              <PixelText className="text-sm">
+                {gamePhase === 'day' ? '☀️ Day Phase' : gamePhase === 'night' ? '🌙 Night Phase' : ''}
+              </PixelText>
+            </div>
+            
+            {/* Sidebar toggle button */}
+            <button 
+              className="p-2 bg-surface hover:bg-clinical transition-colors"
+              onClick={toggleSidebar}
+            >
+              {sidebarCollapsed ? '◀' : '▶'}
+            </button>
           </div>
         </div>
       </header>
       
-      <main className="flex flex-1">
-        <section className="w-3/4 relative">
+      <main className="flex flex-1 relative">
+        <section className={`${sidebarCollapsed ? 'w-full' : 'w-[calc(100%-320px)]'} relative transition-all duration-300`}>
           {renderMainContent()}
         </section>
-        <aside className="w-1/4 overflow-auto">
+        
+        <aside 
+          className={`${sidebarCollapsed ? 'w-0 opacity-0 pointer-events-none' : 'w-[320px] opacity-100'} overflow-auto transition-all duration-300`}
+        >
           <PlayerStats />
-          <Inventory />
         </aside>
+        
+        {/* Collapsed sidebar indicator - small floating player stats */}
+        {sidebarCollapsed && (
+          <div className="absolute top-4 right-4 bg-surface/90 pixel-borders-thin p-2 z-40">
+            <div className="flex items-center space-x-2 mb-2">
+              <span className="w-2 h-2 bg-danger rounded-full"></span>
+              <PixelText className="text-sm">Health: {player.health}/{player.maxHealth}</PixelText>
+            </div>
+            <div className="flex items-center space-x-2">
+              <span className="w-2 h-2 bg-clinical rounded-full"></span>
+              <PixelText className="text-sm">Insight: {player.insight}</PixelText>
+            </div>
+          </div>
+        )}
       </main>
       
       {/* Add scanlines effect over the entire interface */}

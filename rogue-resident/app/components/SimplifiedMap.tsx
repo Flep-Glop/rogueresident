@@ -18,7 +18,8 @@ export default function SimplifiedMap() {
     currentNodeId, 
     setCurrentNode, 
     completedNodeIds, 
-    player 
+    player,
+    completeDay
   } = useGameStore();
   
   const { playSound, flashScreen } = useGameEffects();
@@ -116,6 +117,16 @@ export default function SimplifiedMap() {
     return classes;
   };
   
+  // Handle end day click
+  const handleEndDay = () => {
+    if (playSound) playSound('click');
+    if (flashScreen) flashScreen('white');
+    
+    setTimeout(() => {
+      completeDay();
+    }, 300);
+  };
+  
   return (
     <div className="h-full w-full p-8 flex flex-col items-center justify-center bg-background starfield-bg">
       <div className="text-center mb-8">
@@ -127,25 +138,25 @@ export default function SimplifiedMap() {
         </PixelText>
       </div>
       
-      {/* Linear node progression */}
-      <div className="flex flex-col items-center">
+      {/* Linear node progression - made smaller and more centered */}
+      <div className="flex flex-col items-center max-w-4xl mx-auto py-10">
         {/* Connect to the first node */}
-        <div className="w-1 h-16 bg-gradient-to-b from-transparent to-blue-500"></div>
+        <div className="w-1 h-12 bg-gradient-to-b from-transparent to-blue-500"></div>
         
-        {/* Node chain */}
-        <div className="flex flex-col items-center space-y-20">
+        {/* Node chain - smaller and more compact */}
+        <div className="flex flex-col items-center space-y-12">
           {SIMPLIFIED_NODES.map((node, index) => (
             <div key={index} className="flex flex-col items-center">
               {/* Node container */}
               <div 
-                className={`w-56 h-72 pixel-borders ${getNodeClasses(index, node)}`}
+                className={`w-48 h-64 pixel-borders ${getNodeClasses(index, node)}`}
                 style={{ borderColor: getNodeColor(node.character) }}
                 onClick={() => handleNodeSelect(index)}
               >
                 {/* Node content */}
-                <div className="p-4 h-full flex flex-col">
+                <div className="p-3 h-full flex flex-col">
                   {/* Character portrait */}
-                  <div className="relative h-24 mb-3 overflow-hidden rounded-lg">
+                  <div className="relative h-20 mb-2 overflow-hidden rounded-lg">
                     <Image
                       src={getCharacterImage(node.character)}
                       alt={node.character || 'Character'}
@@ -156,7 +167,7 @@ export default function SimplifiedMap() {
                     {/* Completion indicator */}
                     {isNodeCompleted(index) && (
                       <div className="absolute top-0 right-0 bg-success p-1 rounded-bl-lg">
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-white" viewBox="0 0 20 20" fill="currentColor">
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-white" viewBox="0 0 20 20" fill="currentColor">
                           <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
                         </svg>
                       </div>
@@ -164,7 +175,7 @@ export default function SimplifiedMap() {
                   </div>
                   
                   {/* Node title */}
-                  <PixelText className={`text-lg mb-2 ${
+                  <PixelText className={`text-base mb-1 ${
                     node.type === 'boss-ionix' ? 'text-boss-light' :
                     node.character === 'kapoor' ? 'text-clinical-light' :
                     node.character === 'quinn' ? 'text-educational-light' :
@@ -173,8 +184,8 @@ export default function SimplifiedMap() {
                     {node.title}
                   </PixelText>
                   
-                  {/* Node description */}
-                  <PixelText className="text-sm text-text-secondary mb-4">
+                  {/* Node description - shorter */}
+                  <PixelText className="text-xs text-text-secondary mb-3">
                     {node.description}
                   </PixelText>
                   
@@ -199,7 +210,7 @@ export default function SimplifiedMap() {
               
               {/* Connection to next node */}
               {index < SIMPLIFIED_NODES.length - 1 && (
-                <div className={`w-1 h-20 
+                <div className={`w-1 h-12 
                   ${isNodeCompleted(index) 
                     ? 'bg-success' 
                     : 'bg-gray-700 bg-gradient-to-b from-gray-700 to-dark-gray'}
@@ -213,15 +224,23 @@ export default function SimplifiedMap() {
         </div>
       </div>
       
-      {/* Debug info */}
-      <div className="absolute bottom-4 left-4 text-xs text-gray-500 font-mono">
-        <div>Completed: {completedNodeIds.length} nodes</div>
-        <div>Selected: {currentNodeId || 'none'}</div>
-        <div>Health: {player.health}/{player.maxHealth}</div>
+      {/* Persistent floating End Day button */}
+      <div className="fixed bottom-6 left-1/2 transform -translate-x-1/2 bg-surface/90 pixel-borders-thin px-4 py-2 flex items-center space-x-4 z-30">
+        <div className="flex items-center">
+          <span className="px-2 py-1 bg-danger text-white text-sm mr-2">❤️ {player.health}/{player.maxHealth}</span>
+          <span className="px-2 py-1 bg-clinical text-white text-sm">💡 {player.insight}</span>
+        </div>
+        
+        <PixelButton
+          className="bg-surface hover:bg-clinical text-text-primary px-4 py-2"
+          onClick={handleEndDay}
+        >
+          End Day
+        </PixelButton>
       </div>
       
       {/* Map legend */}
-      <div className="absolute bottom-4 right-4 bg-surface/80 p-2 text-xs">
+      <div className="absolute bottom-20 right-4 bg-surface/80 p-2 text-xs pixel-borders-thin">
         <PixelText>Map Progress</PixelText>
         <div className="flex items-center space-x-1 mt-1">
           <div className="w-3 h-3 bg-success"></div>
