@@ -7,7 +7,6 @@ import { useChallengeStore } from '../store/challengeStore';
 import { useJournalStore } from '../store/journalStore';
 import { clinicalChallenges } from '../data/clinicalChallenges';
 import SimplifiedMap from './SimplifiedMap'; // Import the enhanced simplified map
-import ChallengeContainer from './challenges/ChallengeContainer';
 import PlayerStats from './PlayerStats';
 import Inventory from './Inventory';
 import StorageCloset from './challenges/StorageCloset';
@@ -212,52 +211,45 @@ export default function GameContainer({ useSimplifiedMap = true }: GameContainer
     setShowTransition(false);
   };
   
-  // Determine what to render in the main content area
+  // In GameContainer.tsx, modify the renderMainContent function:
+
   const renderMainContent = () => {
-    // Based on game phase, render different content
     switch (gamePhase) {
       case 'night':
-        return (
-          <HillHomeScene onComplete={handleNightCompletion} />
-        );
-        
+        return <HillHomeScene onComplete={handleNightCompletion} />;
+          
       case 'day':
         // Special node handling for simplified map
         if (currentNodeId && !completedNodeIds.includes(currentNodeId)) {
           const nodeType = getCurrentNodeType();
           
-          // Handle Dr. Kapoor's calibration node
-          if (nodeType === 'kapoor-calibration' || nodeType === 'qa-1') {
+          // Direct routing to specialized components
+          if (nodeType === 'kapoor-calibration' || nodeType === 'qa-1' || currentNodeId === 'qa-1') {
             return <KapoorCalibration />;
           }
           
-          // Handle Dr. Quinn's experimental node
-          if (nodeType === 'quinn-experiment' || nodeType === 'experimental-1') {
-            return <CharacterInteractionNode />;
+          if (nodeType === 'quinn-experiment' || nodeType === 'experimental-1' || currentNodeId === 'experimental-1') {
+            return <CharacterInteractionNode character="quinn" />;
           }
           
-          // Handle storage node
-          if (nodeType === 'storage') {
+          if (nodeType === 'storage' || currentNodeId === 'storage-1') {
             return <StorageCloset />;
           }
           
-          // Handle boss node
-          if (nodeType === 'boss-ionix' || nodeType === 'boss') {
+          if (nodeType === 'boss-ionix' || nodeType === 'boss' || currentNodeId === 'boss-ionix') {
             return <BossNode />;
           }
           
-          // If there's an active challenge (for clinical and other nodes)
-          if (currentChallenge) {
-            return <ChallengeContainer />;
-          }
+          // Fallback for other nodes
+          return <SimplifiedMap />;
         }
         
-        // Default: show the map (either simplified or original)
-        return useSimplifiedMap ? <SimplifiedMap /> : <SimplifiedMap />;
+        // Default: show the map
+        return <SimplifiedMap />;
         
       default:
-        return useSimplifiedMap ? <SimplifiedMap /> : <SimplifiedMap />;
-      }
+        return <SimplifiedMap />;
+    }
   };
 
   // Toggle sidebar with animation

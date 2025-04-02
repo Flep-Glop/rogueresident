@@ -30,6 +30,7 @@ type SoundEffect =
   | 'node-hover'      // Add this 
   | 'error'           // Add this
   | 'phase-transition'; // Add this
+  
 
 // Context interface
 interface GameEffectsContextType {
