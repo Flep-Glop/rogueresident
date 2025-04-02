@@ -2,7 +2,6 @@
 ├── README.md
 ├── app
 │   ├── components
-│   │   ├── CompetencyBinder.tsx
 │   │   ├── GameContainer.tsx
 │   │   ├── GameEffects.tsx
 │   │   ├── GameOver.tsx
@@ -11,11 +10,13 @@
 │   │   ├── NodeComponent.tsx
 │   │   ├── PhaseTransition.tsx
 │   │   ├── PixelHealthBar.tsx
+│   │   ├── PixelSprite.tsx
 │   │   ├── PixelThemeProvider.tsx
 │   │   ├── PixelUIElements.tsx
 │   │   ├── PlayerStats.tsx
 │   │   ├── ScrollableMap.tsx
 │   │   ├── SimplifiedMap.tsx
+│   │   ├── SpriteFromSheet.tsx
 │   │   ├── StartScreen.tsx
 │   │   ├── VictoryScreen.tsx
 │   │   ├── audio
@@ -44,6 +45,10 @@
 │   │   └── items.ts
 │   ├── favicon.ico
 │   ├── globals.css
+│   ├── hooks
+│   │   ├── useCharacterInteraction.ts
+│   │   ├── useDialogueFlow.ts
+│   │   └── useTypewriter.ts
 │   ├── layout.tsx
 │   ├── page.tsx
 │   ├── store
@@ -69,4 +74,4 @@
 ├── tailwind.config.js
 └── tsconfig.json
 
-12 directories, 57 files
+13 directories, 61 files
