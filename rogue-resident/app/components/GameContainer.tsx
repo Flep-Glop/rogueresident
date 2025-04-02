@@ -1,8 +1,10 @@
+
 // app/components/GameContainer.tsx
 'use client';
 import { useEffect, useState } from 'react';
 import { useGameStore } from '../store/gameStore';
 import { useChallengeStore } from '../store/challengeStore';
+import { useJournalStore } from '../store/journalStore';
 import { clinicalChallenges } from '../data/clinicalChallenges';
 import SimplifiedMap from './SimplifiedMap'; // Import the enhanced simplified map
 import ChallengeContainer from './challenges/ChallengeContainer';
@@ -10,13 +12,14 @@ import PlayerStats from './PlayerStats';
 import Inventory from './Inventory';
 import StorageCloset from './challenges/StorageCloset';
 import BossNode from './challenges/BossNode';
-import KapoorLINACCalibration from './challenges/KapoorLINACCalibration';
+import KapoorCalibration from './challenges/KapoorCalibration';
 import HillHomeScene from './HillHomeScene';
 import PhaseTransition from './PhaseTransition';
 import { PixelText, PixelButton } from './PixelThemeProvider';
 import { useGameEffects } from './GameEffects';
 import CharacterInteractionNode from './challenges/CharacterInteractionNode';
-
+import Journal from './journal/Journal';
+import JournalIcon from './journal/JournalIcon';
 interface GameContainerProps {
   useSimplifiedMap?: boolean; // Flag to use the simplified map
 }
@@ -224,12 +227,12 @@ export default function GameContainer({ useSimplifiedMap = true }: GameContainer
           const nodeType = getCurrentNodeType();
           
           // Handle Dr. Kapoor's calibration node
-          if (nodeType === 'kapoor-calibration') {
-            return <KapoorLINACCalibration />;
+          if (nodeType === 'kapoor-calibration' || nodeType === 'qa-1') {
+            return <KapoorCalibration />;
           }
           
           // Handle Dr. Quinn's experimental node
-          if (nodeType === 'quinn-experiment') {
+          if (nodeType === 'quinn-experiment' || nodeType === 'experimental-1') {
             return <CharacterInteractionNode />;
           }
           
@@ -336,6 +339,10 @@ export default function GameContainer({ useSimplifiedMap = true }: GameContainer
             </div>
           </div>
         )}
+        
+        {/* Journal Icon and Component */}
+        <JournalIcon />
+        <Journal />
       </main>
       
       {/* Add scanlines effect over the entire interface */}

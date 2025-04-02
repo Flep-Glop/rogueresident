@@ -3,86 +3,22 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { PixelText, PixelButton } from '../PixelThemeProvider';
 import { useGameEffects } from '../GameEffects';
-import { useKnowledgeStore } from '../../store/knowledgeStore';
+import { useKnowledgeStore, KnowledgeDomain, ConceptNode, ConceptConnection, KNOWLEDGE_DOMAINS } from '../../store/knowledgeStore';
 import ConnectionSuggestions from './ConnectionSuggestions';
 
-// In ConstellationView.tsx
-export const KNOWLEDGE_DOMAINS = {
-  'clinical': {
-    name: 'Clinical Practice',
-    color: '#4e83bd', // Direct hex value
-    lightColor: '#63a0db',
-    darkColor: '#3a6590',
-    bgClass: 'bg-clinical',
-    textClass: 'text-clinical-light',
-    icon: '🏥'
-  },
-  'technical': {
-    name: 'Equipment & QA',
-    color: '#5a6978',
-    lightColor: '#6d7c8a',
-    darkColor: '#464e59',
-    bgClass: 'bg-qa',
-    textClass: 'text-qa-light',
-    icon: '🔧'
-  },
-  'radiological': {
-    name: 'Radiation Physics',
-    color: '#2c9287',
-    lightColor: '#3db3a6',
-    darkColor: '#1f6e66',
-    bgClass: 'bg-educational',
-    textClass: 'text-educational-light',
-    icon: '☢️'
-  },
-  'theoretical': {
-    name: 'Theoretical Concepts',
-    color: '#9370db', // Medium purple
-    lightColor: '#b19ee0',
-    darkColor: '#6a4a9f',
-    bgClass: 'bg-experimental',
-    textClass: 'text-experimental-light',
-    icon: '💫'
-  },
-  'general': {
-    name: 'General Knowledge',
-    color: '#c8d2e0',
-    lightColor: '#e0e5ec',
-    darkColor: '#8892a3',
-    bgClass: 'bg-surface',
-    textClass: 'text-text-primary',
-    icon: '📚'
-  }
-};
-
-// Concept node interface
-export interface ConceptNode {
-  id: string;
-  name: string;
-  domain: keyof typeof KNOWLEDGE_DOMAINS;
-  description: string;
-  mastery: number; // 0-100% mastery level
-  connections: string[]; // IDs of connected concepts
-  discovered: boolean;
-  position?: { x: number; y: number }; // For visual layout
-}
-
-// Connection interface
-export interface ConceptConnection {
-  source: string;
-  target: string;
-  strength: number; // 0-100%
-  discovered: boolean;
-}
+// Re-export KNOWLEDGE_DOMAINS for consistency with imports elsewhere
+export { KNOWLEDGE_DOMAINS };
 
 interface ConstellationViewProps {
-  onClose?: () => void;
+  nightMode?: boolean;
+  showLabels?: boolean;
+  interactive?: boolean;
   width?: number;
   height?: number;
-  interactive?: boolean;
-  enableJournal?: boolean;
+  onClose?: () => void;
   activeNodes?: string[]; // IDs of nodes to highlight (newly discovered/updated)
   fullscreen?: boolean; // Control fullscreen mode
+  enableJournal?: boolean;
 }
 
 /**
@@ -95,7 +31,9 @@ export default function ConstellationView({
   interactive = true,
   enableJournal = true,
   activeNodes = [],
-  fullscreen = true // Default to fullscreen
+  fullscreen = true, // Default to fullscreen
+  nightMode = false,
+  showLabels = true
 }: ConstellationViewProps) {
   // CORE REFS
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -307,7 +245,7 @@ export default function ConstellationView({
     } else {
       // For demonstration, we'll use placeholder data
       setRecentInsights([
-        { conceptId: 'ionization-chambers', amount: 15 },
+        { conceptId: 'electron-equilibrium', amount: 15 },
         { conceptId: 'radiation-safety', amount: 30 }
       ]);
     }
@@ -464,7 +402,7 @@ export default function ConstellationView({
       
       // Random domain color for nebula with very low opacity
       const domainKeys = Object.keys(KNOWLEDGE_DOMAINS);
-      const randomDomain = domainKeys[Math.floor(Math.random() * domainKeys.length)] as keyof typeof KNOWLEDGE_DOMAINS;
+      const randomDomain = domainKeys[Math.floor(Math.random() * domainKeys.length)] as KnowledgeDomain;
       const color = KNOWLEDGE_DOMAINS[randomDomain].color;
       
       // Create radial gradient for nebula
@@ -573,8 +511,14 @@ export default function ConstellationView({
         );
         
         // Use domain color for glow
-        const glowColor = isHighlighted ? domain.lightColor : domain.color;
-        glow.addColorStop(0, glowColor);
+        const colorKey = domain.color;
+        const lightColor = domain.textClass === 'text-clinical-light' ? 'var(--clinical-color-light)' : 
+                          domain.textClass === 'text-qa-light' ? 'var(--qa-color-light)' :
+                          domain.textClass === 'text-educational-light' ? 'var(--educational-color-light)' :
+                          domain.textClass === 'text-warning' ? 'var(--warning-color)' : 
+                          domain.color;
+        
+        glow.addColorStop(0, isHighlighted ? lightColor : colorKey);
         glow.addColorStop(1, 'rgba(0,0,0,0)');
         
         ctx.fillStyle = glow;
@@ -590,7 +534,7 @@ export default function ConstellationView({
             node.position.x, node.position.y, glowRadius,
             node.position.x, node.position.y, glowRadius * 1.5
           );
-          outerGlow.addColorStop(0, `${domain.lightColor}50`); // 50 is hex for 31% opacity
+          outerGlow.addColorStop(0, `${colorKey}50`); // 50 is hex for 31% opacity
           outerGlow.addColorStop(1, 'rgba(0,0,0,0)');
           
           ctx.fillStyle = outerGlow;
@@ -609,7 +553,12 @@ export default function ConstellationView({
       // Fill based on mastery and domain
       if (isHighlighted) {
         // Brighter color for highlighted nodes
-        ctx.fillStyle = domain.lightColor;
+        const lightColor = domain.textClass === 'text-clinical-light' ? 'var(--clinical-color-light)' : 
+                          domain.textClass === 'text-qa-light' ? 'var(--qa-color-light)' :
+                          domain.textClass === 'text-educational-light' ? 'var(--educational-color-light)' :
+                          domain.textClass === 'text-warning' ? 'var(--warning-color)' : 
+                          domain.color;
+        ctx.fillStyle = lightColor;
       } else {
         // Normal fill with domain color
         ctx.fillStyle = domain.color;
@@ -639,14 +588,22 @@ export default function ConstellationView({
           -Math.PI / 2, // Start at top
           (Math.PI * 2) * (node.mastery / 100) - Math.PI / 2 // End based on mastery %
         );
-        ctx.strokeStyle = domain.lightColor;
+        
+        // Get light color for domain
+        const lightColor = domain.textClass === 'text-clinical-light' ? 'var(--clinical-color-light)' : 
+                          domain.textClass === 'text-qa-light' ? 'var(--qa-color-light)' :
+                          domain.textClass === 'text-educational-light' ? 'var(--educational-color-light)' :
+                          domain.textClass === 'text-warning' ? 'var(--warning-color)' : 
+                          domain.color;
+                          
+        ctx.strokeStyle = lightColor;
         ctx.lineWidth = 2;
         ctx.stroke();
       }
       
-      // Draw labels for active/selected nodes
-      if (isActiveNode || isSelectedNode || isHighlighted) {
-        const isTemporaryLabel = isActiveNode && !isSelectedNode && !isHighlighted;
+      // Draw labels for active/selected nodes or when showLabels is true
+      if ((isActiveNode || isSelectedNode || isHighlighted || showLabels)) {
+        const isTemporaryLabel = isActiveNode && !isSelectedNode && !isHighlighted && !showLabels;
         
         // Text background
         ctx.font = '12px var(--font-pixel)';
@@ -664,7 +621,7 @@ export default function ConstellationView({
         );
         
         // Text
-        ctx.fillStyle = isHighlighted ? '#FFFFFF' : domain.lightColor;
+        ctx.fillStyle = isHighlighted ? '#FFFFFF' : domain.color;
         ctx.textAlign = 'center';
         ctx.fillText(node.name, node.position.x, node.position.y + 28);
         
@@ -1020,15 +977,22 @@ export default function ConstellationView({
       <div className="absolute bottom-4 left-4 bg-surface-dark/80 p-3 pixel-borders-thin z-10">
         <PixelText className="text-text-primary mb-2">Knowledge Domains</PixelText>
         <div className="space-y-1 text-sm">
-          {Object.entries(KNOWLEDGE_DOMAINS).map(([key, domain]) => (
-            <div key={key} className="flex items-center">
-              <div 
-                className="w-3 h-3 mr-2" 
-                style={{ backgroundColor: domain.color }}
-              ></div>
-              <PixelText className={domain.textClass}>{domain.name}</PixelText>
-            </div>
-          ))}
+          {Object.entries(domainMastery)
+            .filter(([_, mastery]) => mastery > 0)
+            .map(([key, mastery]) => {
+              const domain = KNOWLEDGE_DOMAINS[key as KnowledgeDomain];
+              if (!domain) return null;
+              
+              return (
+                <div key={key} className="flex items-center">
+                  <div 
+                    className="w-3 h-3 mr-2" 
+                    style={{ backgroundColor: domain.color }}
+                  ></div>
+                  <PixelText className={domain.textClass}>{domain.name}: {mastery}%</PixelText>
+                </div>
+              );
+            })}
         </div>
       </div>
       

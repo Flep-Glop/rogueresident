@@ -1,46 +1,106 @@
 // app/utils/knowledgeRequirements.ts
-import { useKnowledgeStore } from '../store/knowledgeStore';
-import { KNOWLEDGE_DOMAINS } from '../components/knowledge/ConstellationView';
+import { useKnowledgeStore, ConceptNode, KnowledgeDomain, KNOWLEDGE_DOMAINS } from '../store/knowledgeStore';
 
-// For dialogue options, challenge unlocks, special actions
-export interface KnowledgeRequirement {
-  conceptId?: string;         // Specific concept required
-  domain?: keyof typeof KNOWLEDGE_DOMAINS;  // Domain knowledge required
-  masteryLevel: number;       // Minimum mastery required (0-100)
-}
+/**
+ * Knowledge requirement for dialogue options, challenge unlocks, special actions
+ */
+export type KnowledgeRequirement = 
+  | { conceptId: string; minimumMastery: number }
+  | { domain: KnowledgeDomain; minimumMastery: number };
 
 /**
  * Check if the player meets a knowledge requirement
+ * @param requirement Knowledge requirement to check
+ * @returns Boolean indicating if requirement is met
  */
 export function meetsRequirement(requirement: KnowledgeRequirement): boolean {
   const { nodes, domainMastery } = useKnowledgeStore.getState();
   
-  // Check concept-specific requirement
-  if (requirement.conceptId) {
-    const concept = nodes.find(node => node.id === requirement.conceptId);
-    if (!concept || !concept.discovered) return false;
-    return concept.mastery >= requirement.masteryLevel;
+  // Check domain requirement
+  if ('domain' in requirement) {
+    const domainLevel = domainMastery[requirement.domain] || 0;
+    return domainLevel >= requirement.minimumMastery;
   }
   
-  // Check domain-wide requirement
-  if (requirement.domain) {
-    return domainMastery[requirement.domain] >= requirement.masteryLevel;
+  // Check concept requirement
+  if ('conceptId' in requirement) {
+    const concept = nodes.find(n => n.id === requirement.conceptId);
+    if (!concept || !concept.discovered) return false;
+    
+    return concept.mastery >= requirement.minimumMastery;
   }
   
   return false;
 }
 
 /**
- * Get insight bonus based on relevant knowledge
- * @param domainKey The knowledge domain relevant to the challenge/dialogue
- * @returns Percentage bonus to insight gain (0-100%)
+ * Get information about what knowledge is missing to meet a requirement
+ * @param requirement Knowledge requirement that isn't met
+ * @returns String explaining what knowledge is needed
  */
-export function getInsightBonus(domainKey: keyof typeof KNOWLEDGE_DOMAINS): number {
+export function getMissingKnowledgeInfo(requirement: KnowledgeRequirement): string {
+  const { nodes, domainMastery } = useKnowledgeStore.getState();
+  
+  // Domain requirement info
+  if ('domain' in requirement) {
+    const domainInfo = KNOWLEDGE_DOMAINS[requirement.domain];
+    const currentLevel = domainMastery[requirement.domain] || 0;
+    
+    if (!domainInfo) {
+      return `Knowledge in an unknown domain is required.`;
+    }
+    
+    return `Requires ${requirement.minimumMastery}% mastery in ${domainInfo.name} (current: ${currentLevel}%)`;
+  }
+  
+  // Concept requirement info
+  if ('conceptId' in requirement) {
+    const concept = nodes.find(n => n.id === requirement.conceptId);
+    
+    if (!concept) {
+      return `Knowledge of an unknown concept is required.`;
+    }
+    
+    if (!concept.discovered) {
+      return `Knowledge of "${concept.name}" is required but hasn't been discovered yet.`;
+    }
+    
+    return `Requires ${requirement.minimumMastery}% mastery of "${concept.name}" (current: ${concept.mastery}%)`;
+  }
+  
+  return "Unknown knowledge requirement.";
+}
+
+/**
+ * Get insight bonus based on relevant knowledge
+ * @param domain The knowledge domain relevant to the challenge/dialogue
+ * @returns Percentage bonus to insight gain (0-25%)
+ */
+export function getInsightBonus(domain: KnowledgeDomain): number {
   const { domainMastery } = useKnowledgeStore.getState();
   
   // Convert domain mastery to insight bonus
   // Formula: Every 10% of domain mastery gives 2.5% insight bonus (capped at 25%)
-  return Math.min(25, Math.floor(domainMastery[domainKey] / 10) * 2.5);
+  return Math.min(25, Math.floor(domainMastery[domain] / 10) * 2.5);
+}
+
+/**
+ * Get a list of concepts that share a domain with the given concept
+ * @param conceptId Source concept ID
+ * @returns Array of related concepts in the same domain
+ */
+export function getRelatedConcepts(conceptId: string): ConceptNode[] {
+  const { nodes } = useKnowledgeStore.getState();
+  
+  const sourceNode = nodes.find(n => n.id === conceptId);
+  if (!sourceNode || !sourceNode.discovered) return [];
+  
+  // Find other discovered nodes in the same domain
+  return nodes.filter(n => 
+    n.id !== conceptId && 
+    n.discovered && 
+    n.domain === sourceNode.domain
+  );
 }
 
 /**
@@ -77,8 +137,15 @@ export function getPotentialConnections(): Array<{sourceId: string, targetId: st
         }
         
         // Shared connections bonus
-        const sourceConnections = new Set(source.connections);
-        const sharedConnections = target.connections.filter(id => sourceConnections.has(id));
+        const sourceConns = connections
+          .filter(conn => conn.source === source.id || conn.target === source.id)
+          .map(conn => conn.source === source.id ? conn.target : conn.source);
+          
+        const targetConns = connections
+          .filter(conn => conn.source === target.id || conn.target === target.id)
+          .map(conn => conn.source === target.id ? conn.target : conn.source);
+          
+        const sharedConnections = sourceConns.filter(id => targetConns.includes(id));
         similarity += sharedConnections.length * 10;
         
         // Mastery level bonus - higher mastery means better ability to form connections
@@ -102,30 +169,65 @@ export function getPotentialConnections(): Array<{sourceId: string, targetId: st
 }
 
 /**
- * Get missing knowledge for a specific requirement
- * @returns Information about what knowledge is needed
+ * Get the list of concepts that meet a certain mastery threshold
+ * @param minimumMastery Minimum mastery level (0-100)
+ * @returns Array of concepts meeting the threshold
  */
-export function getMissingKnowledgeInfo(requirement: KnowledgeRequirement): string {
-  const { nodes, domainMastery } = useKnowledgeStore.getState();
+export function getExpertiseConcepts(minimumMastery: number = 50): ConceptNode[] {
+  const { nodes } = useKnowledgeStore.getState();
   
-  if (requirement.conceptId) {
-    const concept = nodes.find(node => node.id === requirement.conceptId);
-    if (!concept) {
-      return `Missing knowledge: Unknown concept`;
+  return nodes
+    .filter(concept => concept.discovered && concept.mastery >= minimumMastery);
+}
+
+/**
+ * Get the domain with highest average mastery
+ * @returns Domain ID and average mastery
+ */
+export function getStrongestDomain(): { domainId: KnowledgeDomain; averageMastery: number } {
+  const { domainMastery } = useKnowledgeStore.getState();
+  
+  let strongestDomain: KnowledgeDomain = 'general';
+  let highestMastery = 0;
+  
+  Object.entries(domainMastery).forEach(([domain, mastery]) => {
+    if (mastery > highestMastery) {
+      strongestDomain = domain as KnowledgeDomain;
+      highestMastery = mastery;
     }
-    
-    if (!concept.discovered) {
-      return `This requires discovering "${concept.name}"`;
-    }
-    
-    return `Requires ${requirement.masteryLevel}% mastery of "${concept.name}" (current: ${concept.mastery}%)`;
-  }
+  });
   
-  if (requirement.domain) {
-    const domain = KNOWLEDGE_DOMAINS[requirement.domain];
-    const currentMastery = domainMastery[requirement.domain];
-    return `Requires ${requirement.masteryLevel}% mastery in ${domain.name} (current: ${currentMastery}%)`;
-  }
+  return { 
+    domainId: strongestDomain, 
+    averageMastery: highestMastery 
+  };
+}
+
+/**
+ * Apply a concept-specific knowledge update from a challenge or dialogue
+ * @param conceptId The concept to update
+ * @param amount Amount of mastery to add
+ * @param source Source of the knowledge (for journal entry)
+ * @param content Description of what was learned
+ */
+export function applyKnowledgeUpdate(
+  conceptId: string, 
+  amount: number, 
+  source: 'challenge' | 'dialogue' | 'item' | 'observation' = 'challenge',
+  content: string = ''
+): void {
+  const { updateMastery, addJournalEntry } = useKnowledgeStore.getState();
   
-  return 'Unknown knowledge requirement';
+  // First update mastery level
+  updateMastery(conceptId, amount);
+  
+  // Then add journal entry if content provided
+  if (content) {
+    addJournalEntry({
+      conceptId,
+      content,
+      masteryGained: amount,
+      source
+    });
+  }
 }
