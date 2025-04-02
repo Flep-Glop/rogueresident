@@ -33,8 +33,11 @@ export function SpriteFromSheet({
         width: width * scale,
         height: height * scale,
         backgroundImage: `url(${sheet})`,
+        // The key fix is here - we position the background at the negative of our sprite coordinates
         backgroundPosition: `-${x}px -${y}px`,
-        backgroundSize: `${scale * 100}%`,
+        // This is crucial - we're not scaling the background to fit our div
+        // Instead, we keep it at original size and just shift it to the right position
+        backgroundSize: 'auto',
         imageRendering: 'pixelated',
       }}
       onClick={onClick}

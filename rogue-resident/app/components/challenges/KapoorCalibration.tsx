@@ -8,6 +8,8 @@ import { PixelText, PixelButton } from '../PixelThemeProvider';
 import { useGameEffects } from '../GameEffects';
 import KnowledgeUpdate from '../knowledge/KnowledgeUpdate';
 import Image from 'next/image';
+import { EquipmentDisplay } from '../ItemSprite';
+
 
 // Import our new hooks
 import { useTypewriter } from '../../hooks/useTypewriter';
@@ -67,7 +69,7 @@ export default function KapoorCalibration() {
       text: "Good morning. I see you've arrived precisely on schedule. I'm conducting the monthly output measurements on LINAC 2. Since this is your first day, observing proper protocol will be instructive.",
       contextNote: "Kapoor adjusts the ionization chamber position with methodical precision, not looking up as you enter.",
       equipment: {
-        imageSrc: "/items/linac.png",
+        itemId: "linac",
         alt: "Linear Accelerator",
         description: "LINAC 2, the Varian TrueBeam used primarily for head and neck treatments."
       },
@@ -99,7 +101,7 @@ export default function KapoorCalibration() {
       text: "We'll start with the basics. I've set up our calibrated farmer chamber at isocenter with proper buildup. Can you recall why we use buildup material?",
       contextNote: "Kapoor gestures to the ionization chamber positioned in a water-equivalent phantom.",
       equipment: {
-        imageSrc: "/items/farmer-chamber.png",
+        itemId: 'farmer-chamber',
         alt: "Farmer Chamber",
         description: "A calibrated Farmer-type ionization chamber with PMMA buildup cap."
       },
@@ -155,7 +157,7 @@ export default function KapoorCalibration() {
       text: "For our reference dosimetry, we're measuring at 10×10cm field size. What correction factor is most critical to apply in these measurements?",
       contextNote: "Kapoor enters parameters into the electrometer console.",
       equipment: {
-        imageSrc: "/items/chamber-setup.png",
+        itemId: 'chamber-setup',
         alt: "Measurement Setup",
         description: "The ionization chamber setup at isocenter with field size indicators."
       },
@@ -212,7 +214,7 @@ export default function KapoorCalibration() {
       text: "Our measurements are showing 1.01 compared to baseline. The tolerance is ±2%. How would you interpret this result?",
       contextNote: "Kapoor completes a measurement and displays the results on the monitor.",
       equipment: {
-        imageSrc: "/items/electrometer.png",
+        itemId: 'electrometer',
         alt: "Electrometer Reading",
         description: "The electrometer showing collected charge measurements from the chamber."
       },
@@ -797,21 +799,12 @@ export default function KapoorCalibration() {
             />
           </div>
           
-          {/* Equipment visualization */}
+          {/* Equipment visualization - REPLACE THIS SECTION */}
           {currentStage.equipment && (
-            <div className="bg-surface-dark p-2 pixel-borders-thin">
-              <div className="relative h-24 mb-2">
-                <Image 
-                  src={currentStage.equipment.imageSrc}
-                  alt={currentStage.equipment.alt}
-                  fill
-                  className="object-contain"
-                />
-              </div>
-              <PixelText className="text-xs text-text-secondary">
-                {currentStage.equipment.description}
-              </PixelText>
-            </div>
+            <EquipmentDisplay
+              itemId={currentStage.equipment.itemId}
+              description={currentStage.equipment.description}
+            />
           )}
         </div>
         

@@ -84,65 +84,6 @@ export default function GameContainer({ useSimplifiedMap = true }: GameContainer
           });
           break;
           
-        case 'start':
-          // Entrance node
-          startChallenge({
-            id: currentNodeId,
-            type: 'entrance',
-            content: {
-              title: "Department Entrance",
-              character: "kapoor",
-              initialized: true
-            }
-          });
-          break;
-          
-        case 'storage-1':
-          // Storage closet
-          startChallenge({
-            id: currentNodeId,
-            type: 'storage',
-            content: { initialized: true }
-          });
-          break;
-          
-        case 'experimental-1':
-          // Quinn's experiment
-          startChallenge({
-            id: currentNodeId,
-            type: 'experimental',
-            content: { 
-              character: "quinn", 
-              initialized: true 
-            }
-          });
-          break;
-          
-        case 'clinical-1':
-          // Clinical challenge
-          startChallenge({
-            id: currentNodeId,
-            type: 'clinical',
-            content: { 
-              character: "kapoor", 
-              initialized: true 
-            }
-          });
-          break;
-          
-        case 'qualification-1':
-          // Qualification test
-          startChallenge({
-            id: currentNodeId,
-            type: 'qualification',
-            content: { 
-              title: "Qualification Test",
-              character: "kapoor",
-              initialized: true 
-            }
-          });
-          break;
-          
         case 'boss-ionix':
           // Boss encounter
           startChallenge({
