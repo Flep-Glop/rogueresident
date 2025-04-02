@@ -598,3 +598,62 @@
   .bonus-value.zero {
     color: #888;
   }
+
+/* Add at the end of your existing CSS file */
+
+/* Character reaction animations */
+@keyframes portrait-shake {
+  0% { transform: translateX(0); }
+  25% { transform: translateX(-4px); }
+  50% { transform: translateX(4px); }
+  75% { transform: translateX(-2px); }
+  100% { transform: translateX(0); }
+}
+
+.character-shake {
+  animation: portrait-shake 0.4s cubic-bezier(.36,.07,.19,.97) both;
+}
+
+@keyframes pixel-bounce {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-10px); }
+}
+
+.animate-bounce {
+  animation: pixel-bounce 0.8s ease-in-out infinite;
+}
+
+/* Mini dialogue portrait styling */
+.character-portrait-mini {
+  width: 100%;
+  height: 100%;
+  border: 2px solid var(--border-color);
+  position: relative;
+  overflow: hidden;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+/* Value change animation */
+@keyframes value-pulse {
+  0% { transform: scale(1); color: white; }
+  50% { transform: scale(1.2); color: #5df3ff; }
+  100% { transform: scale(1); color: white; }
+}
+
+.value-change {
+  animation: value-pulse 0.4s ease-out;
+  display: inline-block;
+}
+
+/* Enhanced character portrait styles */
+.character-portrait {
+  box-shadow: 0 0 0 1px rgba(255,255,255,0.1),
+    inset 0 0 10px rgba(0,0,0,0.2);
+  transition: all 0.3s ease;
+}
+
+.character-portrait:hover {
+  transform: scale(1.05);
+  box-shadow: 0 0 15px rgba(80, 160, 220, 0.3),
+    inset 0 0 10px rgba(0,0,0,0.2);
+}

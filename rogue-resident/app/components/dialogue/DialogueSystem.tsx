@@ -15,6 +15,9 @@ export type Character = 'kapoor' | 'jesse' | 'quinn' | 'player';
 // Knowledge acquisition types
 export type KnowledgeDomain = 'clinical' | 'technical' | 'theoretical' | 'general';
 
+// Reaction types for character portraits
+export type ReactionType = 'positive' | 'negative' | 'surprise' | 'confusion' | 'approval' | 'annoyance';
+
 export interface DialogueOption {
   id: string;
   text: string;
@@ -27,6 +30,7 @@ export interface DialogueOption {
   };
   nextNodeId?: string; // ID of next dialogue node if this option is selected
   requiresKnowledge?: KnowledgeRequirement; // Knowledge requirement to unlock this option
+  reaction?: ReactionType; // Character's reaction to this option
 }
 
 // Dialogue node interface
@@ -55,6 +59,43 @@ const DialogueContext = createContext<DialogueContextType>({
 // Custom hook
 export const useDialogue = () => useContext(DialogueContext);
 
+// Character Reaction Component 
+const CharacterReaction = ({ type, isActive, character }: { type: ReactionType, isActive: boolean, character: Character }) => {
+  const [visible, setVisible] = useState(isActive);
+  
+  useEffect(() => {
+    if (isActive) {
+      setVisible(true);
+      const timer = setTimeout(() => setVisible(false), 1500);
+      return () => clearTimeout(timer);
+    }
+  }, [isActive]);
+  
+  if (!visible) return null;
+  
+  const symbols: Record<ReactionType, string> = {
+    positive: "!",
+    negative: "...",
+    surprise: "?!",
+    confusion: "?",
+    approval: "✓",
+    annoyance: "#@$!"
+  };
+
+  const colors: Record<Character, string> = {
+    'kapoor': 'text-clinical-light',
+    'jesse': 'text-qa-light',
+    'quinn': 'text-educational-light',
+    'player': 'text-text-primary'
+  };
+  
+  return (
+    <div className={`absolute top-2 right-2 animate-bounce text-2xl font-pixel z-10 ${colors[character]}`}>
+      {symbols[type]}
+    </div>
+  );
+};
+
 // Provider component
 export function DialogueProvider({ children }: { children: ReactNode }) {
   const { updateInsight } = useGameStore();
@@ -68,6 +109,8 @@ export function DialogueProvider({ children }: { children: ReactNode }) {
   const [displayedText, setDisplayedText] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const [onDialogueComplete, setOnDialogueComplete] = useState<(() => void) | null>(null);
+  const [currentReaction, setCurrentReaction] = useState<ReactionType | null>(null);
+  const [isShaking, setIsShaking] = useState(false);
   
   // Get current node
   const currentNode = currentNodeId 
@@ -80,6 +123,7 @@ export function DialogueProvider({ children }: { children: ReactNode }) {
     setCurrentNodeId(startNodeId);
     setIsActive(true);
     setSelectedOption(null);
+    setCurrentReaction(null);
     
     if (onComplete) {
       setOnDialogueComplete(() => onComplete);
@@ -95,6 +139,7 @@ export function DialogueProvider({ children }: { children: ReactNode }) {
     setDialogueNodes([]);
     setCurrentNodeId(null);
     setSelectedOption(null);
+    setCurrentReaction(null);
     
     // Call completion callback if exists
     if (onDialogueComplete) {
@@ -120,6 +165,25 @@ export function DialogueProvider({ children }: { children: ReactNode }) {
       }
     }
     
+    // Set reaction if any
+    if (option.reaction) {
+      setCurrentReaction(option.reaction);
+      
+      // Trigger portrait shake
+      setIsShaking(true);
+      setTimeout(() => setIsShaking(false), 400);
+    } else if (option.insightGain && option.insightGain >= 15) {
+      // Default positive reaction for high insight
+      setCurrentReaction('positive');
+      setIsShaking(true);
+      setTimeout(() => setIsShaking(false), 400);
+    } else if (option.insightGain && option.insightGain <= 0) {
+      // Default negative reaction for no insight
+      setCurrentReaction('negative');
+      setIsShaking(true);
+      setTimeout(() => setIsShaking(false), 400);
+    }
+    
     // Play selection sound based on insight gain
     if (playSound) {
       if (option.insightGain && option.insightGain >= 15) {
@@ -136,6 +200,9 @@ export function DialogueProvider({ children }: { children: ReactNode }) {
   // Move to next node
   const goToNextNode = () => {
     if (!currentNode) return;
+    
+    // Clear reaction when moving to next node
+    setCurrentReaction(null);
     
     if (selectedOption) {
       // If we have a selected option
@@ -295,9 +362,31 @@ export function DialogueProvider({ children }: { children: ReactNode }) {
       {isActive && currentNode && (
         <div className="fixed bottom-0 left-0 right-0 p-4 z-50">
           <div 
-            className="pixel-borders bg-surface max-w-4xl mx-auto"
+            className="pixel-borders bg-surface max-w-4xl mx-auto relative"
             style={{ borderColor: characterData[currentNode.character].color }}
           >
+            {/* Character portrait area with reaction */}
+            <div className={`absolute -top-16 -left-2 w-16 h-16 ${isShaking ? 'character-shake' : ''}`}>
+              <div className="character-portrait-mini bg-surface-dark relative">
+                {/* Character portrait would go here */}
+                <div className="w-full h-full flex items-center justify-center text-3xl">
+                  {currentNode.character === 'kapoor' && '👨🏽‍⚕️'}
+                  {currentNode.character === 'jesse' && '👨‍🔧'}
+                  {currentNode.character === 'quinn' && '👩‍🔬'}
+                  {currentNode.character === 'player' && '🧑‍🔬'}
+                </div>
+                
+                {/* Character reaction */}
+                {currentReaction && (
+                  <CharacterReaction 
+                    type={currentReaction} 
+                    isActive={!!currentReaction}
+                    character={currentNode.character}
+                  />
+                )}
+              </div>
+            </div>
+            
             {/* Character name */}
             <div 
               className={`p-2 ${characterData[currentNode.character].bg}`}

@@ -1,6 +1,7 @@
 import { useGameStore } from '../store/gameStore';
 import { PixelBorder, PixelText } from './PixelThemeProvider';
 import Image from 'next/image';
+import Inventory from './Inventory';
 
 export default function PlayerStats() {
   const { health, insight } = useGameStore((state) => state.player);
@@ -40,21 +41,31 @@ export default function PlayerStats() {
         </div>
       </div>
       
-      {/* Character portrait using PNG instead of emoji */}
-      <div className="flex flex-col items-center">
-      <div className="w-24 h-24 mb-2 relative pixel-borders-thin overflow-hidden character-portrait">
-        <div className="w-full h-full bg-surface-dark relative">
-          <Image
-            src="/images/resident-portrait.png"
-            alt="The Resident"
-            fill
-            className="pixel-art"
-            style={{ objectFit: 'contain' }}
-            priority
-          />
+      {/* Enhanced Character Portrait Section */}
+      <div className="flex flex-col items-center mb-4">
+        <div className="w-32 h-32 mb-2 relative pixel-borders-thin overflow-hidden character-portrait">
+          <div className="w-full h-full bg-surface-dark relative">
+            <Image
+              src="/images/resident-portrait.png"
+              alt="The Resident"
+              fill
+              className="pixel-art"
+              style={{ objectFit: 'contain' }}
+              priority
+            />
+          </div>
         </div>
+        <PixelText className="text-text-primary text-lg mb-2">The Resident</PixelText>
       </div>
-        <PixelText className="text-text-primary">The Resident</PixelText>
+      
+      {/* Inventory directly below portrait */}
+      <div className="pixel-borders-thin">
+        <div className="bg-surface-dark px-3 py-2 border-b border-border">
+          <PixelText>Inventory</PixelText>
+        </div>
+        <div className="p-2">
+          <Inventory compact={true} />
+        </div>
       </div>
     </div>
   );

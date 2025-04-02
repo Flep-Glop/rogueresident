@@ -29,7 +29,11 @@ const effectColors: Record<string, { bg: string, text: string, icon: string }> =
   }
 };
 
-export default function Inventory() {
+interface InventoryProps {
+  compact?: boolean;
+}
+
+export default function Inventory({ compact = false }: InventoryProps) {
   const { inventory } = useGameStore();
   const [activeItemId, setActiveItemId] = useState<string | null>(null);
   const [newItemId, setNewItemId] = useState<string | null>(null);
@@ -75,6 +79,57 @@ export default function Inventory() {
   
   const totalBonuses = calculateTotalBonuses();
   
+  // Compact mode for embedding in PlayerStats
+  if (compact) {
+    return (
+      <div className="space-y-2">
+        {inventory.length === 0 ? (
+          <div className="text-center text-text-secondary text-sm py-2">
+            <span className="inline-block mb-1">📦</span>
+            <PixelText>Find items in Storage Closets!</PixelText>
+          </div>
+        ) : (
+          <>
+            <div className="grid grid-cols-2 gap-2">
+              {inventory.slice(0, 4).map((item: Item) => {
+                const isNew = item.id === newItemId;
+                
+                return (
+                  <div 
+                    key={item.id} 
+                    className={`
+                      pixel-borders-thin bg-surface-dark p-1
+                      transition-all duration-300 cursor-pointer
+                      ${isNew ? 'animate-pixel-pulse' : ''}
+                      ${item.rarity === 'rare' ? 'border-purple-700' : 
+                        item.rarity === 'uncommon' ? 'border-blue-700' : ''}
+                    `}
+                    onClick={() => toggleItemDetails(item.id)}
+                    title={item.description}
+                  >
+                    <div className="flex items-center">
+                      <span className="mr-1">{item.effects[0]?.type === 'clinical' ? '🏥' : 
+                                           item.effects[0]?.type === 'qa' ? '🔍' : 
+                                           item.effects[0]?.type === 'educational' ? '📚' : '⚡'}</span>
+                      <PixelText className="text-xs truncate">{item.name}</PixelText>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            
+            {inventory.length > 4 && (
+              <PixelText className="text-xs text-center text-text-secondary">
+                +{inventory.length - 4} more items
+              </PixelText>
+            )}
+          </>
+        )}
+      </div>
+    );
+  }
+  
+  // Full inventory display
   return (
     <div className="p-4">
       <div className="pixel-borders-thin mb-6">

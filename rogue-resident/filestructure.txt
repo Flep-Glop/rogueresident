@@ -15,6 +15,7 @@
 │   │   ├── PixelThemeProvider.tsx
 │   │   ├── PixelUIElements.tsx
 │   │   ├── PlayerStats.tsx
+│   │   ├── SimplifiedMap.tsx
 │   │   ├── StartScreen.tsx
 │   │   ├── VictoryScreen.tsx
 │   │   ├── audio
@@ -26,9 +27,14 @@
 │   │   │   ├── CharacterInteractionNode.tsx
 │   │   │   ├── ClinicalChallenge.tsx
 │   │   │   ├── ClinicalChallengeIntro.tsx
+│   │   │   ├── KapoorLINACCalibration.tsx
 │   │   │   └── StorageCloset.tsx
-│   │   └── dialogue
-│   │       └── DialogueSystem.tsx
+│   │   ├── dialogue
+│   │   │   ├── DialogueSystem.tsx
+│   │   │   └── UnlockableDialogueOptions.tsx
+│   │   └── knowledge
+│   │       ├── ConnectionSuggestions.tsx
+│   │       └── ConstellationView.tsx
 │   ├── data
 │   │   ├── clinicalChallenges.ts
 │   │   └── items.ts
@@ -38,12 +44,15 @@
 │   ├── page.tsx
 │   ├── store
 │   │   ├── challengeStore.ts
-│   │   └── gameStore.ts
+│   │   ├── gameStore.ts
+│   │   └── knowledgeStore.ts
 │   ├── styles
 │   │   └── pixel-assets.css
 │   ├── types
+│   │   ├── encounterTypes.ts
 │   │   └── map.ts
 │   └── utils
+│       ├── knowledgeRequirements.ts
 │       └── mapGenerator.ts
 ├── eslint.config.mjs
 ├── filestructure.txt
@@ -55,4 +64,4 @@
 ├── tailwind.config.js
 └── tsconfig.json
 
-10 directories, 45 files
+11 directories, 53 files
