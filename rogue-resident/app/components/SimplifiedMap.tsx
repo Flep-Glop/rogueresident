@@ -116,21 +116,27 @@ export default function SimplifiedMap() {
     }
   }, [currentNodeId, activeNode]);
   
-  // Handle node selection with enhanced feedback
+  // Replace the handleNodeSelect function in SimplifiedMap.tsx
   const handleNodeSelect = (nodeId: string) => {
-    // Skip if this node is not accessible yet
-    if (!isNodeAccessible(nodeId)) return;
+    // Skip if node is not accessible
+    if (!isNodeAccessible(nodeId)) {
+      console.log(`Node ${nodeId} is not accessible`);
+      return;
+    }
     
+    console.log(`Node selected: ${nodeId}`);
+    
+    // Update active node in local state
     setActiveNode(nodeId);
     
     // Enhanced selection feedback
     if (playSound) playSound('node-select');
     
-    // Ripple effect for selection
+    // Visual feedback for selection
     if (flashScreen) {
       const nodeType = mapNodes[nodeId].type;
       const color = nodeType === 'boss-ionix' ? 'red' : 
-                    nodeType === 'qualification' ? 'yellow' : 'blue';
+                  nodeType === 'qualification' ? 'yellow' : 'blue';
       flashScreen(color);
     }
     
@@ -147,7 +153,8 @@ export default function SimplifiedMap() {
       );
     }
     
-    // Update game state with selected node
+    // Most important part: Update gameStore with selected node
+    // This is what triggers the routing in GameContainer
     setCurrentNode(nodeId);
   };
   

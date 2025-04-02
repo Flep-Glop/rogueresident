@@ -45,25 +45,28 @@ export default function GameContainer({ useSimplifiedMap = true }: GameContainer
   // UI states
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   
-  // Get current node details from map to determine node type
-  // In GameContainer.tsx, modify getCurrentNodeType() to handle the start node:
+  // Replace the entire getCurrentNodeType function with this implementation
   const getCurrentNodeType = () => {
     if (!currentNodeId || !map) return null;
     
-    // Special handling for simplified map
-    if (useSimplifiedMap) {
-      if (currentNodeId === 'start') return 'entrance';  // Add this line
-      if (currentNodeId === 'qa-1') return 'kapoor-calibration';
-      if (currentNodeId === 'experimental-1') return 'quinn-experiment';
-      if (currentNodeId === 'boss-ionix') return 'boss-ionix';
-      if (currentNodeId === 'storage-1') return 'storage';
-      if (currentNodeId === 'clinical-1') return 'clinical';
-      if (currentNodeId === 'qualification-1') return 'qualification';
-      
-      return null;
+    // Direct node ID to type mapping for simplified map
+    const nodeTypeMap = {
+      'start': 'entrance',
+      'qa-1': 'kapoor-calibration',
+      'experimental-1': 'quinn-experiment',
+      'storage-1': 'storage',
+      'clinical-1': 'clinical', 
+      'qualification-1': 'qualification',
+      'boss-ionix': 'boss-ionix'
+    };
+    
+    // If we have a direct mapping, use it
+    if (nodeTypeMap[currentNodeId]) {
+      console.log(`Node ${currentNodeId} mapped to type: ${nodeTypeMap[currentNodeId]}`);
+      return nodeTypeMap[currentNodeId];
     }
     
-    // Original map logic
+    // Fallback to map-based lookup for non-simplified cases
     const currentNode = map.nodes.find(node => node.id === currentNodeId);
     if (!currentNode) {
       console.warn(`Current node ${currentNodeId} not found in map!`);
@@ -73,28 +76,29 @@ export default function GameContainer({ useSimplifiedMap = true }: GameContainer
     return currentNode.type;
   };
   
-  // In GameContainer.tsx
+  // Replace the entire useEffect that handles node selection with this implementation
   useEffect(() => {
     if (currentNodeId && !currentChallenge && !completedNodeIds.includes(currentNodeId)) {
       const nodeType = getCurrentNodeType();
       console.log(`Starting interaction with ${nodeType} node: ${currentNodeId}`);
       
-      // Type-specific initializers that maintain the content pipeline
-      switch(nodeType) {
-        case 'clinical':
-          // Randomized clinical challenges
-          const randomChallenge = 
-            clinicalChallenges[Math.floor(Math.random() * clinicalChallenges.length)];
-          
+      // Based on node ID directly (more reliable than type)
+      switch(currentNodeId) {
+        case 'qa-1':
+          // Kapoor's LINAC calibration
           startChallenge({
             id: currentNodeId,
-            type: 'clinical',
-            content: randomChallenge,
+            type: 'calibration',
+            content: {
+              title: "LINAC Output Calibration",
+              character: "kapoor",
+              initialized: true
+            }
           });
           break;
-        
-        // Add entrance node handling
-        case 'entrance':
+          
+        case 'start':
+          // Entrance node
           startChallenge({
             id: currentNodeId,
             type: 'entrance',
@@ -105,22 +109,9 @@ export default function GameContainer({ useSimplifiedMap = true }: GameContainer
             }
           });
           break;
-
-        case 'kapoor-calibration':
-          // Kapoor's LINAC calibration needs specific initialization
-          startChallenge({
-            id: currentNodeId,
-            type: 'calibration',
-            content: {
-              title: "LINAC Output Calibration",
-              character: "kapoor",
-              steps: ["setup", "measurement", "analysis"],
-              currentStep: "setup"
-            }
-          });
-          break;
           
-        case 'storage':
+        case 'storage-1':
+          // Storage closet
           startChallenge({
             id: currentNodeId,
             type: 'storage',
@@ -128,16 +119,32 @@ export default function GameContainer({ useSimplifiedMap = true }: GameContainer
           });
           break;
           
-        case 'quinn-experiment':
-        case 'experimental':
+        case 'experimental-1':
+          // Quinn's experiment
           startChallenge({
             id: currentNodeId,
             type: 'experimental',
-            content: { character: "quinn", initialized: true }
+            content: { 
+              character: "quinn", 
+              initialized: true 
+            }
           });
           break;
           
-        case 'qualification':
+        case 'clinical-1':
+          // Clinical challenge
+          startChallenge({
+            id: currentNodeId,
+            type: 'clinical',
+            content: { 
+              character: "kapoor", 
+              initialized: true 
+            }
+          });
+          break;
+          
+        case 'qualification-1':
+          // Qualification test
           startChallenge({
             id: currentNodeId,
             type: 'qualification',
@@ -150,6 +157,7 @@ export default function GameContainer({ useSimplifiedMap = true }: GameContainer
           break;
           
         case 'boss-ionix':
+          // Boss encounter
           startChallenge({
             id: currentNodeId,
             type: 'boss',
@@ -163,8 +171,8 @@ export default function GameContainer({ useSimplifiedMap = true }: GameContainer
           break;
           
         default:
-          console.log(`No specialized initialization for node type: ${nodeType}`);
-          // For unknown types, create minimal challenge state
+          console.log(`Using generic initialization for node: ${currentNodeId}`);
+          // For unknown node IDs, create minimal challenge state
           if (nodeType) {
             startChallenge({
               id: currentNodeId,
@@ -211,45 +219,39 @@ export default function GameContainer({ useSimplifiedMap = true }: GameContainer
     setShowTransition(false);
   };
   
-  // In GameContainer.tsx, modify the renderMainContent function:
-
   const renderMainContent = () => {
-    switch (gamePhase) {
-      case 'night':
-        return <HillHomeScene onComplete={handleNightCompletion} />;
-          
-      case 'day':
-        // Special node handling for simplified map
-        if (currentNodeId && !completedNodeIds.includes(currentNodeId)) {
-          const nodeType = getCurrentNodeType();
-          
-          // Direct routing to specialized components
-          if (nodeType === 'kapoor-calibration' || nodeType === 'qa-1' || currentNodeId === 'qa-1') {
-            return <KapoorCalibration />;
-          }
-          
-          if (nodeType === 'quinn-experiment' || nodeType === 'experimental-1' || currentNodeId === 'experimental-1') {
-            return <CharacterInteractionNode character="quinn" />;
-          }
-          
-          if (nodeType === 'storage' || currentNodeId === 'storage-1') {
-            return <StorageCloset />;
-          }
-          
-          if (nodeType === 'boss-ionix' || nodeType === 'boss' || currentNodeId === 'boss-ionix') {
-            return <BossNode />;
-          }
-          
-          // Fallback for other nodes
-          return <SimplifiedMap />;
-        }
-        
-        // Default: show the map
-        return <SimplifiedMap />;
-        
-      default:
-        return <SimplifiedMap />;
+    // First check if we're in night phase
+    if (gamePhase === 'night') {
+      return <HillHomeScene onComplete={handleNightCompletion} />;
     }
+    
+    // If we have a selected unfinished node, route directly by node ID
+    if (currentNodeId && !completedNodeIds.includes(currentNodeId)) {
+      console.log(`Rendering content for node: ${currentNodeId}`);
+      
+      // Direct routing by node ID
+      switch (currentNodeId) {
+        case 'qa-1':
+          return <KapoorCalibration />;
+        case 'experimental-1':
+          return <CharacterInteractionNode character="quinn" />;
+        case 'storage-1':
+          return <StorageCloset />;
+        case 'clinical-1':
+          return <CharacterInteractionNode character="kapoor" />;
+        case 'boss-ionix':
+          return <BossNode />;
+        case 'qualification-1':
+          // Insert appropriate component here
+          return <CharacterInteractionNode character="kapoor" />;
+        case 'start':
+          // Handle entrance/start node
+          return <CharacterInteractionNode character="kapoor" />;
+      }
+    }
+    
+    // Default: show the map
+    return <SimplifiedMap />;
   };
 
   // Toggle sidebar with animation
