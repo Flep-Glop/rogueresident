@@ -16,18 +16,20 @@ interface TypewriterOptions {
 export function useTypewriter(text: string, options: TypewriterOptions = {}) {
   const { 
     speed = 25, 
-    startDelay = 0,
+    startDelay = 150, // Added default delay to prevent first letter cutoff
     onComplete
   } = options;
   
   const [displayText, setDisplayText] = useState('');
   const [isComplete, setIsComplete] = useState(false);
   const [isTyping, setIsTyping] = useState(false);
+  const [showContinueIndicator, setShowContinueIndicator] = useState(false);
   
   // Use refs to maintain persistence across renders
   const indexRef = useRef(0);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const continueIndicatorTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   
   // Function to skip to the end
   const complete = useCallback(() => {
@@ -41,9 +43,15 @@ export function useTypewriter(text: string, options: TypewriterOptions = {}) {
       timeoutRef.current = null;
     }
     
+    if (continueIndicatorTimeoutRef.current) {
+      clearTimeout(continueIndicatorTimeoutRef.current);
+      continueIndicatorTimeoutRef.current = null;
+    }
+    
     setDisplayText(text);
     setIsTyping(false);
     setIsComplete(true);
+    setShowContinueIndicator(true);
     
     if (onComplete) {
       onComplete();
@@ -56,6 +64,7 @@ export function useTypewriter(text: string, options: TypewriterOptions = {}) {
     setDisplayText('');
     setIsComplete(false);
     setIsTyping(false);
+    setShowContinueIndicator(false);
     
     // This will trigger the effect to start typing again
   }, []);
@@ -73,10 +82,16 @@ export function useTypewriter(text: string, options: TypewriterOptions = {}) {
       timeoutRef.current = null;
     }
     
+    if (continueIndicatorTimeoutRef.current) {
+      clearTimeout(continueIndicatorTimeoutRef.current);
+      continueIndicatorTimeoutRef.current = null;
+    }
+    
     // Reset state
     indexRef.current = 0;
     setDisplayText('');
     setIsComplete(false);
+    setShowContinueIndicator(false);
     
     // Don't start if text is empty
     if (!text) {
@@ -100,6 +115,11 @@ export function useTypewriter(text: string, options: TypewriterOptions = {}) {
           setIsTyping(false);
           setIsComplete(true);
           
+          // Show continue indicator after typing is complete with a slight delay
+          continueIndicatorTimeoutRef.current = setTimeout(() => {
+            setShowContinueIndicator(true);
+          }, 500);
+          
           if (onComplete) {
             onComplete();
           }
@@ -121,6 +141,9 @@ export function useTypewriter(text: string, options: TypewriterOptions = {}) {
       if (timeoutRef.current) {
         clearTimeout(timeoutRef.current);
       }
+      if (continueIndicatorTimeoutRef.current) {
+        clearTimeout(continueIndicatorTimeoutRef.current);
+      }
     };
   }, [text, speed, startDelay, onComplete]);
   
@@ -129,7 +152,8 @@ export function useTypewriter(text: string, options: TypewriterOptions = {}) {
     isComplete, 
     isTyping, 
     complete,
-    restart 
+    restart,
+    showContinueIndicator
   };
 }
 

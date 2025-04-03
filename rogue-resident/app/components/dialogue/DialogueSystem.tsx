@@ -1,10 +1,11 @@
 // app/components/dialogue/DialogueSystem.tsx
 'use client';
-import { useState, useEffect, createContext, useContext, ReactNode } from 'react';
+import { useState, useEffect, createContext, useContext, ReactNode, useRef } from 'react';
 import { useGameStore } from '../../store/gameStore';
 import { useKnowledgeStore } from '../../store/knowledgeStore';
 import { PixelText, PixelButton } from '../PixelThemeProvider';
 import { useGameEffects } from '../GameEffects';
+import { useTypewriter } from '../../hooks/useTypewriter';
 import { meetsRequirement, getMissingKnowledgeInfo } from '../../utils/knowledgeRequirements';
 import { KnowledgeRequirement } from '../../utils/knowledgeRequirements';
 import { KNOWLEDGE_DOMAINS } from '../knowledge/ConstellationView';
@@ -136,16 +137,50 @@ export function DialogueProvider({ children }: { children: ReactNode }) {
   const [currentNodeId, setCurrentNodeId] = useState<string | null>(null);
   const [isActive, setIsActive] = useState(false);
   const [selectedOption, setSelectedOption] = useState<DialogueOption | null>(null);
-  const [displayedText, setDisplayedText] = useState('');
-  const [isTyping, setIsTyping] = useState(false);
   const [onDialogueComplete, setOnDialogueComplete] = useState<(() => void) | null>(null);
   const [currentReaction, setCurrentReaction] = useState<ReactionType | null>(null);
   const [isShaking, setIsShaking] = useState(false);
+  const [isReady, setIsReady] = useState(false);
+  
+  // Ref to track if component is mounted
+  const isMounted = useRef(true);
   
   // Get current node
   const currentNode = currentNodeId 
     ? dialogueNodes.find(node => node.id === currentNodeId) || null
     : null;
+    
+  // Text to display - either node text or selected option response
+  const textToShow = selectedOption ? selectedOption.responseText : (currentNode?.text || '');
+  
+  // Use enhanced typewriter hook
+  const { 
+    displayText, 
+    isTyping, 
+    complete: skipTyping,
+    showContinueIndicator
+  } = useTypewriter(textToShow, {
+    // Add a starting delay to ensure component is fully mounted
+    startDelay: 150,
+    // Slightly faster typing for better pacing
+    speed: 25
+  });
+  
+  // Effect to handle component mount/unmount
+  useEffect(() => {
+    // Mark component as mounted after a short delay to ensure DOM is ready
+    const timer = setTimeout(() => {
+      if (isMounted.current) {
+        setIsReady(true);
+      }
+    }, 100);
+    
+    // Cleanup on unmount
+    return () => {
+      isMounted.current = false;
+      clearTimeout(timer);
+    };
+  }, []);
   
   // Start dialogue
   const startDialogue = (nodes: DialogueNode[], startNodeId: string, onComplete?: () => void) => {
@@ -231,6 +266,12 @@ export function DialogueProvider({ children }: { children: ReactNode }) {
   const goToNextNode = () => {
     if (!currentNode) return;
     
+    // If still typing, skip to the end instead of advancing
+    if (isTyping) {
+      skipTyping();
+      return;
+    }
+    
     // Clear reaction when moving to next node
     setCurrentReaction(null);
     
@@ -256,29 +297,6 @@ export function DialogueProvider({ children }: { children: ReactNode }) {
       endDialogue();
     }
   };
-  
-  // Typewriter effect
-  useEffect(() => {
-    if (!currentNode) return;
-    
-    // Text to display - either node text or selected option response
-    const textToShow = selectedOption ? selectedOption.responseText : currentNode.text;
-    let index = 0;
-    setDisplayedText('');
-    setIsTyping(true);
-    
-    const interval = setInterval(() => {
-      if (index < textToShow.length) {
-        setDisplayedText(prev => prev + textToShow.charAt(index));
-        index++;
-      } else {
-        clearInterval(interval);
-        setIsTyping(false);
-      }
-    }, 30);
-    
-    return () => clearInterval(interval);
-  }, [currentNode, selectedOption]);
   
   // Character data for styling dialogue based on character
   const characterData: Record<Character, {name: string, color: string, bg: string}> = {
@@ -314,11 +332,13 @@ export function DialogueProvider({ children }: { children: ReactNode }) {
     const getDomainStyle = () => {
       if (!knowledge) return {};
       
-      if (knowledge.domain) {
+      // Properly handle union type - check if 'domain' property exists in the knowledge object
+      if ('domain' in knowledge && knowledge.domain) {
+        const domain = knowledge.domain as keyof typeof KNOWLEDGE_DOMAINS;
         return {
-          borderColor: KNOWLEDGE_DOMAINS[knowledge.domain].color,
-          textClass: KNOWLEDGE_DOMAINS[knowledge.domain].textClass,
-          bgClass: isMet ? KNOWLEDGE_DOMAINS[knowledge.domain].bgClass : ''
+          borderColor: KNOWLEDGE_DOMAINS[domain].color,
+          textClass: KNOWLEDGE_DOMAINS[domain].textClass,
+          bgClass: isMet ? KNOWLEDGE_DOMAINS[domain].bgClass : ''
         };
       }
       
@@ -389,13 +409,12 @@ export function DialogueProvider({ children }: { children: ReactNode }) {
       {children}
       
       {/* Dialogue UI */}
-      {isActive && currentNode && (
+      {isActive && currentNode && isReady && (
         <div className="fixed bottom-0 left-0 right-0 p-4 z-50">
           <div 
             className="pixel-borders bg-surface max-w-4xl mx-auto relative"
             style={{ borderColor: characterData[currentNode.character].color }}
           >
-            {/* Character portrait area with reaction */}
             {/* Character portrait - Enhanced with reaction handling */}
             <div className={`absolute -top-16 -left-2 w-16 h-16 ${isShaking ? 'character-shake' : ''}`}>
               <div className="character-portrait-mini bg-surface-dark relative">
@@ -442,16 +461,25 @@ export function DialogueProvider({ children }: { children: ReactNode }) {
             
             {/* Dialogue text */}
             <div 
-              className="p-4 min-h-[100px]" 
+              className="p-4 min-h-[100px] relative" 
               onClick={() => {
                 if (isTyping) {
                   // Skip typing and show full text immediately
-                  setIsTyping(false);
-                  setDisplayedText(selectedOption ? selectedOption.responseText : currentNode.text);
+                  skipTyping();
                 }
               }}
             >
-              <PixelText>{displayedText}{isTyping ? '|' : ''}</PixelText>
+              <PixelText>{displayText}{isTyping ? '|' : ''}</PixelText>
+              
+              {/* Click to continue indicator */}
+              {!isTyping && showContinueIndicator && !selectedOption && !currentNode.options && (
+                <div 
+                  className="absolute bottom-2 right-2 text-text-secondary text-sm animate-pulse"
+                  style={{ opacity: 0.7 }}
+                >
+                  <PixelText>Click to continue ▶</PixelText>
+                </div>
+              )}
             </div>
             
             {/* Options or continue button */}

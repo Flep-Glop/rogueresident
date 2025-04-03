@@ -25,13 +25,20 @@ export default function KnowledgeUpdate({
   // Play sound effect when component mounts
   useEffect(() => {
     if (playSound) {
+      // Use compatible sound effects based on gain amount
       if (gainAmount >= 20) {
-        playSound('major-knowledge');
+        // Major knowledge gain - use success sound
+        playSound('success');
       } else if (gainAmount >= 10) {
-        playSound('knowledge-gain');
+        // Medium knowledge gain - use click sound
+        playSound('click');
       } else {
-        playSound('minor-knowledge');
+        // Minor knowledge gain - use a soft sound
+        playSound('select');
       }
+      
+      // TODO: Add specific knowledge gain sounds to SoundEffect type
+      // For now, using compatible sound effects as placeholders
     }
     
     // Animation sequence
