@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import PixelThemeProvider from "./components/PixelThemeProvider";
+import { GameEffectsProvider } from "./components/GameEffects";
 import "./globals.css";
 import FontLoadingContainer from "./components/FontLoadingContainer";
 
@@ -80,10 +81,13 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
         <PixelThemeProvider>
-          {/* We'll use a client component wrapper that handles font loading state */}
-          <FontLoadingContainer>
-            {children}
-          </FontLoadingContainer>
+          {/* Wrap with GameEffectsProvider to make effects available throughout the app */}
+          <GameEffectsProvider>
+            {/* We'll use a client component wrapper that handles font loading state */}
+            <FontLoadingContainer>
+              {children}
+            </FontLoadingContainer>
+          </GameEffectsProvider>
         </PixelThemeProvider>
       </body>
     </html>
