@@ -3,6 +3,7 @@
 ├── app
 │   ├── components
 │   │   ├── EquipmentDisplay.tsx
+│   │   ├── FontLoadingContainer.tsx
 │   │   ├── GameContainer.tsx
 │   │   ├── GameEffects.tsx
 │   │   ├── GameOver.tsx
@@ -26,9 +27,13 @@
 │   │   │   └── SoundManager.tsx
 │   │   ├── challenges
 │   │   │   ├── BossNode.tsx
+│   │   │   ├── CalibrationChallenge.tsx
+│   │   │   ├── ChallengeRouter.tsx
 │   │   │   ├── CharacterInteractionNode.tsx
 │   │   │   ├── KapoorCalibration.tsx
-│   │   │   └── StorageCloset.tsx
+│   │   │   ├── StorageCloset.tsx
+│   │   │   └── formats
+│   │   │       └── ConversionFormat.tsx
 │   │   ├── dialogue
 │   │   │   ├── DialogueSystem.tsx
 │   │   │   └── UnlockableDialogueOptions.tsx
@@ -71,6 +76,7 @@
 │   ├── styles
 │   │   └── pixel-assets.css
 │   ├── types
+│   │   ├── challenge.ts
 │   │   ├── encounterTypes.ts
 │   │   └── map.ts
 │   └── utils
@@ -86,4 +92,4 @@
 ├── tailwind.config.js
 └── tsconfig.json
 
-15 directories, 71 files
+16 directories, 76 files
