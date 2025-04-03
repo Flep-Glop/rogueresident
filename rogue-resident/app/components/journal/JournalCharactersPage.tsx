@@ -1,9 +1,10 @@
 'use client';
-import { useState, useCallback } from 'react';
+import { useState } from 'react';
 import { useJournalStore, JournalCharacterNote } from '../../store/journalStore';
 import { PixelText } from '../PixelThemeProvider';
 import Image from 'next/image';
 import { JournalPageProps } from './Journal';
+import { ui, form, stop } from '../../core/events/uiHandlers';
 
 // Character data structure
 interface Character {
@@ -26,12 +27,6 @@ interface Character {
  * with multiple interactive components (notes editing, accordion).
  */
 export default function JournalCharactersPage({ onElementClick }: JournalPageProps) {
-  // Use onElementClick prop for proper event containment
-  const handleContainerClick = useCallback((e: React.MouseEvent<HTMLElement>) => {
-    if (onElementClick) onElementClick(e);
-    e.stopPropagation();
-  }, [onElementClick]);
-
   const { characterNotes, updateCharacterNote } = useJournalStore();
   
   // For the prototype, we'll use some hardcoded character data
@@ -85,59 +80,57 @@ export default function JournalCharactersPage({ onElementClick }: JournalPagePro
   // Set up state for notes editing
   const [editingNotes, setEditingNotes] = useState<Record<string, string>>({});
   
-  // Enhanced handler with proper event isolation
-  const handleNoteChange = useCallback((characterId: string, value: string) => {
-    setEditingNotes(prev => ({
-      ...prev,
-      [characterId]: value
-    }));
-  }, []);
+  // Handle note change using form handler
+  const handleNoteChange = (characterId: string) => 
+    form.textareaChange((value) => {
+      setEditingNotes(prev => ({
+        ...prev,
+        [characterId]: value
+      }));
+    });
   
-  // Enhanced edit handler with proper event isolation
-  const handleEditClick = useCallback((e: React.MouseEvent, characterId: string, notes: string) => {
-    e.stopPropagation(); // Stop propagation
-    
-    setEditingNotes(prev => ({
-      ...prev,
-      [characterId]: notes
-    }));
-  }, []);
+  // Edit handler using UI handler
+  const handleEditClick = (characterId: string, notes: string) =>
+    ui.buttonClick(() => {
+      setEditingNotes(prev => ({
+        ...prev,
+        [characterId]: notes
+      }));
+    });
   
-  // Enhanced save handler with proper event isolation
-  const saveNotes = useCallback((e: React.MouseEvent, characterId: string) => {
-    e.stopPropagation(); // Stop propagation
-    
-    if (editingNotes[characterId] !== undefined) {
-      updateCharacterNote(characterId, editingNotes[characterId]);
-      
-      // Remove from editing state
+  // Save notes handler using UI handler
+  const handleSaveNotes = (characterId: string) =>
+    ui.buttonClick(() => {
+      if (editingNotes[characterId] !== undefined) {
+        updateCharacterNote(characterId, editingNotes[characterId]);
+        
+        // Remove from editing state
+        setEditingNotes(prev => {
+          const newNotes = {...prev};
+          delete newNotes[characterId];
+          return newNotes;
+        });
+      }
+    }, 'success');
+  
+  // Cancel edit handler using UI handler
+  const handleCancelEdit = (characterId: string) =>
+    ui.buttonClick(() => {
       setEditingNotes(prev => {
         const newNotes = {...prev};
         delete newNotes[characterId];
         return newNotes;
       });
-    }
-  }, [editingNotes, updateCharacterNote]);
-
-  // Enhanced cancel handler with proper event isolation
-  const cancelEdit = useCallback((e: React.MouseEvent, characterId: string) => {
-    e.stopPropagation(); // Stop propagation
-    
-    setEditingNotes(prev => {
-      const newNotes = {...prev};
-      delete newNotes[characterId];
-      return newNotes;
-    });
-  }, []);
+    }, 'ui-close');
   
   // Get relationship level for character
-  const getRelationshipLevel = useCallback((characterId: string): number => {
+  const getRelationshipLevel = (characterId: string): number => {
     const note = characterNotes.find(note => note.characterId === characterId);
     return note?.relationshipLevel || 0;
-  }, [characterNotes]);
+  };
   
   // Get notes for character
-  const getCharacterNotes = useCallback((characterId: string): string => {
+  const getCharacterNotes = (characterId: string): string => {
     // If currently editing, return from editing state
     if (editingNotes[characterId] !== undefined) {
       return editingNotes[characterId];
@@ -146,10 +139,10 @@ export default function JournalCharactersPage({ onElementClick }: JournalPagePro
     // Otherwise get from store
     const note = characterNotes.find(note => note.characterId === characterId);
     return note?.notes || '';
-  }, [characterNotes, editingNotes]);
+  };
   
   // Format last interaction date
-  const formatDate = useCallback((dateString?: string): string => {
+  const formatDate = (dateString?: string): string => {
     if (!dateString) return 'No interaction yet';
     
     const date = new Date(dateString);
@@ -158,16 +151,16 @@ export default function JournalCharactersPage({ onElementClick }: JournalPagePro
       month: 'short',
       day: 'numeric'
     });
-  }, []);
+  };
   
   // Get last interaction date
-  const getLastInteraction = useCallback((characterId: string): string => {
+  const getLastInteraction = (characterId: string): string => {
     const note = characterNotes.find(note => note.characterId === characterId);
     return formatDate(note?.lastInteraction);
-  }, [characterNotes, formatDate]);
+  };
   
   return (
-    <div onClick={handleContainerClick} className="page-container relative">
+    <div onClick={onElementClick} className="page-container relative">
       <PixelText className="text-2xl mb-4">Character Notes</PixelText>
       
       <div className="space-y-6">
@@ -178,7 +171,7 @@ export default function JournalCharactersPage({ onElementClick }: JournalPagePro
             style={{
               borderLeft: character.unlocked ? `4px solid ${character.colorClass.replace('border-', 'var(--')}${character.colorClass.includes('alt') ? '' : '-color'})` : undefined
             }}
-            onClick={(e: React.MouseEvent) => e.stopPropagation()}
+            onClick={stop.propagation}
           >
             <div className="flex items-start">
               <div className={`w-20 h-20 mr-4 rounded-full overflow-hidden border-2 ${character.colorClass} flex-shrink-0 ${!character.unlocked ? 'grayscale' : ''}`}>
@@ -237,20 +230,20 @@ export default function JournalCharactersPage({ onElementClick }: JournalPagePro
                           <textarea
                             className="w-full h-24 bg-surface p-2 text-sm font-pixel border border-border"
                             value={editingNotes[character.id]}
-                            onChange={(e) => handleNoteChange(character.id, e.target.value)}
+                            onChange={handleNoteChange(character.id)}
                             placeholder="Add your observations about this character..."
-                            onClick={(e: React.MouseEvent) => e.stopPropagation()} // Prevent textarea clicks from closing
+                            onClick={stop.propagation}
                           />
                           <div className="flex justify-end mt-1 space-x-2">
                             <button 
                               className="px-2 py-1 bg-clinical text-white text-xs relative z-30"
-                              onClick={(e: React.MouseEvent) => saveNotes(e, character.id)}
+                              onClick={handleSaveNotes(character.id)}
                             >
                               Save
                             </button>
                             <button 
                               className="px-2 py-1 bg-surface text-xs relative z-30"
-                              onClick={(e: React.MouseEvent) => cancelEdit(e, character.id)}
+                              onClick={handleCancelEdit(character.id)}
                             >
                               Cancel
                             </button>
@@ -272,7 +265,7 @@ export default function JournalCharactersPage({ onElementClick }: JournalPagePro
                           <div className="flex justify-end mt-1">
                             <button 
                               className="px-2 py-1 bg-surface text-xs relative z-30"
-                              onClick={(e: React.MouseEvent) => handleEditClick(e, character.id, getCharacterNotes(character.id))}
+                              onClick={handleEditClick(character.id, getCharacterNotes(character.id))}
                             >
                               Edit Notes
                             </button>

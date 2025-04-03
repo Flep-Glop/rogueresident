@@ -1,9 +1,10 @@
 'use client';
-import { useState, useCallback } from 'react';
+import { useState } from 'react';
 import { useJournalStore, JournalEntry } from '../../store/journalStore';
 import { PixelText, PixelButton } from '../PixelThemeProvider';
 import { useGameEffects } from '../GameEffects';
 import { JournalPageProps } from './Journal';
+import { form, accordion, ui, stop } from '../../core/events/uiHandlers';
 
 /**
  * Journal Notes Page Component
@@ -13,12 +14,6 @@ import { JournalPageProps } from './Journal';
  * for expandable entries.
  */
 export default function JournalNotesPage({ onElementClick }: JournalPageProps) {
-  // Use onElementClick prop for proper event containment
-  const handleContainerClick = useCallback((e: React.MouseEvent<HTMLElement>) => {
-    if (onElementClick) onElementClick(e);
-    e.stopPropagation();
-  }, [onElementClick]);
-
   const { entries, addEntry } = useJournalStore();
   const { playSound } = useGameEffects();
   
@@ -42,29 +37,31 @@ export default function JournalNotesPage({ onElementClick }: JournalPageProps) {
     }
   ];
   
-  // Format date for display with explicit event isolation
-  const formatDate = useCallback((dateString: string) => {
+  // Format date for display
+  const formatDate = (dateString: string) => {
     const date = new Date(dateString);
     return date.toLocaleDateString('en-US', {
       year: 'numeric',
       month: 'short',
       day: 'numeric'
     });
-  }, []);
+  };
   
-  // Toggle entry expanded state with explicit event isolation
-  const toggleExpanded = useCallback((e: React.MouseEvent, entryId: string) => {
-    e.stopPropagation(); // Prevent event bubbling
-    
-    setExpandedEntries(prev => 
-      prev.includes(entryId)
-        ? prev.filter(id => id !== entryId)
-        : [...prev, entryId]
+  // Toggle entry expanded state using accordion handler
+  const handleToggleExpanded = (entryId: string) => 
+    accordion.toggle(
+      expandedEntries.includes(entryId),
+      (expanded) => {
+        setExpandedEntries(prev => 
+          expanded
+            ? [...prev, entryId]
+            : prev.filter(id => id !== entryId)
+        );
+      }
     );
-  }, []);
   
-  // Handle creating new entry with explicit event isolation
-  const handleCreateEntry = useCallback(() => {
+  // Handle creating new entry using form and ui handlers
+  const handleCreateEntry = ui.buttonClick(() => {
     if (!newEntryTitle.trim()) return;
     
     const newEntry: JournalEntry = {
@@ -85,21 +82,25 @@ export default function JournalNotesPage({ onElementClick }: JournalPageProps) {
     
     // Play sound effect
     if (playSound) playSound('success');
-  }, [newEntryTitle, newEntryContent, newEntryTags, addEntry, playSound]);
+  }, 'success');
   
-  // Toggle creating entry mode with explicit event isolation
-  const toggleCreatingEntry = useCallback(() => {
+  // Toggle creating entry mode
+  const toggleCreatingEntry = ui.buttonClick(() => {
     setIsCreatingEntry(prev => !prev);
-  }, []);
+  });
   
-  // Handle input changes with explicit event isolation
-  const handleInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>, setter: React.Dispatch<React.SetStateAction<string>>) => {
-    e.stopPropagation(); // Prevent event bubbling
-    setter(e.target.value);
-  }, []);
+  // Handle input changes using form handlers
+  const handleTitleChange = form.fieldChange((value) => setNewEntryTitle(value));
+  const handleContentChange = form.textareaChange((value) => setNewEntryContent(value));
+  const handleTagsChange = form.fieldChange((value) => setNewEntryTags(value));
+  
+  // Cancel form handler
+  const handleCancelForm = ui.buttonClick(() => {
+    setIsCreatingEntry(false);
+  }, 'ui-close');
   
   return (
-    <div onClick={handleContainerClick} className="page-container relative">
+    <div onClick={onElementClick} className="page-container relative">
       <div className="flex justify-between items-center mb-4">
         <PixelText className="text-2xl">Journal Entries</PixelText>
         {!isCreatingEntry && (
@@ -116,7 +117,7 @@ export default function JournalNotesPage({ onElementClick }: JournalPageProps) {
       {isCreatingEntry && (
         <div 
           className="mb-6 p-4 bg-surface-dark pixel-borders-thin relative z-10"
-          onClick={(e: React.MouseEvent) => e.stopPropagation()} // Isolate form clicks
+          onClick={stop.propagation}
         >
           <PixelText className="text-lg text-clinical-light mb-2">Create New Entry</PixelText>
           
@@ -125,9 +126,9 @@ export default function JournalNotesPage({ onElementClick }: JournalPageProps) {
             <input
               className="w-full bg-surface p-2 text-sm font-pixel border border-border"
               value={newEntryTitle}
-              onChange={(e) => handleInputChange(e, setNewEntryTitle)}
+              onChange={handleTitleChange}
               placeholder="Entry title..."
-              onClick={(e: React.MouseEvent) => e.stopPropagation()} // Isolate input clicks
+              onClick={stop.propagation}
             />
           </div>
           
@@ -136,9 +137,9 @@ export default function JournalNotesPage({ onElementClick }: JournalPageProps) {
             <textarea
               className="w-full h-32 bg-surface p-2 text-sm font-pixel border border-border"
               value={newEntryContent}
-              onChange={(e) => handleInputChange(e, setNewEntryContent)}
+              onChange={handleContentChange}
               placeholder="Record your observations here..."
-              onClick={(e: React.MouseEvent) => e.stopPropagation()} // Isolate textarea clicks
+              onClick={stop.propagation}
             />
           </div>
           
@@ -147,16 +148,16 @@ export default function JournalNotesPage({ onElementClick }: JournalPageProps) {
             <input
               className="w-full bg-surface p-2 text-sm font-pixel border border-border"
               value={newEntryTags}
-              onChange={(e) => handleInputChange(e, setNewEntryTags)}
+              onChange={handleTagsChange}
               placeholder="calibration, qa, kapoor..."
-              onClick={(e: React.MouseEvent) => e.stopPropagation()} // Isolate input clicks
+              onClick={stop.propagation}
             />
           </div>
           
           <div className="flex justify-end space-x-2">
             <PixelButton 
               className="bg-surface text-sm px-3 py-1 relative z-20"
-              onClick={toggleCreatingEntry}
+              onClick={handleCancelForm}
             >
               Cancel
             </PixelButton>
@@ -186,12 +187,12 @@ export default function JournalNotesPage({ onElementClick }: JournalPageProps) {
               <div 
                 key={entry.id} 
                 className="p-4 bg-surface-dark pixel-borders-thin relative z-10"
-                onClick={(e: React.MouseEvent) => e.stopPropagation()} // Isolate entry clicks
+                onClick={stop.propagation}
               >
                 <div className="flex justify-between items-center">
                   <button 
                     className="flex-1 flex justify-between items-center text-left relative z-20"
-                    onClick={(e: React.MouseEvent) => toggleExpanded(e, entry.id)}
+                    onClick={handleToggleExpanded(entry.id)}
                   >
                     <PixelText className="text-lg text-clinical-light">{entry.title}</PixelText>
                     <div className="flex items-center">

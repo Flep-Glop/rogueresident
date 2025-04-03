@@ -1,9 +1,9 @@
 'use client';
-import { useState, useCallback } from 'react';
+import { useState } from 'react';
 import { useKnowledgeStore } from '../../store/knowledgeStore';
-import { useJournalStore } from '../../store/journalStore';
 import { PixelText } from '../PixelThemeProvider';
 import { JournalPageProps } from './Journal';
+import { accordion, stop } from '../../core/events/uiHandlers';
 
 // Define domain interface
 interface KnowledgeDomain {
@@ -31,12 +31,6 @@ interface KnowledgeConcept {
  * event bubbling issues common in nested interactive UI.
  */
 export default function JournalKnowledgePage({ onElementClick }: JournalPageProps) {
-  // Use onElementClick prop for proper event containment  
-  const handleContainerClick = useCallback((e: React.MouseEvent<HTMLElement>) => {
-    if (onElementClick) onElementClick(e);
-    e.stopPropagation();
-  }, [onElementClick]);
-
   // In a full implementation, this would come from the knowledge store
   // For the prototype, we'll use some hardcoded domains and concepts
   const domains: KnowledgeDomain[] = [
@@ -117,20 +111,21 @@ export default function JournalKnowledgePage({ onElementClick }: JournalPageProp
   // Track expanded domains for accordion behavior
   const [expandedDomains, setExpandedDomains] = useState<string[]>(['radiation-physics']);
   
-  // Enhanced toggle with proper event isolation
-  const toggleDomain = useCallback((e: React.MouseEvent, domainId: string) => {
-    // Explicitly stop propagation to contain the event
-    e.stopPropagation();
-    
-    setExpandedDomains(prev => 
-      prev.includes(domainId) 
-        ? prev.filter(id => id !== domainId)
-        : [...prev, domainId]
+  // Toggle domain expansion with accordion handler
+  const handleToggleDomain = (domainId: string) => 
+    accordion.toggle(
+      expandedDomains.includes(domainId),
+      (expanded) => {
+        setExpandedDomains(prev => 
+          expanded
+            ? [...prev, domainId]
+            : prev.filter(id => id !== domainId)
+        );
+      }
     );
-  }, []);
   
   return (
-    <div onClick={handleContainerClick} className="page-container relative">
+    <div onClick={onElementClick} className="page-container relative">
       <PixelText className="text-2xl mb-4">Knowledge Index</PixelText>
       
       <div className="space-y-6">
@@ -138,11 +133,11 @@ export default function JournalKnowledgePage({ onElementClick }: JournalPageProp
           <div 
             key={domain.id}
             className={`px-4 py-3 bg-surface-dark pixel-borders-thin relative z-10 ${!domain.unlocked ? 'opacity-50' : ''}`}
-            onClick={(e: React.MouseEvent) => e.stopPropagation()} // Isolate events
+            onClick={stop.propagation}
           >
             <button
               className="w-full flex justify-between items-center mb-2 relative z-20"
-              onClick={(e: React.MouseEvent) => domain.unlocked && toggleDomain(e, domain.id)}
+              onClick={domain.unlocked ? handleToggleDomain(domain.id) : undefined}
               disabled={!domain.unlocked}
             >
               <PixelText 
@@ -170,7 +165,7 @@ export default function JournalKnowledgePage({ onElementClick }: JournalPageProp
                     <div 
                       key={concept.id} 
                       className="p-2 bg-surface-dark/50"
-                      onClick={(e: React.MouseEvent) => e.stopPropagation()} // Prevent clicks from affecting parent
+                      onClick={stop.propagation}
                     >
                       <div className="flex justify-between">
                         <PixelText>{concept.name}</PixelText>

@@ -1,8 +1,9 @@
 'use client';
-import { useState, useCallback } from 'react';
+import { useState } from 'react';
 import { useJournalStore } from '../../store/journalStore';
 import { PixelText } from '../PixelThemeProvider';
 import { JournalPageProps } from './Journal';
+import { accordion, stop } from '../../core/events/uiHandlers';
 
 /**
  * Journal References Page
@@ -12,12 +13,6 @@ import { JournalPageProps } from './Journal';
  * Includes interactive accordion sections with proper event isolation.
  */
 export default function JournalReferencesPage({ onElementClick }: JournalPageProps) {
-  // Use onElementClick prop for proper event containment
-  const handleContainerClick = useCallback((e: React.MouseEvent<HTMLElement>) => {
-    if (onElementClick) onElementClick(e);
-    e.stopPropagation();
-  }, [onElementClick]);
-
   const { 
     hasKapoorReferenceSheets, 
     hasKapoorAnnotatedNotes, 
@@ -27,26 +22,28 @@ export default function JournalReferencesPage({ onElementClick }: JournalPagePro
   // Track expanded sections for accordion behavior
   const [expandedSections, setExpandedSections] = useState<string[]>(['basic-calibration']);
   
-  // Enhanced toggle with proper event isolation
-  const toggleSection = useCallback((e: React.MouseEvent, sectionId: string) => {
-    e.stopPropagation(); // Stop propagation
-    
-    setExpandedSections(prev => 
-      prev.includes(sectionId)
-        ? prev.filter(id => id !== sectionId)
-        : [...prev, sectionId]
+  // Toggle section expansion with accordion handler
+  const handleToggleSection = (sectionId: string) => 
+    accordion.toggle(
+      expandedSections.includes(sectionId),
+      (expanded) => {
+        setExpandedSections(prev => 
+          expanded
+            ? [...prev, sectionId]
+            : prev.filter(id => id !== sectionId)
+        );
+      }
     );
-  }, []);
   
   return (
-    <div onClick={handleContainerClick} className="page-container relative">
+    <div onClick={onElementClick} className="page-container relative">
       <PixelText className="text-2xl mb-4">Technical References</PixelText>
       
       <div className="space-y-6">
         {/* Basic calibration reference - everyone has this */}
         <div 
           className={`p-4 bg-surface-dark pixel-borders-thin relative z-10 ${expandedSections.includes('basic-calibration') ? '' : 'cursor-pointer hover:bg-surface-dark/80'}`}
-          onClick={(e: React.MouseEvent) => toggleSection(e, 'basic-calibration')}
+          onClick={handleToggleSection('basic-calibration')}
         >
           <div className="flex justify-between items-center mb-2">
             <PixelText className="text-lg text-clinical-light">Basic Calibration Protocol</PixelText>
@@ -54,7 +51,7 @@ export default function JournalReferencesPage({ onElementClick }: JournalPagePro
           </div>
           
           {expandedSections.includes('basic-calibration') && (
-            <div className="p-3 bg-surface" onClick={(e: React.MouseEvent) => e.stopPropagation()}>
+            <div className="p-3 bg-surface" onClick={stop.propagation}>
               <PixelText className="text-sm">
                 Standard output calibration procedure:
                 <br /><br />
@@ -86,7 +83,7 @@ export default function JournalReferencesPage({ onElementClick }: JournalPagePro
         {hasKapoorReferenceSheets && (
           <div 
             className={`p-4 bg-surface-dark pixel-borders-thin relative z-10 ${expandedSections.includes('kapoor-reference') ? '' : 'cursor-pointer hover:bg-surface-dark/80'}`}
-            onClick={(e: React.MouseEvent) => toggleSection(e, 'kapoor-reference')}
+            onClick={handleToggleSection('kapoor-reference')}
             style={{ borderLeft: '4px solid var(--clinical-color)' }}
           >
             <div className="flex justify-between items-center mb-2">
@@ -99,7 +96,7 @@ export default function JournalReferencesPage({ onElementClick }: JournalPagePro
             
             {expandedSections.includes('kapoor-reference') && (
               <>
-                <div className="p-3 bg-surface" onClick={(e: React.MouseEvent) => e.stopPropagation()}>
+                <div className="p-3 bg-surface" onClick={stop.propagation}>
                   <PixelText className="text-sm">
                     Advanced calibration coefficients and correction factors:
                     <br /><br />
@@ -148,7 +145,7 @@ export default function JournalReferencesPage({ onElementClick }: JournalPagePro
         {hasKapoorAnnotatedNotes && (
           <div 
             className={`p-4 bg-surface-dark pixel-borders-thin relative z-10 ${expandedSections.includes('kapoor-notes') ? '' : 'cursor-pointer hover:bg-surface-dark/80'}`}
-            onClick={(e: React.MouseEvent) => toggleSection(e, 'kapoor-notes')}
+            onClick={handleToggleSection('kapoor-notes')}
             style={{ borderLeft: '4px solid var(--educational-color)' }}
           >
             <div className="flex justify-between items-center mb-2">
@@ -161,7 +158,7 @@ export default function JournalReferencesPage({ onElementClick }: JournalPagePro
             
             {expandedSections.includes('kapoor-notes') && (
               <>
-                <div className="p-3 bg-surface" onClick={(e: React.MouseEvent) => e.stopPropagation()}>
+                <div className="p-3 bg-surface" onClick={stop.propagation}>
                   <div className="border-l-4 border-educational pl-2 italic">
                     <PixelText className="text-sm text-educational-light">
                       "Pay particular attention to barometric pressure trends in this facility. The building's HVAC system creates a cyclic pressure variation of approximately ±0.3 kPa throughout the day, significant enough to affect measurements if not properly accounted for."
@@ -197,7 +194,7 @@ export default function JournalReferencesPage({ onElementClick }: JournalPagePro
         {/* Hospital map - interactive element with proper event handling */}
         <div 
           className={`p-4 bg-surface-dark pixel-borders-thin relative z-10 ${expandedSections.includes('hospital-map') ? '' : 'cursor-pointer hover:bg-surface-dark/80'}`}
-          onClick={(e: React.MouseEvent) => toggleSection(e, 'hospital-map')}
+          onClick={handleToggleSection('hospital-map')}
         >
           <div className="flex justify-between items-center mb-2">
             <PixelText className="text-lg">Hospital Map</PixelText>
@@ -205,7 +202,7 @@ export default function JournalReferencesPage({ onElementClick }: JournalPagePro
           </div>
           
           {expandedSections.includes('hospital-map') && (
-            <div className="p-3 bg-surface flex items-center justify-center" onClick={(e: React.MouseEvent) => e.stopPropagation()}>
+            <div className="p-3 bg-surface flex items-center justify-center" onClick={stop.propagation}>
               {/* Simple hospital map visualization */}
               <div className="w-full h-64 relative bg-surface-dark">
                 <div className="absolute top-1/4 left-1/4 w-8 h-8 bg-clinical rounded-full flex items-center justify-center">
@@ -266,7 +263,7 @@ export default function JournalReferencesPage({ onElementClick }: JournalPagePro
         {/* Medical Physics Glossary - basic reference for all players */}
         <div 
           className={`p-4 bg-surface-dark pixel-borders-thin relative z-10 ${expandedSections.includes('glossary') ? '' : 'cursor-pointer hover:bg-surface-dark/80'}`}
-          onClick={(e: React.MouseEvent) => toggleSection(e, 'glossary')}
+          onClick={handleToggleSection('glossary')}
         >
           <div className="flex justify-between items-center mb-2">
             <PixelText className="text-lg">Medical Physics Glossary</PixelText>
@@ -276,7 +273,7 @@ export default function JournalReferencesPage({ onElementClick }: JournalPagePro
           {expandedSections.includes('glossary') && (
             <div 
               className="p-3 bg-surface max-h-[400px] overflow-y-auto" 
-              onClick={(e: React.MouseEvent) => e.stopPropagation()}
+              onClick={stop.propagation}
             >
               <div className="grid grid-cols-1 gap-4">
                 <div>

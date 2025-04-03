@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect, useCallback, ReactNode } from 'react';
+import { useState, useEffect, ReactNode } from 'react';
 import { useJournalStore } from '../../store/journalStore';
 import { useGameStore } from '../../store/gameStore';
 import { useGameEffects } from '../GameEffects';
@@ -8,13 +8,14 @@ import JournalKnowledgePage from './JournalKnowledgePage';
 import JournalCharactersPage from './JournalCharactersPage';
 import JournalNotesPage from './JournalNotesPage';
 import JournalReferencesPage from './JournalReferencesPage';
+import { journal, stop } from '../../core/events/uiHandlers';
 
 // Define valid page types to ensure type safety across the UI
 export type JournalPageType = 'knowledge' | 'characters' | 'notes' | 'references';
 
 // Define props interface for child pages with standardized event handling
 export interface JournalPageProps {
-  onElementClick: (e: React.MouseEvent<HTMLElement>) => void;
+  onElementClick: React.MouseEventHandler<HTMLElement>;
 }
 
 /**
@@ -74,38 +75,29 @@ export default function Journal() {
   useEffect(() => {
     if (isOpen && gamePhase === 'night') {
       setShowParticles(true);
-      if (playSound) playSound('phase-transition'); // Using a valid sound effect
+      if (playSound) playSound('phase-transition');
       
       const timer = setTimeout(() => setShowParticles(false), 5000);
       return () => clearTimeout(timer);
     }
   }, [isOpen, gamePhase, playSound]);
   
-  // Enhanced tab click handler with proper event isolation
-  const handleTabClick = useCallback((targetPage: JournalPageType) => {
-    // Use direct state manipulation for guaranteed response
-    setCurrentPage(targetPage);
-    if (playSound) playSound('ui-click');
-    
-    // Critical: Force an active element blur to ensure focus state is clean
-    if (document.activeElement instanceof HTMLElement) {
-      document.activeElement.blur();
-    }
-  }, [setCurrentPage, playSound]);
-  
-  // Close handler with guaranteed response
-  const handleClose = useCallback((e?: React.MouseEvent) => {
-    // Important: Only stop propagation if we have an event
-    if (e) e.stopPropagation();
-    
+  // Close handler using the uiHandlers
+  const handleClose = journal.close(() => {
     toggleJournal();
     if (playSound) playSound('ui-click');
-    
-    // Force any active element to blur
-    if (document.activeElement instanceof HTMLElement) {
-      document.activeElement.blur();
-    }
-  }, [toggleJournal, playSound]);
+  });
+  
+  // Tab selection handler using the uiHandlers
+  const handleTabSelect = (tabId: JournalPageType) => 
+    journal.tabSelect(
+      tabId,
+      currentPage,
+      (newTabId) => {
+        setCurrentPage(newTabId);
+        if (playSound) playSound('ui-click');
+      }
+    );
   
   // Don't render anything if player doesn't have journal or it's not open
   if (!hasJournal || !isOpen) return null;
@@ -128,13 +120,13 @@ export default function Journal() {
       className={`w-full cursor-pointer transition-colors relative z-30 ${currentPage === id ? 'bg-clinical text-white' : 'hover:bg-surface'}`}
       role="button"
       tabIndex={0}
-      onClick={(e: React.MouseEvent) => {
-        e.stopPropagation(); // Critical: prevent event from reaching backdrop
-        handleTabClick(id);
-      }}
-      onKeyDown={(e: React.KeyboardEvent) => {
-        e.stopPropagation(); // Prevent key events too
-        if (e.key === 'Enter') handleTabClick(id);
+      onClick={handleTabSelect(id)}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') {
+          e.stopPropagation();
+          setCurrentPage(id);
+          if (playSound) playSound('ui-click');
+        }
       }}
     >
       <div className="p-2">
@@ -143,18 +135,13 @@ export default function Journal() {
     </div>
   );
 
-  // Function to handle element interactions
-  const handleElementClick = useCallback((e: React.MouseEvent): void => {
-    e.stopPropagation();
-  }, []);
-  
   return (
     <div 
       className="fixed inset-0 flex items-center justify-center z-[9999] bg-black/70"
-      onClick={handleClose} // Close when clicking background
+      onClick={journal.backgroundClick(toggleJournal)}
       style={{ touchAction: 'none' }} // Prevent scroll on mobile
     >
-      {/* Main journal container - stop propagation to prevent background click */}
+      {/* Main journal container - using stop handler to prevent background click */}
       <div 
         className={`
           journal-container
@@ -164,7 +151,7 @@ export default function Journal() {
           transform transition-all duration-300
           ${isAnimating ? 'scale-95 opacity-90' : 'scale-100 opacity-100'}
         `}
-        onClick={(e: React.MouseEvent) => e.stopPropagation()} // Critical: prevent clicks from reaching background
+        onClick={stop.propagation}
       >
         {/* Journal cover decoration - NON-INTERACTIVE */}
         <div className="absolute inset-2 border border-amber-500/30 pointer-events-none"></div>
@@ -186,13 +173,13 @@ export default function Journal() {
           role="button"
           tabIndex={0}
           className="absolute -top-4 -right-4 w-8 h-8 bg-surface pixel-borders-thin flex items-center justify-center hover:bg-clinical transition-colors z-[100] cursor-pointer"
-          onClick={(e: React.MouseEvent) => {
-            e.stopPropagation();
-            handleClose();
-          }}
-          onKeyDown={(e: React.KeyboardEvent) => {
-            e.stopPropagation(); // Contain keyboard events
-            if (e.key === 'Enter') handleClose();
+          onClick={handleClose}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.stopPropagation();
+              toggleJournal();
+              if (playSound) playSound('ui-click');
+            }
           }}
           aria-label="Close journal"
         >
@@ -200,7 +187,7 @@ export default function Journal() {
         </div>
         
         {/* Journal content */}
-        <div className="flex h-full journal-content relative z-10" onClick={(e: React.MouseEvent) => e.stopPropagation()}>
+        <div className="flex h-full journal-content relative z-10" onClick={stop.propagation}>
           {/* Tabs sidebar with enhanced buttons */}
           <div className="w-[200px] bg-surface-dark border-r border-border relative z-20">
             <div className="p-4">
@@ -228,15 +215,15 @@ export default function Journal() {
             </div>
           </div>
           
-          {/* Journal pages - critical: needs to be a div, not a modal */}
+          {/* Journal pages */}
           <div 
             className="flex-1 bg-surface overflow-y-auto p-6 relative z-20"
-            onClick={(e: React.MouseEvent) => e.stopPropagation()}
+            onClick={stop.propagation}
           >
-            {currentPage === 'knowledge' && <JournalKnowledgePage onElementClick={handleElementClick} />}
-            {currentPage === 'characters' && <JournalCharactersPage onElementClick={handleElementClick} />}
-            {currentPage === 'notes' && <JournalNotesPage onElementClick={handleElementClick} />}
-            {currentPage === 'references' && <JournalReferencesPage onElementClick={handleElementClick} />}
+            {currentPage === 'knowledge' && <JournalKnowledgePage onElementClick={stop.propagation} />}
+            {currentPage === 'characters' && <JournalCharactersPage onElementClick={stop.propagation} />}
+            {currentPage === 'notes' && <JournalNotesPage onElementClick={stop.propagation} />}
+            {currentPage === 'references' && <JournalReferencesPage onElementClick={stop.propagation} />}
           </div>
         </div>
       </div>
