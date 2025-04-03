@@ -28,9 +28,15 @@
 │   │   │   ├── BossNode.tsx
 │   │   │   ├── CalibrationChallenge.tsx
 │   │   │   ├── ChallengeRouter.tsx
+│   │   │   ├── EquipmentInteractiveChallenge.tsx
+│   │   │   ├── EquipmentQAChallenge.tsx
+│   │   │   ├── PatientCaseChallenge.tsx
+│   │   │   ├── QAProcedureChallenge.tsx
 │   │   │   ├── StorageCloset.tsx
 │   │   │   └── formats
-│   │   │       └── ConversationFormat.tsx
+│   │   │       ├── ConversationFormat.tsx
+│   │   │       ├── InteractiveFormat.tsx
+│   │   │       └── ProceduralFormat.tsx
 │   │   ├── dialogue
 │   │   │   ├── DialogueSystem.tsx
 │   │   │   └── UnlockableDialogueOptions.tsx
@@ -77,6 +83,7 @@
 │   │   ├── encounterTypes.ts
 │   │   └── map.ts
 │   └── utils
+│       ├── CharacterTeachingStyles.ts
 │       ├── knowledgeRequirements.ts
 │       └── mapGenerator.ts
 ├── eslint.config.mjs
@@ -89,4 +96,4 @@
 ├── tailwind.config.js
 └── tsconfig.json
 
-16 directories, 73 files
+16 directories, 80 files
