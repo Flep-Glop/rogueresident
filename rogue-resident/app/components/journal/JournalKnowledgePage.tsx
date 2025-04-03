@@ -1,19 +1,20 @@
 'use client';
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import { useKnowledgeStore } from '../../store/knowledgeStore';
 import { useJournalStore } from '../../store/journalStore';
 import { PixelText } from '../PixelThemeProvider';
+import { JournalPageProps } from './Journal';
 
-// Domain data structure
+// Define domain interface
 interface KnowledgeDomain {
   id: string;
   name: string;
   color: string;
-  concepts: KnowledgeConcept[];
   unlocked: boolean;
+  concepts: KnowledgeConcept[];
 }
 
-// Concept data structure
+// Define concept interface
 interface KnowledgeConcept {
   id: string;
   name: string;
@@ -22,7 +23,20 @@ interface KnowledgeConcept {
   unlocked: boolean;
 }
 
-export default function JournalKnowledgePage() {
+/**
+ * Journal Knowledge Page Component
+ * 
+ * Displays the player's acquired knowledge organized by domains.
+ * Uses accordion pattern with explicit event handling to prevent
+ * event bubbling issues common in nested interactive UI.
+ */
+export default function JournalKnowledgePage({ onElementClick }: JournalPageProps) {
+  // Use onElementClick prop for proper event containment  
+  const handleContainerClick = useCallback((e: React.MouseEvent<HTMLElement>) => {
+    if (onElementClick) onElementClick(e);
+    e.stopPropagation();
+  }, [onElementClick]);
+
   // In a full implementation, this would come from the knowledge store
   // For the prototype, we'll use some hardcoded domains and concepts
   const domains: KnowledgeDomain[] = [
@@ -103,34 +117,40 @@ export default function JournalKnowledgePage() {
   // Track expanded domains for accordion behavior
   const [expandedDomains, setExpandedDomains] = useState<string[]>(['radiation-physics']);
   
-  const toggleDomain = (domainId: string) => {
-    if (expandedDomains.includes(domainId)) {
-      setExpandedDomains(expandedDomains.filter(id => id !== domainId));
-    } else {
-      setExpandedDomains([...expandedDomains, domainId]);
-    }
-  };
+  // Enhanced toggle with proper event isolation
+  const toggleDomain = useCallback((e: React.MouseEvent, domainId: string) => {
+    // Explicitly stop propagation to contain the event
+    e.stopPropagation();
+    
+    setExpandedDomains(prev => 
+      prev.includes(domainId) 
+        ? prev.filter(id => id !== domainId)
+        : [...prev, domainId]
+    );
+  }, []);
   
   return (
-    <div>
+    <div onClick={handleContainerClick} className="page-container relative">
       <PixelText className="text-2xl mb-4">Knowledge Index</PixelText>
       
       <div className="space-y-6">
         {domains.map(domain => (
           <div 
             key={domain.id}
-            className={`px-4 py-3 bg-surface-dark pixel-borders-thin ${!domain.unlocked ? 'opacity-50' : ''}`}
+            className={`px-4 py-3 bg-surface-dark pixel-borders-thin relative z-10 ${!domain.unlocked ? 'opacity-50' : ''}`}
+            onClick={(e: React.MouseEvent) => e.stopPropagation()} // Isolate events
           >
             <button
-              className="w-full flex justify-between items-center mb-2"
-              onClick={() => domain.unlocked && toggleDomain(domain.id)}
+              className="w-full flex justify-between items-center mb-2 relative z-20"
+              onClick={(e: React.MouseEvent) => domain.unlocked && toggleDomain(e, domain.id)}
               disabled={!domain.unlocked}
             >
               <PixelText 
                 className="text-xl" 
-                style={{ color: domain.unlocked ? domain.color : 'inherit' }}
               >
-                {domain.name}
+                <span style={{ color: domain.unlocked ? domain.color : 'inherit' }}>
+                  {domain.name}
+                </span>
               </PixelText>
               <span>{expandedDomains.includes(domain.id) ? '▼' : '►'}</span>
             </button>
@@ -147,10 +167,16 @@ export default function JournalKnowledgePage() {
                   </PixelText>
                 ) : (
                   domain.concepts.map(concept => (
-                    <div key={concept.id} className="p-2 bg-surface-dark/50">
+                    <div 
+                      key={concept.id} 
+                      className="p-2 bg-surface-dark/50"
+                      onClick={(e: React.MouseEvent) => e.stopPropagation()} // Prevent clicks from affecting parent
+                    >
                       <div className="flex justify-between">
                         <PixelText>{concept.name}</PixelText>
-                        <PixelText style={{ color: domain.color }}>{concept.mastery}%</PixelText>
+                        <PixelText>
+                          <span style={{ color: domain.color }}>{concept.mastery}%</span>
+                        </PixelText>
                       </div>
                       
                       {/* Progress bar */}
@@ -171,7 +197,7 @@ export default function JournalKnowledgePage() {
                         </PixelText>
                       </div>
                       
-                      {/* Optional: Connection visualization */}
+                      {/* Connection visualization for advanced concepts */}
                       {concept.mastery >= 50 && (
                         <div className="mt-2 border-t border-border pt-1">
                           <PixelText className="text-xs">
@@ -190,7 +216,7 @@ export default function JournalKnowledgePage() {
       </div>
       
       {/* Knowledge guidance section */}
-      <div className="mt-8 p-4 bg-educational/10 pixel-borders-thin">
+      <div className="mt-8 p-4 bg-educational/10 pixel-borders-thin relative z-10">
         <PixelText className="text-educational-light">Knowledge Insights</PixelText>
         <PixelText className="text-sm mt-2">
           Your strongest areas are in output calibration and PTP correction. These form the foundation for quality assurance procedures.

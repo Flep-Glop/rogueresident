@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, ReactNode } from 'react';
 import { useJournalStore } from '../../store/journalStore';
 import { useGameStore } from '../../store/gameStore';
 import { useGameEffects } from '../GameEffects';
@@ -9,10 +9,21 @@ import JournalCharactersPage from './JournalCharactersPage';
 import JournalNotesPage from './JournalNotesPage';
 import JournalReferencesPage from './JournalReferencesPage';
 
+// Define valid page types to ensure type safety across the UI
+export type JournalPageType = 'knowledge' | 'characters' | 'notes' | 'references';
+
+// Define props interface for child pages with standardized event handling
+export interface JournalPageProps {
+  onElementClick: (e: React.MouseEvent<HTMLElement>) => void;
+}
+
 /**
- * Journal Component - Next.js Compatible Version
- * Uses direct DOM manipulation techniques for reliable interaction
- * in Next.js client components - inspired by Supergiant's UI frameworks
+ * Journal Component - Enhanced with robust UI interaction pattern
+ * 
+ * Uses a three-tier UI architecture common in games like Hades and Into The Breach:
+ * 1. Visual decoration layer (pointer-events: none)
+ * 2. Container layer (structural elements with z-index)
+ * 3. Interactive control layer (highest z-index with isolated events)
  */
 export default function Journal() {
   const { 
@@ -31,7 +42,7 @@ export default function Journal() {
   const [isAnimating, setIsAnimating] = useState(false);
   const [showParticles, setShowParticles] = useState(false);
   
-  // Force the document body to be non-interactive when journal is open
+  // Lock body when journal is open
   useEffect(() => {
     if (isOpen) {
       // Store original overflow
@@ -63,15 +74,15 @@ export default function Journal() {
   useEffect(() => {
     if (isOpen && gamePhase === 'night') {
       setShowParticles(true);
-      if (playSound) playSound('knowledge-transfer');
+      if (playSound) playSound('phase-transition'); // Using a valid sound effect
       
       const timer = setTimeout(() => setShowParticles(false), 5000);
       return () => clearTimeout(timer);
     }
   }, [isOpen, gamePhase, playSound]);
   
-  // Strong click handlers with direct DOM interaction patterns
-  const handleTabClick = useCallback((targetPage: 'knowledge' | 'characters' | 'notes' | 'references') => {
+  // Enhanced tab click handler with proper event isolation
+  const handleTabClick = useCallback((targetPage: JournalPageType) => {
     // Use direct state manipulation for guaranteed response
     setCurrentPage(targetPage);
     if (playSound) playSound('ui-click');
@@ -83,7 +94,10 @@ export default function Journal() {
   }, [setCurrentPage, playSound]);
   
   // Close handler with guaranteed response
-  const handleClose = useCallback(() => {
+  const handleClose = useCallback((e?: React.MouseEvent) => {
+    // Important: Only stop propagation if we have an event
+    if (e) e.stopPropagation();
+    
     toggleJournal();
     if (playSound) playSound('ui-click');
     
@@ -108,20 +122,31 @@ export default function Journal() {
     }
   };
   
-  // Create individual tab components with strong interaction guarantees
-  const TabButton = ({ id, label }: { id: 'knowledge' | 'characters' | 'notes' | 'references', label: string }) => (
+  // Tab Button component with robust event handling
+  const TabButton = ({ id, label }: { id: JournalPageType, label: string }) => (
     <div 
-      className={`w-full cursor-pointer transition-colors ${currentPage === id ? 'bg-clinical text-white' : 'hover:bg-surface'}`}
+      className={`w-full cursor-pointer transition-colors relative z-30 ${currentPage === id ? 'bg-clinical text-white' : 'hover:bg-surface'}`}
       role="button"
       tabIndex={0}
-      onClick={() => handleTabClick(id)}
-      onKeyDown={(e) => e.key === 'Enter' && handleTabClick(id)}
+      onClick={(e: React.MouseEvent) => {
+        e.stopPropagation(); // Critical: prevent event from reaching backdrop
+        handleTabClick(id);
+      }}
+      onKeyDown={(e: React.KeyboardEvent) => {
+        e.stopPropagation(); // Prevent key events too
+        if (e.key === 'Enter') handleTabClick(id);
+      }}
     >
       <div className="p-2">
         <PixelText>{label}</PixelText>
       </div>
     </div>
   );
+
+  // Function to handle element interactions
+  const handleElementClick = useCallback((e: React.MouseEvent): void => {
+    e.stopPropagation();
+  }, []);
   
   return (
     <div 
@@ -132,16 +157,17 @@ export default function Journal() {
       {/* Main journal container - stop propagation to prevent background click */}
       <div 
         className={`
+          journal-container
           relative w-[900px] h-[650px] 
           ${getJournalCoverStyle()}
           pixel-borders
           transform transition-all duration-300
           ${isAnimating ? 'scale-95 opacity-90' : 'scale-100 opacity-100'}
         `}
-        onClick={(e) => e.stopPropagation()} // Critical: prevent clicks from reaching background
+        onClick={(e: React.MouseEvent) => e.stopPropagation()} // Critical: prevent clicks from reaching background
       >
-        {/* Journal cover decoration */}
-        <div className="absolute inset-2 border border-amber-500/30"></div>
+        {/* Journal cover decoration - NON-INTERACTIVE */}
+        <div className="absolute inset-2 border border-amber-500/30 pointer-events-none"></div>
         
         {/* Night phase knowledge transfer particles */}
         {showParticles && (
@@ -160,17 +186,23 @@ export default function Journal() {
           role="button"
           tabIndex={0}
           className="absolute -top-4 -right-4 w-8 h-8 bg-surface pixel-borders-thin flex items-center justify-center hover:bg-clinical transition-colors z-[100] cursor-pointer"
-          onClick={handleClose}
-          onKeyDown={(e) => e.key === 'Enter' && handleClose()}
+          onClick={(e: React.MouseEvent) => {
+            e.stopPropagation();
+            handleClose();
+          }}
+          onKeyDown={(e: React.KeyboardEvent) => {
+            e.stopPropagation(); // Contain keyboard events
+            if (e.key === 'Enter') handleClose();
+          }}
           aria-label="Close journal"
         >
           <span>✕</span>
         </div>
         
         {/* Journal content */}
-        <div className="flex h-full">
+        <div className="flex h-full journal-content relative z-10" onClick={(e: React.MouseEvent) => e.stopPropagation()}>
           {/* Tabs sidebar with enhanced buttons */}
-          <div className="w-[200px] bg-surface-dark border-r border-border">
+          <div className="w-[200px] bg-surface-dark border-r border-border relative z-20">
             <div className="p-4">
               <PixelText className="text-xl mb-4 text-center">Journal</PixelText>
               
@@ -197,11 +229,14 @@ export default function Journal() {
           </div>
           
           {/* Journal pages - critical: needs to be a div, not a modal */}
-          <div className="flex-1 bg-surface overflow-y-auto p-6">
-            {currentPage === 'knowledge' && <JournalKnowledgePage />}
-            {currentPage === 'characters' && <JournalCharactersPage />}
-            {currentPage === 'notes' && <JournalNotesPage />}
-            {currentPage === 'references' && <JournalReferencesPage />}
+          <div 
+            className="flex-1 bg-surface overflow-y-auto p-6 relative z-20"
+            onClick={(e: React.MouseEvent) => e.stopPropagation()}
+          >
+            {currentPage === 'knowledge' && <JournalKnowledgePage onElementClick={handleElementClick} />}
+            {currentPage === 'characters' && <JournalCharactersPage onElementClick={handleElementClick} />}
+            {currentPage === 'notes' && <JournalNotesPage onElementClick={handleElementClick} />}
+            {currentPage === 'references' && <JournalReferencesPage onElementClick={handleElementClick} />}
           </div>
         </div>
       </div>

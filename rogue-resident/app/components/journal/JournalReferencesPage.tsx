@@ -1,10 +1,23 @@
 'use client';
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import { useJournalStore } from '../../store/journalStore';
 import { PixelText } from '../PixelThemeProvider';
-import Image from 'next/image';
+import { JournalPageProps } from './Journal';
 
-export default function JournalReferencesPage() {
+/**
+ * Journal References Page
+ * 
+ * Displays technical information and reference materials
+ * the player has collected throughout the game.
+ * Includes interactive accordion sections with proper event isolation.
+ */
+export default function JournalReferencesPage({ onElementClick }: JournalPageProps) {
+  // Use onElementClick prop for proper event containment
+  const handleContainerClick = useCallback((e: React.MouseEvent<HTMLElement>) => {
+    if (onElementClick) onElementClick(e);
+    e.stopPropagation();
+  }, [onElementClick]);
+
   const { 
     hasKapoorReferenceSheets, 
     hasKapoorAnnotatedNotes, 
@@ -14,23 +27,26 @@ export default function JournalReferencesPage() {
   // Track expanded sections for accordion behavior
   const [expandedSections, setExpandedSections] = useState<string[]>(['basic-calibration']);
   
-  const toggleSection = (sectionId: string) => {
-    if (expandedSections.includes(sectionId)) {
-      setExpandedSections(expandedSections.filter(id => id !== sectionId));
-    } else {
-      setExpandedSections([...expandedSections, sectionId]);
-    }
-  };
+  // Enhanced toggle with proper event isolation
+  const toggleSection = useCallback((e: React.MouseEvent, sectionId: string) => {
+    e.stopPropagation(); // Stop propagation
+    
+    setExpandedSections(prev => 
+      prev.includes(sectionId)
+        ? prev.filter(id => id !== sectionId)
+        : [...prev, sectionId]
+    );
+  }, []);
   
   return (
-    <div>
+    <div onClick={handleContainerClick} className="page-container relative">
       <PixelText className="text-2xl mb-4">Technical References</PixelText>
       
       <div className="space-y-6">
         {/* Basic calibration reference - everyone has this */}
         <div 
-          className={`p-4 bg-surface-dark pixel-borders-thin ${expandedSections.includes('basic-calibration') ? '' : 'cursor-pointer hover:bg-surface-dark/80'}`}
-          onClick={() => toggleSection('basic-calibration')}
+          className={`p-4 bg-surface-dark pixel-borders-thin relative z-10 ${expandedSections.includes('basic-calibration') ? '' : 'cursor-pointer hover:bg-surface-dark/80'}`}
+          onClick={(e: React.MouseEvent) => toggleSection(e, 'basic-calibration')}
         >
           <div className="flex justify-between items-center mb-2">
             <PixelText className="text-lg text-clinical-light">Basic Calibration Protocol</PixelText>
@@ -38,7 +54,7 @@ export default function JournalReferencesPage() {
           </div>
           
           {expandedSections.includes('basic-calibration') && (
-            <div className="p-3 bg-surface">
+            <div className="p-3 bg-surface" onClick={(e: React.MouseEvent) => e.stopPropagation()}>
               <PixelText className="text-sm">
                 Standard output calibration procedure:
                 <br /><br />
@@ -69,8 +85,8 @@ export default function JournalReferencesPage() {
         {/* Kapoor's reference sheets - conditionally shown */}
         {hasKapoorReferenceSheets && (
           <div 
-            className={`p-4 bg-surface-dark pixel-borders-thin ${expandedSections.includes('kapoor-reference') ? '' : 'cursor-pointer hover:bg-surface-dark/80'}`}
-            onClick={() => toggleSection('kapoor-reference')}
+            className={`p-4 bg-surface-dark pixel-borders-thin relative z-10 ${expandedSections.includes('kapoor-reference') ? '' : 'cursor-pointer hover:bg-surface-dark/80'}`}
+            onClick={(e: React.MouseEvent) => toggleSection(e, 'kapoor-reference')}
             style={{ borderLeft: '4px solid var(--clinical-color)' }}
           >
             <div className="flex justify-between items-center mb-2">
@@ -83,7 +99,7 @@ export default function JournalReferencesPage() {
             
             {expandedSections.includes('kapoor-reference') && (
               <>
-                <div className="p-3 bg-surface">
+                <div className="p-3 bg-surface" onClick={(e: React.MouseEvent) => e.stopPropagation()}>
                   <PixelText className="text-sm">
                     Advanced calibration coefficients and correction factors:
                     <br /><br />
@@ -131,8 +147,8 @@ export default function JournalReferencesPage() {
         {/* Kapoor's annotated notes - conditionally shown */}
         {hasKapoorAnnotatedNotes && (
           <div 
-            className={`p-4 bg-surface-dark pixel-borders-thin ${expandedSections.includes('kapoor-notes') ? '' : 'cursor-pointer hover:bg-surface-dark/80'}`}
-            onClick={() => toggleSection('kapoor-notes')}
+            className={`p-4 bg-surface-dark pixel-borders-thin relative z-10 ${expandedSections.includes('kapoor-notes') ? '' : 'cursor-pointer hover:bg-surface-dark/80'}`}
+            onClick={(e: React.MouseEvent) => toggleSection(e, 'kapoor-notes')}
             style={{ borderLeft: '4px solid var(--educational-color)' }}
           >
             <div className="flex justify-between items-center mb-2">
@@ -145,7 +161,7 @@ export default function JournalReferencesPage() {
             
             {expandedSections.includes('kapoor-notes') && (
               <>
-                <div className="p-3 bg-surface">
+                <div className="p-3 bg-surface" onClick={(e: React.MouseEvent) => e.stopPropagation()}>
                   <div className="border-l-4 border-educational pl-2 italic">
                     <PixelText className="text-sm text-educational-light">
                       "Pay particular attention to barometric pressure trends in this facility. The building's HVAC system creates a cyclic pressure variation of approximately ±0.3 kPa throughout the day, significant enough to affect measurements if not properly accounted for."
@@ -178,10 +194,10 @@ export default function JournalReferencesPage() {
           </div>
         )}
         
-        {/* Hospital map - placeholder, would be more interactive in full implementation */}
+        {/* Hospital map - interactive element with proper event handling */}
         <div 
-          className={`p-4 bg-surface-dark pixel-borders-thin ${expandedSections.includes('hospital-map') ? '' : 'cursor-pointer hover:bg-surface-dark/80'}`}
-          onClick={() => toggleSection('hospital-map')}
+          className={`p-4 bg-surface-dark pixel-borders-thin relative z-10 ${expandedSections.includes('hospital-map') ? '' : 'cursor-pointer hover:bg-surface-dark/80'}`}
+          onClick={(e: React.MouseEvent) => toggleSection(e, 'hospital-map')}
         >
           <div className="flex justify-between items-center mb-2">
             <PixelText className="text-lg">Hospital Map</PixelText>
@@ -189,7 +205,7 @@ export default function JournalReferencesPage() {
           </div>
           
           {expandedSections.includes('hospital-map') && (
-            <div className="p-3 bg-surface flex items-center justify-center">
+            <div className="p-3 bg-surface flex items-center justify-center" onClick={(e: React.MouseEvent) => e.stopPropagation()}>
               {/* Simple hospital map visualization */}
               <div className="w-full h-64 relative bg-surface-dark">
                 <div className="absolute top-1/4 left-1/4 w-8 h-8 bg-clinical rounded-full flex items-center justify-center">
@@ -249,8 +265,8 @@ export default function JournalReferencesPage() {
         
         {/* Medical Physics Glossary - basic reference for all players */}
         <div 
-          className={`p-4 bg-surface-dark pixel-borders-thin ${expandedSections.includes('glossary') ? '' : 'cursor-pointer hover:bg-surface-dark/80'}`}
-          onClick={() => toggleSection('glossary')}
+          className={`p-4 bg-surface-dark pixel-borders-thin relative z-10 ${expandedSections.includes('glossary') ? '' : 'cursor-pointer hover:bg-surface-dark/80'}`}
+          onClick={(e: React.MouseEvent) => toggleSection(e, 'glossary')}
         >
           <div className="flex justify-between items-center mb-2">
             <PixelText className="text-lg">Medical Physics Glossary</PixelText>
@@ -258,7 +274,10 @@ export default function JournalReferencesPage() {
           </div>
           
           {expandedSections.includes('glossary') && (
-            <div className="p-3 bg-surface max-h-[400px] overflow-y-auto">
+            <div 
+              className="p-3 bg-surface max-h-[400px] overflow-y-auto" 
+              onClick={(e: React.MouseEvent) => e.stopPropagation()}
+            >
               <div className="grid grid-cols-1 gap-4">
                 <div>
                   <PixelText className="text-clinical-light font-medium">Absorbed Dose</PixelText>
