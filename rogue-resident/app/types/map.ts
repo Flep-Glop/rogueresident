@@ -1,12 +1,5 @@
 // app/types/map.ts
-// Import the challenge types
-import { 
-  ChallengeContent, 
-  ChallengeFormat, 
-  EquipmentType, 
-  ProcedureType 
-} from '../types/challenge';
-
+import { ChallengeContent, ChallengeFormat, CharacterId, EquipmentType, ProcedureType } from './challenge';
 
 /**
  * Node position in percentage units for responsive layouts
@@ -64,26 +57,34 @@ export interface NodeConnection {
 /**
  * Unified Node definition with all properties
  * Maintains backward compatibility with existing code while
- * adding support for new visual treatments
+ * adding support for new challenge system integration
  */
 export interface Node {
   id: string;
   title: string;
   description: string;
   type: NodeType;
-  character?: string;
   position: NodePosition;
   connections: string[]; // IDs of connected nodes
   isLocked: boolean;     // Legacy property, will be phased out in favor of visualState
   insightReward?: number;
-  content?: any; // Challenge data
+  visualState?: NodeState; // Computed field for rendering
+  
+  // Challenge system integration
+  challengeContent?: ChallengeContent; // Renamed from 'content' to avoid duplication
+  format?: ChallengeFormat;
+  character?: CharacterId;
+  equipmentType?: EquipmentType;
+  procedureType?: ProcedureType;
+  caseId?: string;
+  
+  // Requirements for node access
   requirements?: {
     items?: string[];
     knowledge?: string[];
     nodesCompleted?: string[];
     insight?: number;
   };
-  visualState?: NodeState; // Computed field for rendering
 }
 
 // Maintain backward compatibility with existing code
@@ -122,59 +123,32 @@ export interface MapViewState {
 }
 
 /**
- * Unified Node definition with all properties
- * Maintains backward compatibility with existing code while
- * adding support for new challenge system properties
- */
-export interface Node {
-  id: string;
-  title: string;
-  description: string;
-  type: NodeType;
-  character?: string;
-  position: NodePosition;
-  connections: string[]; // IDs of connected nodes
-  isLocked: boolean;     // Legacy property, will be phased out in favor of visualState
-  insightReward?: number;
-  
-  // Challenge system properties
-  content?: ChallengeContent; // Challenge content type (calibration, patient_case, etc.)
-  format?: ChallengeFormat;   // Challenge format (conversation, interactive, procedural)
-  equipmentType?: EquipmentType; // Type of equipment for QA challenges
-  procedureType?: ProcedureType; // Type of procedure for QA challenges
-  caseId?: string;             // Specific case ID for patient cases
-  
-  // Legacy content field - will eventually be replaced by more specific fields
-  content?: any; // Challenge data
-  
-  requirements?: {
-    items?: string[];
-    knowledge?: string[];
-    nodesCompleted?: string[];
-    insight?: number;
-  };
-  visualState?: NodeState; // Computed field for rendering
-}
-
-/**
  * Type bridge for utility functions to convert between types
  */
 export const mapUtils = {
-  // Convert from mapGenerator.Node to map.Node
-  convertLegacyNode: (legacyNode: any): Node => {
+  // Convert from ChallengeNode to map.Node
+  convertChallengeNode: (challengeNode: any): Node => {
     return {
-      ...legacyNode,
-      // Ensure required fields are present
-      title: legacyNode.title || legacyNode.id || 'Unknown',
-      description: legacyNode.description || '',
-      isLocked: legacyNode.isLocked ?? false,
+      id: challengeNode.id,
+      title: challengeNode.title || challengeNode.id || 'Unknown',
+      description: challengeNode.description || '',
+      type: mapChallengeTypeToNodeType(challengeNode.content),
+      position: challengeNode.position || { x: 50, y: 50 },
+      connections: challengeNode.connections || [],
+      isLocked: false,
+      insightReward: challengeNode.insightReward,
+      challengeContent: challengeNode.content,
+      format: challengeNode.format,
+      character: challengeNode.character,
+      equipmentType: challengeNode.equipmentType,
+      procedureType: challengeNode.procedureType,
     };
   },
   
   // Convert legacy map to updated map format
   convertLegacyMap: (legacyMap: any): GameMap => {
     return {
-      nodes: legacyMap.nodes.map(mapUtils.convertLegacyNode),
+      nodes: legacyMap.nodes.map((n: any) => mapUtils.convertChallengeNode(n)),
       startNodeId: legacyMap.startNodeId,
       bossNodeId: legacyMap.bossNodeId,
       dimensions: legacyMap.dimensions || {
@@ -184,3 +158,15 @@ export const mapUtils = {
     };
   },
 };
+
+// Helper function to map challenge content to node type
+function mapChallengeTypeToNodeType(content: ChallengeContent): NodeType {
+  switch(content) {
+    case 'calibration': return 'clinical';
+    case 'patient_case': return 'clinical';
+    case 'equipment_qa': return 'qa';
+    case 'lecture': return 'educational';
+    case 'storage': return 'storage';
+    default: return 'clinical';
+  }
+}

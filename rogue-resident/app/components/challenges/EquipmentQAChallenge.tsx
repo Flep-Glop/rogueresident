@@ -6,11 +6,11 @@ import { useChallengeStore } from '../../store/challengeStore';
 import { useJournalStore } from '../../store/journalStore';
 import ConversationFormat, { InteractionResults } from './formats/ConversationFormat';
 import { DialogueStage } from '../../hooks/useDialogueFlow';
-import { CharacterId } from '../../types/challenge';
+import { CharacterId, BaseEquipmentType } from '../../types/challenge';
 
 interface EquipmentQAChallengeProps {
   character: CharacterId;
-  equipmentType?: 'linac' | 'ct' | 'dosimetry';
+  equipmentType?: BaseEquipmentType; // Updated to use BaseEquipmentType
 }
 
 // QA procedures by equipment type
@@ -44,6 +44,16 @@ const qaProceduces = {
       "Temperature and pressure correction verification",
       "Cable integrity check"
     ]
+  },
+  brachytherapy: { // Adding the missing equipment type
+    title: "Brachytherapy QA",
+    intro: "We need to check the brachytherapy afterloader before tomorrow's treatments. Safety is absolutely critical here.",
+    steps: [
+      "Source position verification",
+      "Timer accuracy check",
+      "Emergency retraction test",
+      "Transfer tube integrity verification"
+    ]
   }
 };
 
@@ -60,8 +70,8 @@ export default function EquipmentQAChallenge({ character, equipmentType = 'linac
     'tolerance_limits': false
   });
   
-  // Get procedure data based on equipment type
-  const procedure = qaProceduces[equipmentType];
+  // Get procedure data based on equipment type, with fallback
+  const procedure = qaProceduces[equipmentType] || qaProceduces.linac;
   
   // Handle completion of the challenge
   const handleCompletion = (results: InteractionResults) => {

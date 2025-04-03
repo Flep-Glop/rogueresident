@@ -8,12 +8,14 @@ import { useGameEffects } from './GameEffects';
 import ChallengeRouter from './challenges/ChallengeRouter';
 import HillHomeScene from './HillHomeScene';
 import PlayerStats from './PlayerStats';
+import { SoundEffect } from '../types/audio';
 
 export default function GameContainer() {
   const { 
     gamePhase, 
     currentNodeId, 
-    map
+    map,
+    completeNight
   } = useGameStore();
   
   const { currentChallenge, resetChallenge } = useChallengeStore();
@@ -23,9 +25,9 @@ export default function GameContainer() {
   useEffect(() => {
     if (playSound) {
       if (gamePhase === 'day') {
-        playSound('day-start');
+        playSound('day-start' as SoundEffect);
       } else if (gamePhase === 'night') {
-        playSound('night-start');
+        playSound('night-start' as SoundEffect);
       }
     }
   }, [gamePhase, playSound]);
@@ -41,7 +43,7 @@ export default function GameContainer() {
   const renderGameContent = () => {
     // Handle day/night cycle
     if (gamePhase === 'night') {
-      return <HillHomeScene />;
+      return <HillHomeScene onComplete={() => completeNight()} />;
     }
     
     // If no node is selected, show the map

@@ -9,11 +9,12 @@ import InteractiveFormat, {
   InteractiveStep,
   InteractiveResults
 } from './formats/InteractiveFormat';
-import { CharacterId } from '../../types/challenge';
+import { CharacterId, InteractiveEquipmentType } from '../../types/challenge';
+import { SoundEffect } from '../../types/audio';
 
 interface EquipmentInteractiveChallengeProps {
   character: CharacterId;
-  equipmentType?: 'ionization_chamber' | 'linac_console' | 'patient_positioning';
+  equipmentType?: InteractiveEquipmentType; // Updated to use InteractiveEquipmentType
 }
 
 export default function EquipmentInteractiveChallenge({

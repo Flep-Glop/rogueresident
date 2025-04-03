@@ -14,17 +14,21 @@ export type ChallengeFormat =
 
 export type CharacterId = 'kapoor' | 'quinn' | 'jesse' | 'garcia';
 
-export type EquipmentType = 
+// Split equipment types for better type checking across components
+export type BaseEquipmentType = 
   // QA equipment types
   | 'linac'             // Linear accelerator
   | 'ct'                // CT simulator
   | 'brachytherapy'     // Brachytherapy afterloader
-  | 'dosimetry'         // Dosimetry equipment
+  | 'dosimetry';        // Dosimetry equipment
   
+export type InteractiveEquipmentType = 
   // Interactive equipment types  
   | 'ionization_chamber'  // Farmer chamber and dosimetry
   | 'linac_console'       // Treatment console
   | 'patient_positioning'; // Patient setup
+
+export type EquipmentType = BaseEquipmentType | InteractiveEquipmentType;
 
 export type ProcedureType = 
   | 'daily'           // Daily QA procedures
@@ -52,3 +56,17 @@ export interface ChallengeNode {
   requiredConcepts?: string[];
   taughtConcepts?: string[];
 }
+
+// Type guard functions for equipment types
+export function isBaseEquipment(type: EquipmentType | undefined): type is BaseEquipmentType {
+  return type === 'linac' || type === 'ct' || type === 'brachytherapy' || type === 'dosimetry';
+}
+
+export function isInteractiveEquipment(type: EquipmentType | undefined): type is InteractiveEquipmentType {
+  return type === 'ionization_chamber' || type === 'linac_console' || type === 'patient_positioning';
+}
+
+// Challenge factory type for more extensible challenge creation
+export type ChallengeFactory = {
+  createChallenge: (node: ChallengeNode) => React.ReactNode;
+};

@@ -1,402 +1,232 @@
 // app/components/GameEffects.tsx
 'use client';
-import { useState, useCallback, createContext, useContext, ReactNode, useRef } from 'react';
+import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
+import { SoundEffect, getSoundFallback } from '../types/audio';
 
-// Simplified effect types
-type ShakeIntensity = 'light' | 'medium' | 'heavy';
-// Update your FlashColor type:
-type FlashColor = 'white' | 'red' | 'green' | 'blue' | 'yellow'; // Add-yellow// app/components/GameEffects.tsx
-// Add these to your existing SoundEffect type:
-type SoundEffect = 
-  // Basic UI sounds
-  | 'click' 
-  | 'ui-click'
-  | 'ui-toggle'
-  | 'ui-error'
-  | 'ui-close'
-  // Gameplay feedback
-  | 'success' 
-  | 'failure' 
-  | 'reward' 
-  | 'damage' 
-  | 'heal' 
-  // Challenge sounds
-  | 'challenge-start'
-  | 'challenge-complete'
-  | 'challenge-success'
-  | 'challenge-failure'
-  // Navigation
-  | 'node-select'
-  | 'node-hover'      // Add this 
-  | 'error'           // Add this
-  | 'phase-transition'; // Add this
-  | 'day-start'    // Add this
-  | 'night-start'; // Add this
-  
-
-// Context interface
 interface GameEffectsContextType {
-  shakeScreen: (intensity: ShakeIntensity, duration?: number) => void;
-  flashScreen: (color: FlashColor, duration?: number) => void;
-  showDamageNumber: (amount: number) => void;
-  showRewardNumber: (amount: number) => void;
-  showRewardEffect: (amount: number, x: number, y: number) => void;
-  showDamageEffect: (amount: number, x: number, y: number) => void;
-  showHealEffect: (amount: number, x: number, y: number) => void;
+  playSound: (effect: SoundEffect) => void;
+  stopSound: (effect: SoundEffect) => void;
+  flashScreen: (color: 'white' | 'red' | 'green' | 'blue' | 'yellow') => void;
+  shakeScreen: (intensity: 'light' | 'medium' | 'heavy') => void;
   showCompletionEffect: (x: number, y: number) => void;
-  playSound: (sound: SoundEffect) => void;
+  showRewardEffect: (count: number, x: number, y: number) => void;
+  showDamageEffect: (count: number, x: number, y: number) => void;
+  showHealEffect: (count: number, x: number, y: number) => void;
 }
 
-// Create context
-const GameEffectsContext = createContext<GameEffectsContextType>({
-  shakeScreen: () => {},
-  flashScreen: () => {},
-  showDamageNumber: () => {},
-  showRewardNumber: () => {},
-  showRewardEffect: () => {},
-  showDamageEffect: () => {},
-  showHealEffect: () => {},
-  showCompletionEffect: () => {},
-  playSound: () => {}
-});
+// Create the context
+const GameEffectsContext = createContext<GameEffectsContextType | null>(null);
 
-// Custom hook
-export const useGameEffects = () => useContext(GameEffectsContext);
+// Sound effect mapping - maps our type system to actual sound files
+const soundMap: Record<string, string> = {
+  "click": "/sounds/ui-click.mp3",
+  "hover": "/sounds/ui-hover.mp3",
+  "select": "/sounds/node-select.mp3",
+  "back": "/sounds/ui-back.mp3",
+  "success": "/sounds/success.mp3",
+  "failure": "/sounds/failure.mp3",
+  "warning": "/sounds/warning.mp3",
+  "error": "/sounds/error.mp3",
+  "challenge-complete": "/sounds/challenge-complete.mp3",
+  "node-select": "/sounds/node-select.mp3",
+  "node-hover": "/sounds/node-hover.mp3",
+  "dialogue-select": "/sounds/dialogue-select.mp3",
+  "knowledge-select": "/sounds/knowledge-select.mp3",
+  "knowledge-connect": "/sounds/knowledge-connect.mp3",
+}; 
 
 // Provider component
-export function GameEffectsProvider({ children }: { children: ReactNode }) {
-  const [isShaking, setIsShaking] = useState(false);
-  const [shakeClass, setShakeClass] = useState('');
-  const [isFlashing, setIsFlashing] = useState(false);
-  const [flashColor, setFlashColor] = useState('rgba(255, 255, 255, 0)');
-  const [damageNumber, setDamageNumber] = useState<number | null>(null);
-  const [rewardNumber, setRewardNumber] = useState<number | null>(null);
-  const [particles, setParticles] = useState<Array<{id: string, x: number, y: number, type: string, text?: string}>>([]);
+export function GameEffectsProvider({ children }: { children: React.ReactNode }) {
+  // State for effects
+  const [flash, setFlash] = useState<{ color: string, active: boolean }>({ color: 'white', active: false });
+  const [shake, setShake] = useState<{ intensity: string, active: boolean }>({ intensity: 'light', active: false });
   
-  // Track previous game state for auto effects
-  const previousStateRef = useRef({
-    health: 0,
-    insight: 0,
-    completedNodeIds: [] as string[]
-  });
+  // Sound cache
+  const [soundCache, setSoundCache] = useState<Record<string, HTMLAudioElement>>({});
   
-  // Screen shake effect
-  const shakeScreen = useCallback((intensity: ShakeIntensity, duration = 500) => {
-    setIsShaking(true);
-    
-    // Set CSS class based on intensity
-    switch (intensity) {
-      case 'light':
-        setShakeClass('shake-light');
-        break;
-      case 'medium':
-        setShakeClass('shake-medium');
-        break;
-      case 'heavy':
-        setShakeClass('shake-heavy');
-        break;
+  // Preload sounds when component mounts
+  useEffect(() => {
+    // Only run in browser environment
+    if (typeof window !== 'undefined') {
+      const cache: Record<string, HTMLAudioElement> = {};
+      
+      // Preload core sounds
+      Object.entries(soundMap).forEach(([key, path]) => {
+        try {
+          const audio = new Audio(path);
+          audio.preload = 'auto';
+          cache[key] = audio;
+        } catch (err) {
+          console.warn(`Failed to preload sound: ${key}`, err);
+        }
+      });
+      
+      setSoundCache(cache);
     }
     
-    // Clear shake after duration
-    setTimeout(() => {
-      setIsShaking(false);
-      setShakeClass('');
-    }, duration);
-  }, []);
-  
-  // Screen flash effect
-  const flashScreen = useCallback((color: FlashColor, duration = 300) => {
-    // Set flash color
-    switch (color) {
-      case 'white':
-        setFlashColor('rgba(255, 255, 255, 0.5)');
-        break;
-      case 'red':
-        setFlashColor('rgba(255, 0, 0, 0.3)');
-        break;
-      case 'green':
-        setFlashColor('rgba(0, 255, 0, 0.3)');
-        break;
-      case 'blue':
-        setFlashColor('rgba(0, 0, 255, 0.3)');
-        break;
-    }
-    
-    setIsFlashing(true);
-    
-    // Clear flash after duration
-    setTimeout(() => {
-      setIsFlashing(false);
-      setFlashColor('rgba(255, 255, 255, 0)');
-    }, duration);
+    return () => {
+      // Cleanup sounds when component unmounts
+      Object.values(soundCache).forEach(audio => {
+        audio.pause();
+        audio.src = '';
+      });
+    };
   }, []);
   
   // Play sound effect
-  const playSound = useCallback((sound: SoundEffect) => {
-    // In full implementation, would play actual sounds
-    console.log(`Playing sound: ${sound}`);
+  const playSound = useCallback((effect: SoundEffect) => {
+    // Get the base sound (using fallbacks if needed)
+    const baseSound = getSoundFallback(effect);
     
-    // Example of how sound implementation might work
-    // const audio = new Audio(`/sounds/${sound}.mp3`);
-    // audio.volume = 0.5;
-    // audio.play();
-  }, []);
+    // Check if sound exists in cache
+    if (soundCache[baseSound]) {
+      try {
+        // Clone the audio to allow for overlapping sounds
+        const audio = soundCache[baseSound].cloneNode() as HTMLAudioElement;
+        audio.volume = 0.5; // Default volume
+        audio.play().catch(err => {
+          console.warn(`Failed to play sound: ${effect}`, err);
+        });
+      } catch (err) {
+        console.warn(`Error playing sound: ${effect}`, err);
+      }
+    } else {
+      console.warn(`Sound not found in cache: ${effect} (fallback: ${baseSound})`);
+    }
+  }, [soundCache]);
   
-  // Show damage number
-  const showDamageNumber = useCallback((amount: number) => {
-    setDamageNumber(amount);
-    setTimeout(() => setDamageNumber(null), 1500);
-  }, []);
+  // Stop a specific sound
+  const stopSound = useCallback((effect: SoundEffect) => {
+    const baseSound = getSoundFallback(effect);
+    if (soundCache[baseSound]) {
+      soundCache[baseSound].pause();
+      soundCache[baseSound].currentTime = 0;
+    }
+  }, [soundCache]);
   
-  // Show reward number
-  const showRewardNumber = useCallback((amount: number) => {
-    setRewardNumber(amount);
-    setTimeout(() => setRewardNumber(null), 1500);
-  }, []);
-  
-  // Spawn simple particles
-  const spawnParticles = useCallback((type: string, x: number, y: number, count = 5, text?: string) => {
-    const newParticles = Array.from({ length: count }, (_, i) => ({
-      id: `${type}-${Date.now()}-${i}`,
-      x: x + (Math.random() * 20 - 10),
-      y: y + (Math.random() * 20 - 10),
-      type,
-      text
-    }));
-    
-    setParticles(prev => [...prev, ...newParticles]);
-    
-    // Remove particles after animation
+  // Flash screen effect
+  const flashScreen = useCallback((color: 'white' | 'red' | 'green' | 'blue' | 'yellow') => {
+    setFlash({ color, active: true });
     setTimeout(() => {
-      setParticles(prev => prev.filter(p => !newParticles.some(np => np.id === p.id)));
-    }, 1500);
+      setFlash(prev => ({ ...prev, active: false }));
+    }, 300);
   }, []);
   
-  // Combined effect for rewards
-  const showRewardEffect = useCallback((amount: number, x: number, y: number) => {
-    // Flash the screen
-    flashScreen('green');
-    
-    // Play a sound
-    playSound('reward');
-    
-    // Show reward number
-    showRewardNumber(amount);
-    
-    // Spawn particles
-    spawnParticles('reward', x, y, 5, `+${amount}`);
-  }, [flashScreen, playSound, showRewardNumber, spawnParticles]);
+  // Screen shake effect
+  const shakeScreen = useCallback((intensity: 'light' | 'medium' | 'heavy') => {
+    setShake({ intensity, active: true });
+    setTimeout(() => {
+      setShake(prev => ({ ...prev, active: false }));
+    }, 500);
+  }, []);
   
-  // Combined effect for damage
-  const showDamageEffect = useCallback((amount: number, x: number, y: number) => {
-    // Shake and flash the screen
-    shakeScreen('medium');
-    flashScreen('red');
-    
-    // Play a sound
-    playSound('damage');
-    
-    // Show damage number
-    showDamageNumber(amount);
-    
-    // Spawn particles
-    spawnParticles('damage', x, y, amount, `-${amount}`);
-  }, [shakeScreen, flashScreen, playSound, showDamageNumber, spawnParticles]);
-  
-  // Combined effect for healing
-  const showHealEffect = useCallback((amount: number, x: number, y: number) => {
-    // Flash the screen
-    flashScreen('green');
-    
-    // Play a sound
-    playSound('heal');
-    
-    // Show number
-    showRewardNumber(amount);
-    
-    // Spawn particles
-    spawnParticles('heal', x, y, amount, `+${amount}`);
-  }, [flashScreen, playSound, showRewardNumber, spawnParticles]);
-  
-  // Combined effect for node completion
+  // Completion effect
   const showCompletionEffect = useCallback((x: number, y: number) => {
-    // Flash the screen
-    flashScreen('blue');
-    
-    // Play a sound
-    playSound('challenge-complete');
-    
-    // Light screen shake for emphasis
-    shakeScreen('light');
-    
-    // Spawn particles
-    spawnParticles('completion', x, y, 10);
-  }, [flashScreen, playSound, shakeScreen, spawnParticles]);
+    // Logic for completion particles
+    console.log(`Completion effect at ${x}, ${y}`);
+    playSound('success');
+  }, [playSound]);
   
-  // Provide context value
+  // Reward effect with particle count
+  const showRewardEffect = useCallback((count: number, x: number, y: number) => {
+    // Logic for reward particles
+    console.log(`Reward effect (${count} particles) at ${x}, ${y}`);
+    playSound('success');
+  }, [playSound]);
+  
+  // Damage effect
+  const showDamageEffect = useCallback((count: number, x: number, y: number) => {
+    // Logic for damage particles
+    console.log(`Damage effect (${count} particles) at ${x}, ${y}`);
+    playSound('failure');
+  }, [playSound]);
+  
+  // Heal effect
+  const showHealEffect = useCallback((count: number, x: number, y: number) => {
+    // Logic for heal particles
+    console.log(`Heal effect (${count} particles) at ${x}, ${y}`);
+    playSound('success');
+  }, [playSound]);
+  
+  // Context value
   const value = {
-    shakeScreen,
+    playSound,
+    stopSound,
     flashScreen,
-    showDamageNumber,
-    showRewardNumber,
+    shakeScreen,
+    showCompletionEffect,
     showRewardEffect,
     showDamageEffect,
-    showHealEffect,
-    showCompletionEffect,
-    playSound
+    showHealEffect
   };
   
   return (
     <GameEffectsContext.Provider value={value}>
-      {/* Container for shake effect */}
+      {children}
+      
+      {/* Screen flash effect overlay */}
+      {flash.active && (
+        <div 
+          className="fixed inset-0 pointer-events-none z-50 transition-opacity duration-300"
+          style={{ 
+            backgroundColor: flash.color, 
+            opacity: 0.3 
+          }}
+        />
+      )}
+      
+      {/* Screen shake effect */}
       <div 
-        className={`${isShaking ? shakeClass : ''}`}
-        style={{ 
-          height: '100%',
-          width: '100%',
-          position: 'relative'
-        }}
+        className={`${shake.active ? 'game-screen-shake' : ''}`}
+        data-intensity={shake.intensity}
       >
         {children}
-        
-        {/* Flash overlay */}
-        {isFlashing && (
-          <div 
-            style={{
-              position: 'fixed',
-              top: 0,
-              left: 0,
-              right: 0,
-              bottom: 0,
-              backgroundColor: flashColor,
-              pointerEvents: 'none',
-              zIndex: 9999,
-              transition: 'background-color 0.1s ease'
-            }}
-          />
-        )}
-        
-        {/* Damage number display */}
-        {damageNumber !== null && (
-          <div 
-            className="fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-red-500 text-4xl animate-bounce font-bold z-50"
-            style={{ textShadow: '0 0 3px black' }}
-          >
-            -{damageNumber}
-          </div>
-        )}
-        
-        {/* Reward number display */}
-        {rewardNumber !== null && (
-          <div 
-            className="fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-yellow-300 text-4xl animate-bounce font-bold z-50"
-            style={{ textShadow: '0 0 3px black' }}
-          >
-            +{rewardNumber}
-          </div>
-        )}
-        
-        {/* Particle container */}
-        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, pointerEvents: 'none', zIndex: 10000 }}>
-          {particles.map(particle => (
-            <div
-              key={particle.id}
-              className="absolute animate-float"
-              style={{
-                left: `${particle.x}px`,
-                top: `${particle.y}px`,
-                fontSize: particle.type === 'damage' ? '24px' : 
-                         particle.type === 'heal' ? '24px' : 
-                         particle.type === 'reward' ? '24px' : '12px',
-                color: particle.type === 'damage' ? 'red' : 
-                       particle.type === 'heal' ? 'lightgreen' : 
-                       particle.type === 'reward' ? 'gold' : 'white',
-                opacity: 0.8,
-                fontFamily: 'var(--font-pixel)'
-              }}
-            >
-              {particle.text || '✨'}
-            </div>
-          ))}
-        </div>
       </div>
       
-      {/* CSS for shake effects and animations */}
       <style jsx global>{`
+        /* Screen shake animations */
         @keyframes shake-light {
           0%, 100% { transform: translateX(0); }
-          25% { transform: translateX(-5px); }
-          75% { transform: translateX(5px); }
+          25% { transform: translateX(-2px); }
+          50% { transform: translateX(0); }
+          75% { transform: translateX(2px); }
         }
         
         @keyframes shake-medium {
           0%, 100% { transform: translateX(0); }
-          25% { transform: translateX(-10px); }
-          75% { transform: translateX(10px); }
+          25% { transform: translateX(-5px); }
+          50% { transform: translateX(0); }
+          75% { transform: translateX(5px); }
         }
         
         @keyframes shake-heavy {
           0%, 100% { transform: translateX(0); }
-          25% { transform: translateX(-20px); }
-          75% { transform: translateX(20px); }
+          25% { transform: translateX(-10px); }
+          50% { transform: translateX(0); }
+          75% { transform: translateX(10px); }
         }
         
-        @keyframes float {
-          0% { transform: translateY(0); opacity: 1; }
-          100% { transform: translateY(-30px); opacity: 0; }
+        .game-screen-shake[data-intensity="light"] {
+          animation: shake-light 0.3s ease-in-out;
         }
         
-        .shake-light { animation: shake-light 0.3s 2; }
-        .shake-medium { animation: shake-medium 0.3s 3; }
-        .shake-heavy { animation: shake-heavy 0.4s 4; }
-        .animate-float { animation: float 1.5s forwards; }
+        .game-screen-shake[data-intensity="medium"] {
+          animation: shake-medium 0.5s ease-in-out;
+        }
+        
+        .game-screen-shake[data-intensity="heavy"] {
+          animation: shake-heavy 0.7s ease-in-out;
+        }
       `}</style>
     </GameEffectsContext.Provider>
   );
 }
 
-// Enhanced button with effects
-export function EffectButton({
-  children,
-  onClick,
-  className = '',
-  disabled = false,
-  sound = 'click' as SoundEffect,
-  shakeIntensity = 'light' as ShakeIntensity
-}: {
-  children: ReactNode;
-  onClick?: () => void;
-  className?: string;
-  disabled?: boolean;
-  sound?: SoundEffect;
-  shakeIntensity?: ShakeIntensity;
-}) {
-  const { playSound, shakeScreen } = useGameEffects();
-  
-  const handleClick = () => {
-    if (disabled) return;
-    
-    // Play sound effect
-    playSound(sound);
-    
-    // Light screen shake for feedback
-    shakeScreen(shakeIntensity, 100);
-    
-    // Call original onClick handler
-    if (onClick) onClick();
-  };
-  
-  return (
-    <button
-      onClick={handleClick}
-      disabled={disabled}
-      className={`
-        pixel-button
-        ${disabled ? 'opacity-50 cursor-not-allowed' : ''}
-        ${className}
-      `}
-    >
-      {children}
-    </button>
-  );
+// Custom hook for using game effects
+export function useGameEffects() {
+  const context = useContext(GameEffectsContext);
+  if (!context) {
+    throw new Error('useGameEffects must be used within a GameEffectsProvider');
+  }
+  return context;
 }
