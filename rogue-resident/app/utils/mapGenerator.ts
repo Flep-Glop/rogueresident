@@ -107,14 +107,37 @@ export function generateMap(config: MapConfig = { mapType: 'tutorial' }): GameMa
     }
   }
   
+  // Validate and potentially fix node connections (ensure no connections to non-existent nodes)
+  tutorialNodes.forEach(node => {
+    node.connections = node.connections.filter(targetId => 
+      tutorialNodes.some(n => n.id === targetId)
+    );
+  });
+  
   // Convert challenge nodes to map nodes
   const mapNodes: Node[] = tutorialNodes.map(node => mapUtils.convertChallengeNode(node));
   
-  // Create and return the game map
+  // Ensure each node has proper position if missing
+  mapNodes.forEach((node, index) => {
+    if (!node.position || (node.position.x === 0 && node.position.y === 0)) {
+      // Generate a position if missing
+      node.position = {
+        x: 25 + (index * 15) % 50, 
+        y: 30 + (index * 20) % 40
+      };
+      console.warn(`Generated missing position for node ${node.id}`);
+    }
+  });
+  
+  // Ensure map has valid startNodeId and bossNodeId
+  const startNodeId = tutorialNodes.length > 0 ? tutorialNodes[0].id : 'calibration_node';
+  const bossNodeId = tutorialNodes.find(n => n.id === 'boss_node')?.id || startNodeId;
+  
+  // Create and return the validated game map
   return {
     nodes: mapNodes,
-    startNodeId: 'calibration_node',
-    bossNodeId: 'boss_node',
+    startNodeId,
+    bossNodeId,
     dimensions: { width: 100, height: 100 }
   };
 }

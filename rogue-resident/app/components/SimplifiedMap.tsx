@@ -1,6 +1,6 @@
 // app/components/SimplifiedMap.tsx
 'use client';
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useGameStore } from '../store/gameStore';
 import { PixelText, PixelButton } from './PixelThemeProvider';
 import { useGameEffects } from './GameEffects';
@@ -26,25 +26,50 @@ export default function SimplifiedMap() {
   const { playSound, flashScreen } = useGameEffects();
   const [activeNode, setActiveNode] = useState<string | null>(null);
   const [hoveredNode, setHoveredNode] = useState<string | null>(null);
+  const [isMapReady, setIsMapReady] = useState(false);
   const mapContainerRef = useRef<HTMLDivElement>(null);
+  const nodeSelectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   
-  // Use the map from the game store if available, otherwise use the local backup
-  const mapNodes: Record<string, Node> = {};
+  // Stable map data reference to avoid unnecessary rerenders
+  const mapNodesRef = useRef<Record<string, Node>>({});
   
+  // Map initialization and stability checks
   useEffect(() => {
     // Initialize mapNodes from actual game map
     if (map && map.nodes) {
+      const nodesMap: Record<string, Node> = {};
       map.nodes.forEach(node => {
-        mapNodes[node.id] = node;
+        nodesMap[node.id] = node;
       });
+      mapNodesRef.current = nodesMap;
+      
+      console.log("Map nodes initialized:", Object.keys(nodesMap));
+      
+      // Add a short delay to ensure map is ready for rendering
+      setTimeout(() => {
+        setIsMapReady(true);
+      }, 100);
     }
     
-    console.log("Map nodes initialized:", Object.keys(mapNodes));
+    return () => {
+      // Clean up any pending timeouts to prevent memory leaks
+      if (nodeSelectTimeoutRef.current) {
+        clearTimeout(nodeSelectTimeoutRef.current);
+        nodeSelectTimeoutRef.current = null;
+      }
+    };
   }, [map]);
   
-  // Set initial active node if none selected
+  // Set initial active node if none selected - with safer timeout handling
   useEffect(() => {
-    if (!currentNodeId && !activeNode && map) {
+    // Clean up any existing timeout
+    if (nodeSelectTimeoutRef.current) {
+      clearTimeout(nodeSelectTimeoutRef.current);
+      nodeSelectTimeoutRef.current = null;
+    }
+    
+    // Only attempt node selection when map is ready
+    if (isMapReady && !currentNodeId && !activeNode && map) {
       // Auto-select the kapoorCalibrationNode if available, otherwise use map's startNodeId
       const calibrationNode = map.nodes.find(node => node.type === 'kapoorCalibration');
       const nodeToSelect = calibrationNode?.id || map.startNodeId;
@@ -53,16 +78,23 @@ export default function SimplifiedMap() {
       setActiveNode(nodeToSelect);
       
       // Auto-select with a brief delay for visual flair
-      const timer = setTimeout(() => {
+      nodeSelectTimeoutRef.current = setTimeout(() => {
+        console.log("Executing delayed node selection for:", nodeToSelect);
         handleNodeSelect(nodeToSelect);
+        nodeSelectTimeoutRef.current = null;
       }, 800);
-      
-      return () => clearTimeout(timer);
     }
-  }, [currentNodeId, activeNode, map]);
+    
+    return () => {
+      if (nodeSelectTimeoutRef.current) {
+        clearTimeout(nodeSelectTimeoutRef.current);
+        nodeSelectTimeoutRef.current = null;
+      }
+    };
+  }, [currentNodeId, activeNode, map, isMapReady]);
   
-  // Enhanced node selection with clear logging
-  const handleNodeSelect = (nodeId: string) => {
+  // Memoized node selection handler to prevent recreation on renders
+  const handleNodeSelect = useCallback((nodeId: string) => {
     const isFirstNode = map && map.nodes.length === 1;
   
     if (!isFirstNode && !isNodeAccessible(nodeId)) {
@@ -75,14 +107,6 @@ export default function SimplifiedMap() {
       console.warn(`Node ${nodeId} not found in map`);
       return;
     }
-    
-    // Skip if node is not accessible
-    if (!isNodeAccessible(nodeId)) {
-      console.log(`Node ${nodeId} is not accessible`);
-      return;
-    }
-    console.log("After selection, currentNodeId =", currentNodeId);
-    console.log(`Node selected: ${nodeId}`);
     
     // Update active node in local state
     setActiveNode(nodeId);
@@ -116,8 +140,9 @@ export default function SimplifiedMap() {
     
     // Most important part: Update gameStore with selected node
     // This is what triggers the routing in GameContainer
+    console.log("Updating global state with selected node:", nodeId);
     setCurrentNode(nodeId);
-  };
+  }, [map, isNodeAccessible, playSound, flashScreen, setCurrentNode]);
   
   // Determine if a node is completed
   const isNodeCompleted = (nodeId: string): boolean => {
@@ -279,7 +304,7 @@ export default function SimplifiedMap() {
           id={uniqueNodeId}
           key={nodeId}
           className={`${nodeWidth} ${nodeHeight} relative ${getNodeClasses(nodeId, node)}`}
-          onClick={() => handleNodeSelect(nodeId)}
+          onClick={() => isInteractive && handleNodeSelect(nodeId)}
           onMouseEnter={() => {
             setHoveredNode(nodeId);
             if (isInteractive && playSound) playSound('node-hover');
@@ -402,7 +427,7 @@ export default function SimplifiedMap() {
   };
   
   // Render the connections between nodes with enhanced visual effects
-  const renderConnections = () => {
+  const renderConnections = useCallback(() => {
     if (!map || !map.nodes) return null;
     
     return map.nodes.flatMap(node => 
@@ -445,10 +470,10 @@ export default function SimplifiedMap() {
         );
       })
     ).filter(Boolean); // Filter out null connections
-  };
+  }, [map, activeNode, getConnectionStyle]);
   
   // Handle end day click with enhanced feedback
-  const handleEndDay = () => {
+  const handleEndDay = useCallback(() => {
     if (playSound) playSound('click');
     
     // Zoom out effect on the map container
@@ -487,7 +512,7 @@ export default function SimplifiedMap() {
         );
       }
     }
-  };
+  }, [playSound, flashScreen, completedNodeIds, completeDay]);
   
   // Check if we're showing the single node calibration experience
   const isSingleNodeMode = map?.nodes.length === 1 && map.nodes[0].type === 'kapoorCalibration';
@@ -519,6 +544,7 @@ export default function SimplifiedMap() {
     <div 
       ref={mapContainerRef}
       className="h-full w-full p-8 flex flex-col items-center justify-center bg-background starfield-bg"
+      style={{ minHeight: '500px' }} // Ensure we have enough height to render
     >
       <div className="text-center mb-8 relative">
         <PixelText className="text-4xl text-white font-pixel-heading mb-2 glow-text">
@@ -541,7 +567,7 @@ export default function SimplifiedMap() {
               top: '50%',
             }}
           >
-            {renderNode(map.nodes[0].id, map.nodes[0])}
+            {map.nodes[0] && renderNode(map.nodes[0].id, map.nodes[0])}
           </div>
         </div>
       ) : (
@@ -608,7 +634,8 @@ export default function SimplifiedMap() {
         <div className="fixed top-20 left-2 bg-black/70 text-white text-xs px-2 py-1 z-50">
           Mode: {isSingleNodeMode ? 'Single Calibration Node' : 'Full Map'} | 
           Nodes: {map.nodes.length} | 
-          Current: {currentNodeId || 'none'}
+          Current: {currentNodeId || 'none'} | 
+          Active: {activeNode || 'none'}
         </div>
       )}
     </div>

@@ -140,6 +140,39 @@ export const useGameStore = create<GameState>()(
           startNode: newMap.startNodeId
         });
         
+        // Validate the map has at least one node
+        if (!newMap.nodes || newMap.nodes.length === 0) {
+          console.error("🚨 Map generation failed - no nodes available");
+          // Generate a fallback single-node map for stability
+          const fallbackMap = {
+            nodes: [{
+              id: 'emergency_node',
+              title: 'Emergency Calibration',
+              description: 'Emergency fallback node',
+              type: 'kapoorCalibration',
+              position: { x: 50, y: 50 },
+              connections: [],
+              isLocked: false,
+              insightReward: 50,
+              character: 'kapoor'
+            }],
+            startNodeId: 'emergency_node',
+            bossNodeId: 'emergency_node',
+            dimensions: { width: 100, height: 100 }
+          };
+          
+          set({ 
+            gameState: 'in_progress',
+            gamePhase: 'day',
+            map: fallbackMap,
+            currentNodeId: null,
+            _lastUpdated: new Date().toISOString()
+          });
+          
+          return;
+        }
+        
+        // Set the game state with the new map
         set({ 
           gameState: 'in_progress',
           gamePhase: 'day',

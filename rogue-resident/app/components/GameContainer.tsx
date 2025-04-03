@@ -30,6 +30,11 @@ export default function GameContainer() {
   const { currentChallenge, resetChallenge } = useChallengeStore();
   const { playSound } = useGameEffects();
   
+  // Increment render counter once on mount only for debugging
+  useEffect(() => {
+    setRenderCount(prev => prev + 1);
+  }, []);
+  
   // Stable logging helper that won't cause render loops
   const logGameState = () => {
     const state = {
@@ -52,7 +57,7 @@ export default function GameContainer() {
     return state;
   };
   
-  // Enhanced game initialization
+  // Enhanced game initialization - FIXED to avoid render loops
   useEffect(() => {
     let mounted = true;
     
@@ -81,32 +86,17 @@ export default function GameContainer() {
             console.log("✅ Initialization complete");
             setIsInitialized(true);
           }
-        }, 300); // Increased timeout for stability
+        }, 500); // Increased timeout for stability
       } else {
         console.log("🗺️ Map already exists, proceeding to initialization");
         setIsInitialized(true);
       }
     }
     
-    // Increment render counter for debugging
-    setRenderCount(prev => prev + 1);
-    
     // Force initialization after several renders if not already initialized
     if (renderCount > 3 && !isInitialized && map) {
       console.log("⚠️ Forcing initialization after multiple renders");
       setIsInitialized(true);
-    }
-    
-    // Force a rerender after 2 seconds if still not showing map
-    if (isInitialized && !currentNodeId && map && renderCount < 5) {
-      const forceTimer = setTimeout(() => {
-        if (mounted && !mapRef.current) {
-          console.log("🔄 Forcing rerender to help display map");
-          setForceRerender(prev => prev + 1);
-        }
-      }, 2000);
-      
-      return () => clearTimeout(forceTimer);
     }
     
     return () => {
@@ -115,7 +105,21 @@ export default function GameContainer() {
         clearTimeout(initTimeoutRef.current);
       }
     };
-  }, [map, startGame, isInitialized, renderCount, currentNodeId]);
+  }, [map, startGame, isInitialized, renderCount]); // Removed currentNodeId to avoid potential render loops
+  
+  // Separate effect for forcing rerender after delay
+  useEffect(() => {
+    if (isInitialized && !currentNodeId && map && renderCount < 5) {
+      const forceTimer = setTimeout(() => {
+        if (!mapRef.current || !mapRef.current.querySelector('.starfield-bg')) {
+          console.log("🔄 Forcing rerender to help display map");
+          setForceRerender(prev => prev + 1);
+        }
+      }, 2000);
+      
+      return () => clearTimeout(forceTimer);
+    }
+  }, [isInitialized, currentNodeId, map, renderCount]);
   
   // Handle phase transition sounds with error catching
   useEffect(() => {
@@ -139,9 +143,9 @@ export default function GameContainer() {
     }
   }, [currentNodeId, currentChallenge, resetChallenge]);
   
-  // Replace the problematic useEffect in GameContainer.tsx
+  // Safer diagnostic effect that won't cause render loops
   useEffect(() => {
-    // REMOVE any setState calls inside this effect
+    // Log render decision without state updates
     console.log(`🖥️ Render output decided: ${
       !isInitialized ? 'loading screen' :
       gamePhase === 'night' ? 'night scene' :
@@ -152,13 +156,13 @@ export default function GameContainer() {
     // Only run DOM checks once without setting state
     if (isInitialized && gamePhase === 'day' && (!currentNodeId || !map)) {
       const checkTimer = setTimeout(() => {
-        const mapElement = document.querySelector('[class*="SimplifiedMap"]');
+        const mapElement = document.querySelector('[class*="starfield-bg"]');
         console.log(`🔍 Map element check: ${mapElement ? 'Found in DOM' : 'Not found in DOM'}`);
-      }, 100);
+      }, 500);
       
       return () => clearTimeout(checkTimer);
     }
-  }, [isInitialized, gamePhase, currentNodeId, map]); // Keep dependencies but remove forceRerender
+  }, [isInitialized, gamePhase, currentNodeId, map]);
   
   // Content router with fallback states for stability
   const renderGameContent = () => {
@@ -190,7 +194,12 @@ export default function GameContainer() {
     // Map view (main navigation hub)
     if (!currentNodeId || !map) {
       return (
-        <div ref={mapRef} className="h-full w-full relative" data-rerender-key={forceRerender}>
+        <div 
+          ref={mapRef} 
+          className="h-full w-full relative" 
+          style={{ minHeight: '500px' }} // Force minimum height to ensure visibility
+          data-rerender-key={forceRerender}
+        >
           <SimplifiedMap key={`map-${gamePhase}-${forceRerender}`} />
           {process.env.NODE_ENV !== 'production' && (
             <div className="absolute top-2 right-2 bg-black/70 text-white text-xs p-1 z-50">
