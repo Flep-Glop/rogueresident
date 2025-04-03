@@ -30,6 +30,8 @@ type SoundEffect =
   | 'node-hover'      // Add this 
   | 'error'           // Add this
   | 'phase-transition'; // Add this
+  | 'day-start'    // Add this
+  | 'night-start'; // Add this
   
 
 // Context interface

@@ -21,7 +21,7 @@ export interface DialogueStage {
   text: string;
   contextNote?: string;
   equipment?: {
-    imageSrc: string;
+    itemId: string;    // Changed from imageSrc to itemId
     alt: string;
     description: string;
   };

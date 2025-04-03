@@ -1,4 +1,7 @@
 // app/utils/mapGenerator.ts - Streamlined version
+import { GameMap } from '../types/map';
+import { ChallengeNode } from '../types/challenge';
+
 export function generateMap(config = { mapType: 'tutorial' }): GameMap {
   // For now, just create our tutorial experience
   const tutorialNodes: ChallengeNode[] = [

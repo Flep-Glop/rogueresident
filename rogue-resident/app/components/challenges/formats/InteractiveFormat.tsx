@@ -2,7 +2,7 @@
 'use client';
 import { useState, useEffect, useRef } from 'react';
 import { useGameStore } from '../../../store/gameStore';
-import { useGameEffects } from '../../../GameEffects';
+import { useGameEffects } from '../../GameEffects';
 import { PixelButton, PixelText } from '../../../components/PixelThemeProvider';
 import Image from 'next/image';
 import { getSpriteData } from '../../../data/spriteMapping';
@@ -89,22 +89,24 @@ export default function InteractiveFormat({
   // Current step
   const currentStep = steps[currentStepIndex];
   
-  // Character data for appearance
-  const characterData: Record<string, {name: string, color: string, bgClass: string}> = {
+  const characterData: Record<string, {name: string, color: string, bgClass: string, textClass: string}> = {
     'kapoor': { 
       name: 'Dr. Kapoor', 
       color: 'var(--clinical-color)',
-      bgClass: 'bg-clinical'
+      bgClass: 'bg-clinical',
+      textClass: 'text-clinical-light'
     },
     'jesse': { 
       name: 'Technician Jesse', 
       color: 'var(--qa-color)',
-      bgClass: 'bg-qa'
+      bgClass: 'bg-qa',
+      textClass: 'text-qa-light'
     },
     'quinn': { 
-      name: 'Dr. Quinn', 
+      name: 'Dr. Zephyr Quinn', 
       color: 'var(--educational-color)',
-      bgClass: 'bg-educational'
+      bgClass: 'bg-educational',
+      textClass: 'text-educational-light'
     }
   };
   
