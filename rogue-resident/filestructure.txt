@@ -42,7 +42,13 @@
 │   │   └── knowledge
 │   │       ├── ConnectionSuggestions.tsx
 │   │       ├── ConstellationView.tsx
+│   │       ├── KnowledgeToast.tsx
 │   │       └── KnowledgeUpdate.tsx
+│   ├── core
+│   │   └── events
+│   │       ├── baseHandlers.ts
+│   │       ├── game-event-system.md
+│   │       └── uiHandlers.ts
 │   ├── data
 │   │   ├── clinicalChallenges.ts
 │   │   ├── items.ts
@@ -78,4 +84,4 @@
 ├── tailwind.config.js
 └── tsconfig.json
 
-13 directories, 65 files
+15 directories, 69 files
