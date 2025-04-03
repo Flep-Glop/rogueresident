@@ -18,7 +18,6 @@
 │   │   ├── PixelThemeProvider.tsx
 │   │   ├── PixelUIElements.tsx
 │   │   ├── PlayerStats.tsx
-│   │   ├── ScrollableMap.tsx
 │   │   ├── SimplifiedMap.tsx
 │   │   ├── SpriteFromSheet.tsx
 │   │   ├── StartScreen.tsx
@@ -29,11 +28,9 @@
 │   │   │   ├── BossNode.tsx
 │   │   │   ├── CalibrationChallenge.tsx
 │   │   │   ├── ChallengeRouter.tsx
-│   │   │   ├── CharacterInteractionNode.tsx
-│   │   │   ├── KapoorCalibration.tsx
 │   │   │   ├── StorageCloset.tsx
 │   │   │   └── formats
-│   │   │       └── ConversionFormat.tsx
+│   │   │       └── ConversationFormat.tsx
 │   │   ├── dialogue
 │   │   │   ├── DialogueSystem.tsx
 │   │   │   └── UnlockableDialogueOptions.tsx
@@ -92,4 +89,4 @@
 ├── tailwind.config.js
 └── tsconfig.json
 
-16 directories, 76 files
+16 directories, 73 files
