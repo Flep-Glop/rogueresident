@@ -1,8 +1,8 @@
 // app/store/gameStore.ts
 import { create } from 'zustand';
+import { persist, createJSONStorage } from 'zustand/middleware';
 import { Item } from '../data/items';
 import { Node, NodeState, GameMap, mapUtils } from '../types/map';
-// Import the enhanced generator function
 import { generateMap } from '../utils/mapGenerator';
 
 // Game phase types
@@ -46,6 +46,10 @@ type GameState = {
     educational: number;
   };
   
+  // Session metadata for persistence
+  _storeVersion: string;
+  _lastUpdated: string;
+  
   // Actions
   startGame: () => void;
   setCurrentNode: (nodeId: string) => void;
@@ -55,6 +59,7 @@ type GameState = {
   addToInventory: (item: Item) => void;
   removeFromInventory: (itemId: string) => void;
   resetGame: () => void;
+  resetCurrentRun: () => void;
   
   // Tutorial actions
   showTutorial: (step: TutorialStep) => void;
@@ -110,259 +115,521 @@ const initialState = {
     qa: 0,
     educational: 0,
   },
+  
+  // Store metadata
+  _storeVersion: '1.0.0',
+  _lastUpdated: new Date().toISOString(),
 };
 
-export const useGameStore = create<GameState>((set, get) => ({
-  ...initialState,
-  
-  startGame: () => {
-    // Generate a new map
-    const newMap = generateMap();
-    console.log("Generated new map for game start:", newMap);
-    
-    set({ 
-      gameState: 'in_progress',
-      gamePhase: 'day',
-      map: newMap,
-      // Always select start node in single-node testing mode
-      currentNodeId: null
-    });
-  },
-  
-  setCurrentNode: (nodeId) => {
-    console.log("Setting current node:", nodeId);
-    set({ currentNodeId: nodeId });
-  },
-  
-  completeNode: (nodeId) => {
-    console.log("Before completion, completedNodeIds:", get().completedNodeIds);
-    
-    // Ensure we don't add the same node twice
-    if (get().completedNodeIds.includes(nodeId)) {
-      console.log("Node already completed, skipping:", nodeId);
-      return;
-    }
-    
-    console.log("Completing node:", nodeId);
-    set((state) => {
-      const newCompletedNodeIds = [...state.completedNodeIds, nodeId];
-      console.log("New completedNodeIds:", newCompletedNodeIds);
-      return { completedNodeIds: newCompletedNodeIds };
-    });
-    
-    console.log("After set, completedNodeIds:", get().completedNodeIds);
-  },
-  
-  updateHealth: (amount) => set((state) => {
-    const newHealth = Math.min(state.player.maxHealth, Math.max(0, state.player.health + amount));
-    console.log(`Updating health by ${amount} to ${newHealth}`);
-    
-    // If health reaches 0, update gameState
-    if (newHealth <= 0) {
-      return {
-        player: {
-          ...state.player,
-          health: newHealth,
-        },
-        gameState: 'game_over',
-        gamePhase: 'game_over'
-      };
-    }
-    
-    return {
-      player: {
-        ...state.player,
-        health: newHealth,
-      }
-    };
-  }),
-  
-  updateInsight: (amount) => set((state) => {
-    const newInsight = Math.max(0, state.player.insight + amount);
-    console.log(`Updating insight by ${amount} to ${newInsight}`);
-    return {
-      player: {
-        ...state.player,
-        insight: newInsight,
-      }
-    };
-  }),
-  
-  addToInventory: (item) => {
-    console.log("Adding item to inventory:", item.name);
-    set((state) => ({
-      inventory: [...state.inventory, item]
-    }));
-  },
-  
-  removeFromInventory: (itemId) => {
-    console.log("Removing item from inventory:", itemId);
-    set((state) => ({
-      inventory: state.inventory.filter(item => item.id !== itemId)
-    }));
-  },
-  
-  resetGame: () => {
-    console.log("Resetting game to initial state");
-    set({ ...initialState });
-  },
-  
-  // Tutorial system
-  showTutorial: (step: TutorialStep) => {
-    console.log(`Showing tutorial step: ${step}`);
-    set({ tutorialStep: step });
-  },
-  
-  dismissTutorial: () => {
-    console.log("Dismissing tutorial");
-    set({ tutorialStep: -1 });
-  },
-  
-  markAsPlayed: () => {
-    console.log("Marking game as played before");
-    set({ hasPlayedBefore: true });
-  },
-  
-  toggleHints: (show?: boolean) => {
-    console.log(`Toggling hints: ${show !== undefined ? show : 'toggle'}`);
-    set((state) => ({ 
-      showHints: show !== undefined ? show : !state.showHints 
-    }));
-  },
-  
-  // Bonus management
-  updateBonus: (type, amount) => {
-    console.log(`Updating ${type} bonus by ${amount}`);
-    set((state) => ({
-      bonuses: {
-        ...state.bonuses,
-        [type]: state.bonuses[type] + amount
-      }
-    }));
-  },
-  
-  // Game phase management
-  setGamePhase: (phase: GamePhase) => {
-    console.log(`Setting game phase to: ${phase}`);
-    set({ gamePhase: phase });
-  },
-  
-  completeDay: () => {
-    const { map, completedNodeIds, player } = get();
-    
-    // Can't complete if no map
-    if (!map) {
-      console.error("Cannot complete day: No map available");
-      return;
-    }
-    
-    // Check if player has run out of health
-    if (player.health <= 0) {
-      console.log("Player has run out of health, transitioning to game over");
-      set({ 
-        gameState: 'game_over',
-        gamePhase: 'game_over'
-      });
-      return;
-    }
-    
-    // Check if boss is defeated
-    const isBossDefeated = completedNodeIds.includes(map.bossNodeId);
-    
-    // Check if all non-boss nodes are completed
-    const allNodesCompleted = map.nodes
-      .filter(node => node.type !== 'boss' && node.type !== 'boss-ionix')
-      .every(node => completedNodeIds.includes(node.id));
+// Helper to manage persistence in development
+const STORAGE_KEY = 'rogue-resident-game';
+
+// Create the store with persistence
+export const useGameStore = create<GameState>()(
+  persist(
+    (set, get) => ({
+      ...initialState,
       
-    // Check if player has enough completed nodes to progress
-    // (Allow progress even if not everything is complete)
-    const hasMinimumProgress = completedNodeIds.length >= 3;
-    
-    if (isBossDefeated) {
-      console.log("Boss defeated, transitioning to victory");
-      set({ 
-        gameState: 'victory',
-        gamePhase: 'victory'
-      });
-      return;
-    }
-    
-    // If we have enough progress, transition to night phase
-    if (allNodesCompleted || hasMinimumProgress || completedNodeIds.length > 0) {
-      console.log("Day complete, transitioning to night phase");
-      set({ gamePhase: 'night' });
-      return;
-    }
-    
-    console.log("Cannot complete day: Not enough progress");
-    // Maybe show a message to the player that they need to complete more nodes
-  },
-  
-  completeNight: () => {
-    console.log("Night phase complete, starting new day");
-    
-    // Increment day counter
-    set((state) => ({ 
-      currentDay: state.currentDay + 1,
-      gamePhase: 'day'
-    }));
-    
-    // Generate a new map with more nodes/complexity based on current day
-    const newMap = generateMap();
-    console.log("Generated new map for day", get().currentDay + 1);
-    
-    // In a full implementation, this would apply upgrades and 
-    // possibly restore some health
-    set({
-      map: newMap,
-      currentNodeId: null, // Don't auto-select anymore
-      // Reset completedNodeIds for the new day
-      completedNodeIds: [],
-      // In a real implementation, would apply more sophisticated health restoration
-      player: {
-        ...get().player,
-        health: Math.min(get().player.maxHealth, get().player.health + 1) // Restore 1 health
+      startGame: () => {
+        console.log("🎮 Starting new game");
+        
+        // Generate a new map
+        const newMap = generateMap();
+        console.log("🗺️ Generated new map for game start:", {
+          nodeCount: newMap.nodes.length, 
+          startNode: newMap.startNodeId
+        });
+        
+        set({ 
+          gameState: 'in_progress',
+          gamePhase: 'day',
+          map: newMap,
+          currentNodeId: null,
+          _lastUpdated: new Date().toISOString()
+        });
+      },
+      
+      setCurrentNode: (nodeId) => {
+        console.log("🎯 Setting current node:", nodeId);
+        set({ 
+          currentNodeId: nodeId,
+          _lastUpdated: new Date().toISOString() 
+        });
+      },
+      
+      completeNode: (nodeId) => {
+        const completedNodeIds = get().completedNodeIds;
+        console.log("🏆 Before completion, completedNodeIds:", completedNodeIds);
+        
+        // Ensure we don't add the same node twice
+        if (completedNodeIds.includes(nodeId)) {
+          console.log("⚠️ Node already completed, skipping:", nodeId);
+          return;
+        }
+        
+        console.log("✅ Completing node:", nodeId);
+        set((state) => {
+          const newCompletedNodeIds = [...state.completedNodeIds, nodeId];
+          console.log("🔄 New completedNodeIds:", newCompletedNodeIds);
+          return { 
+            completedNodeIds: newCompletedNodeIds,
+            _lastUpdated: new Date().toISOString()
+          };
+        });
+      },
+      
+      updateHealth: (amount) => set((state) => {
+        const newHealth = Math.min(state.player.maxHealth, Math.max(0, state.player.health + amount));
+        console.log(`🩹 Updating health by ${amount} to ${newHealth}`);
+        
+        // If health reaches 0, update gameState
+        if (newHealth <= 0) {
+          return {
+            player: {
+              ...state.player,
+              health: newHealth,
+            },
+            gameState: 'game_over',
+            gamePhase: 'game_over',
+            _lastUpdated: new Date().toISOString()
+          };
+        }
+        
+        return {
+          player: {
+            ...state.player,
+            health: newHealth,
+          },
+          _lastUpdated: new Date().toISOString()
+        };
+      }),
+      
+      updateInsight: (amount) => set((state) => {
+        const newInsight = Math.max(0, state.player.insight + amount);
+        console.log(`💡 Updating insight by ${amount} to ${newInsight}`);
+        return {
+          player: {
+            ...state.player,
+            insight: newInsight,
+          },
+          _lastUpdated: new Date().toISOString()
+        };
+      }),
+      
+      addToInventory: (item) => {
+        console.log("🎒 Adding item to inventory:", item.name);
+        set((state) => ({
+          inventory: [...state.inventory, item],
+          _lastUpdated: new Date().toISOString()
+        }));
+      },
+      
+      removeFromInventory: (itemId) => {
+        console.log("🗑️ Removing item from inventory:", itemId);
+        set((state) => ({
+          inventory: state.inventory.filter(item => item.id !== itemId),
+          _lastUpdated: new Date().toISOString()
+        }));
+      },
+      
+      resetGame: () => {
+        console.log("🔄 Resetting game to initial state");
+        
+        // Add this development guard to prevent accidental resets
+        if (process.env.NODE_ENV !== 'production') {
+          console.trace("🔍 Reset game called from:");
+        }
+        
+        // Only reset if not already in initial state to prevent loops
+        const currentState = get();
+        if (currentState.gameState !== 'not_started') {
+          set({ 
+            ...initialState,
+            _lastUpdated: new Date().toISOString() 
+          });
+        } else {
+          console.warn("⚠️ Prevented duplicate reset - game already in initial state");
+        }
+      },
+      
+      // Add a new action to reset current run but keep meta-progress
+      resetCurrentRun: () => {
+        console.log("🔄 Resetting current run while preserving meta-progress");
+        
+        const { hasPlayedBefore, bonuses } = get();
+        
+        set({
+          ...initialState,
+          hasPlayedBefore, // Preserve tutorial state
+          bonuses, // Preserve permanent upgrades
+          _lastUpdated: new Date().toISOString()
+        });
+        
+        // Start a new game immediately
+        setTimeout(() => get().startGame(), 10);
+      },
+      
+      // Tutorial system
+      showTutorial: (step: TutorialStep) => {
+        console.log(`📚 Showing tutorial step: ${step}`);
+        set({ 
+          tutorialStep: step,
+          _lastUpdated: new Date().toISOString() 
+        });
+      },
+      
+      dismissTutorial: () => {
+        console.log("❌ Dismissing tutorial");
+        set({ 
+          tutorialStep: -1,
+          _lastUpdated: new Date().toISOString() 
+        });
+      },
+      
+      markAsPlayed: () => {
+        console.log("👤 Marking game as played before");
+        set({ 
+          hasPlayedBefore: true,
+          _lastUpdated: new Date().toISOString() 
+        });
+      },
+      
+      toggleHints: (show?: boolean) => {
+        console.log(`💬 Toggling hints: ${show !== undefined ? show : 'toggle'}`);
+        set((state) => ({ 
+          showHints: show !== undefined ? show : !state.showHints,
+          _lastUpdated: new Date().toISOString() 
+        }));
+      },
+      
+      // Bonus management
+      updateBonus: (type, amount) => {
+        console.log(`🔼 Updating ${type} bonus by ${amount}`);
+        set((state) => ({
+          bonuses: {
+            ...state.bonuses,
+            [type]: state.bonuses[type] + amount
+          },
+          _lastUpdated: new Date().toISOString()
+        }));
+      },
+      
+      // Game phase management
+      setGamePhase: (phase: GamePhase) => {
+        console.log(`🔄 Setting game phase to: ${phase}`);
+        set({ 
+          gamePhase: phase,
+          _lastUpdated: new Date().toISOString() 
+        });
+      },
+      
+      completeDay: () => {
+        const { map, completedNodeIds, player } = get();
+        
+        // Can't complete if no map
+        if (!map) {
+          console.error("❌ Cannot complete day: No map available");
+          return;
+        }
+        
+        // Check if player has run out of health
+        if (player.health <= 0) {
+          console.log("💀 Player has run out of health, transitioning to game over");
+          set({ 
+            gameState: 'game_over',
+            gamePhase: 'game_over',
+            _lastUpdated: new Date().toISOString()
+          });
+          return;
+        }
+        
+        // Check if boss is defeated
+        const isBossDefeated = completedNodeIds.includes(map.bossNodeId);
+        
+        // Check if all non-boss nodes are completed
+        const allNodesCompleted = map.nodes
+          .filter(node => node.type !== 'boss' && node.type !== 'boss-ionix')
+          .every(node => completedNodeIds.includes(node.id));
+          
+        // Check if player has enough completed nodes to progress
+        // (Allow progress even if not everything is complete)
+        const hasMinimumProgress = completedNodeIds.length >= 3;
+        
+        if (isBossDefeated) {
+          console.log("🏆 Boss defeated, transitioning to victory");
+          set({ 
+            gameState: 'victory',
+            gamePhase: 'victory',
+            _lastUpdated: new Date().toISOString()
+          });
+          return;
+        }
+        
+        // If we have enough progress, transition to night phase
+        if (allNodesCompleted || hasMinimumProgress || completedNodeIds.length > 0) {
+          console.log("🌙 Day complete, transitioning to night phase");
+          set({ 
+            gamePhase: 'night',
+            _lastUpdated: new Date().toISOString() 
+          });
+          return;
+        }
+        
+        console.log("⚠️ Cannot complete day: Not enough progress");
+        // Maybe show a message to the player that they need to complete more nodes
+      },
+      
+      completeNight: () => {
+        console.log("☀️ Night phase complete, starting new day");
+        
+        // Increment day counter
+        set((state) => ({ 
+          currentDay: state.currentDay + 1,
+          gamePhase: 'day',
+          _lastUpdated: new Date().toISOString()
+        }));
+        
+        // Generate a new map with more nodes/complexity based on current day
+        const newMap = generateMap();
+        console.log("🗺️ Generated new map for day", get().currentDay + 1);
+        
+        // In a full implementation, this would apply upgrades and 
+        // possibly restore some health
+        set({
+          map: newMap,
+          currentNodeId: null, // Don't auto-select anymore
+          // Reset completedNodeIds for the new day
+          completedNodeIds: [],
+          // In a real implementation, would apply more sophisticated health restoration
+          player: {
+            ...get().player,
+            health: Math.min(get().player.maxHealth, get().player.health + 1) // Restore 1 health
+          },
+          _lastUpdated: new Date().toISOString()
+        });
+      },
+      
+      isNodeAccessible: (nodeId) => {
+        const { map, completedNodeIds } = get();
+        if (!map) return false;
+        
+        // Find the node
+        const node = map.nodes.find(n => n.id === nodeId);
+        
+        // Special cases that are always accessible
+        if (node?.type === 'entrance' || node?.type === 'kapoorCalibration') return true;
+        
+        // Normal connection logic
+        return map.nodes.some(n => 
+          n.connections.includes(nodeId) && completedNodeIds.includes(n.id)
+        );
+      },
+      
+      getNodeState: (nodeId) => {
+        const { currentNodeId, completedNodeIds, map } = get();
+        
+        if (!map) return 'locked'; 
+        
+        // Start node is always accessible
+        const node = map.nodes.find(n => n.id === nodeId);
+        
+        if (!node) return 'locked';
+        if (currentNodeId === nodeId) return 'active';
+        if (completedNodeIds.includes(nodeId)) return 'completed';
+        if (get().isNodeAccessible(nodeId)) return 'accessible';
+        
+        // Check if this node is connected to an accessible node
+        const isConnectedToAccessible = map.nodes.some(n => 
+          get().isNodeAccessible(n.id) && n.connections.includes(nodeId)
+        );
+        
+        return isConnectedToAccessible ? 'future' : 'locked';
       }
-    });
-  },
+    }),
+    {
+      name: STORAGE_KEY,
+      storage: createJSONStorage(() => localStorage),
+      partialize: (state) => ({
+        // Only persist these key parts of game state
+        gameState: state.gameState,
+        gamePhase: state.gamePhase,
+        player: state.player,
+        currentDay: state.currentDay,
+        hasPlayedBefore: state.hasPlayedBefore,
+        bonuses: state.bonuses,
+        inventory: state.inventory,
+        completedNodeIds: state.completedNodeIds,
+        _storeVersion: state._storeVersion,
+        _lastUpdated: new Date().toISOString(),
+        
+        // Explicitly exclude large objects from persistence
+        map: undefined,
+        currentNodeId: undefined,
+      }),
+      // Only merge whitelisted keys on hydration
+      merge: (persistedState, currentState) => {
+        console.log("🔄 Hydrating store from persisted state");
+        
+        // Check for version mismatch
+        if (persistedState._storeVersion !== currentState._storeVersion) {
+          console.warn(`⚠️ Store version mismatch: ${persistedState._storeVersion} vs ${currentState._storeVersion}`);
+          return {
+            ...currentState,
+            hasPlayedBefore: persistedState.hasPlayedBefore || false,
+          };
+        }
+        
+        return {
+          ...currentState,  // Start with current state
+          ...persistedState,  // Override with persisted values
+          
+          // Safety: Always regenerate map, never restore from persistence
+          map: currentState.map, 
+          
+          // Ensure meta properties are retained
+          _storeVersion: currentState._storeVersion,
+          _lastUpdated: new Date().toISOString(),
+        };
+      },
+    }
+  )
+);
+
+// Add development utilities for managing persistent state
+if (typeof window !== 'undefined' && process.env.NODE_ENV !== 'production') {
+  // @ts-ignore - Dev utility
+  window.rogueUtils = {
+    // Clear persisted state (keeps in-memory state)
+    clearStorage: () => {
+      console.log("🧹 Clearing persisted game state from localStorage");
+      localStorage.removeItem(STORAGE_KEY);
+      return "Storage cleared. Refresh the page to start fresh.";
+    },
+    
+    // Full reset (clears storage AND resets in-memory state)
+    hardReset: () => {
+      console.log("💥 Performing hard reset (storage + state)");
+      localStorage.removeItem(STORAGE_KEY);
+      useGameStore.getState().resetGame();
+      
+      setTimeout(() => {
+        console.log("⚡ Starting a fresh game");
+        useGameStore.getState().startGame();
+      }, 100);
+      
+      return "Hard reset complete. Game state is fresh.";
+    },
+    
+    // Get diagnostic info
+    debugState: () => {
+      const store = useGameStore.getState();
+      const persistedJson = localStorage.getItem(STORAGE_KEY);
+      const persistedState = persistedJson ? JSON.parse(persistedJson) : null;
+      
+      console.log("🔍 Current store state:", store);
+      console.log("💾 Persisted state:", persistedState);
+      
+      return {
+        inMemory: {
+          gameState: store.gameState,
+          gamePhase: store.gamePhase,
+          health: store.player.health,
+          insight: store.player.insight,
+          completedNodes: store.completedNodeIds.length,
+          hasMap: !!store.map,
+          nodeCount: store.map?.nodes.length || 0,
+          day: store.currentDay,
+        },
+        persisted: persistedState ? "Available" : "None",
+        persistedKeys: persistedState ? Object.keys(persistedState.state) : [],
+      };
+    },
+    
+    // Function to help with debugging persistence issues
+    checkPersistence: () => {
+      const hasPersistedState = !!localStorage.getItem(STORAGE_KEY);
+      console.log(`💾 Persistence check: ${hasPersistedState ? "State found in localStorage" : "No state in localStorage"}`);
+      return hasPersistedState ? "Persistence active" : "No persisted state";
+    },
+    
+    // Save current state as a loadable checkpoint
+    saveCheckpoint: (name = "quicksave") => {
+      const state = useGameStore.getState();
+      const saveData = {
+        player: state.player,
+        currentDay: state.currentDay,
+        inventory: state.inventory,
+        gameState: state.gameState,
+        gamePhase: state.gamePhase,
+        timestamp: new Date().toISOString(),
+      };
+      
+      localStorage.setItem(`rogue-resident-checkpoint-${name}`, JSON.stringify(saveData));
+      console.log(`💾 Checkpoint saved: ${name}`);
+      return `Checkpoint "${name}" saved`;
+    },
+    
+    // Load a previously saved checkpoint
+    loadCheckpoint: (name = "quicksave") => {
+      const savedData = localStorage.getItem(`rogue-resident-checkpoint-${name}`);
+      if (!savedData) {
+        console.error(`❌ No checkpoint found with name: ${name}`);
+        return `No checkpoint named "${name}" exists`;
+      }
+      
+      try {
+        const checkpoint = JSON.parse(savedData);
+        const store = useGameStore.getState();
+        
+        // Apply checkpoint data
+        store.resetGame();
+        setTimeout(() => {
+          store.startGame();
+          
+          // Apply saved state
+          useGameStore.setState({
+            player: checkpoint.player,
+            currentDay: checkpoint.currentDay,
+            inventory: checkpoint.inventory,
+            gameState: checkpoint.gameState,
+            gamePhase: checkpoint.gamePhase,
+          });
+          
+          console.log(`✅ Checkpoint loaded: ${name}`);
+        }, 100);
+        
+        return `Checkpoint "${name}" loaded`;
+      } catch (err) {
+        console.error("❌ Error loading checkpoint:", err);
+        return "Error loading checkpoint";
+      }
+    },
+    
+    // Get a list of all saved checkpoints
+    listCheckpoints: () => {
+      const checkpoints = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key?.startsWith('rogue-resident-checkpoint-')) {
+          const name = key.replace('rogue-resident-checkpoint-', '');
+          const data = JSON.parse(localStorage.getItem(key) || '{}');
+          checkpoints.push({
+            name,
+            saved: data.timestamp,
+            day: data.currentDay,
+            health: data.player?.health,
+            insight: data.player?.insight,
+          });
+        }
+      }
+      
+      console.table(checkpoints);
+      return checkpoints;
+    }
+  };
   
-  isNodeAccessible: (nodeId) => {
-    const { map, completedNodeIds } = get();
-    if (!map) return false;
-    
-    // Find the node
-    const node = map.nodes.find(n => n.id === nodeId);
-    
-    // Special cases that are always accessible
-    if (node?.type === 'entrance' || node?.type === 'kapoorCalibration') return true;
-    
-    // Normal connection logic
-    return map.nodes.some(n => 
-      n.connections.includes(nodeId) && completedNodeIds.includes(n.id)
-    );
-  },
-  
-  getNodeState: (nodeId) => {
-    const { currentNodeId, completedNodeIds, map } = get();
-    
-    if (!map) return 'locked'; 
-    
-    // Start node is always accessible
-    const node = map.nodes.find(n => n.id === nodeId);
-    
-    if (!node) return 'locked';
-    if (currentNodeId === nodeId) return 'active';
-    if (completedNodeIds.includes(nodeId)) return 'completed';
-    if (get().isNodeAccessible(nodeId)) return 'accessible';
-    
-    // Check if this node is connected to an accessible node
-    const isConnectedToAccessible = map.nodes.some(n => 
-      get().isNodeAccessible(n.id) && n.connections.includes(nodeId)
-    );
-    
-    return isConnectedToAccessible ? 'future' : 'locked';
-  }
-}));
+  console.log("🛠️ Development utilities available at window.rogueUtils");
+}
 
 // Helper function to calculate bonuses from inventory
 export const calculateItemBonuses = (inventory: Item[], challengeType: 'clinical' | 'qa' | 'educational' | 'general') => {

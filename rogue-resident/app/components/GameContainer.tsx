@@ -101,7 +101,7 @@ export default function GameContainer() {
     
     // Map view (main navigation hub)
     if (!currentNodeId || !map) {
-      return <SimplifiedMap />;
+      return <SimplifiedMap key={`map-${gamePhase}`} />;
     }
     
     // Challenge view
