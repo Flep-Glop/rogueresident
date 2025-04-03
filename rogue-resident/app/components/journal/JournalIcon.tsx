@@ -18,9 +18,11 @@ export default function JournalIcon() {
   const { gamePhase } = useGameStore();
   const { playSound } = useGameEffects();
   
-  // Animation states
+  // Enhanced animation states
   const [isNotifying, setIsNotifying] = useState(false);
   const [isPulsing, setIsPulsing] = useState(false);
+  const [showKnowledgeFlow, setShowKnowledgeFlow] = useState(false);
+  const [bounceAnimation, setBounceAnimation] = useState(false);
   
   // Set pulse animation based on game phase
   useEffect(() => {
@@ -31,7 +33,7 @@ export default function JournalIcon() {
     }
   }, [gamePhase, hasJournal]);
   
-  // When new knowledge is added, show notification
+  // When new knowledge is added, show enhanced notification
   useEffect(() => {
     // This would hook into knowledgeStore updates in a full implementation
     // For prototype, we'll just trigger it on journal open/close
@@ -39,7 +41,15 @@ export default function JournalIcon() {
     const handleKnowledgeChange = () => {
       if (hasJournal && !isOpen) {
         setIsNotifying(true);
-        setTimeout(() => setIsNotifying(false), 3000);
+        setBounceAnimation(true);
+        
+        // Show knowledge flow animation shortly after notification appears
+        setTimeout(() => setShowKnowledgeFlow(true), 300);
+        
+        // Clean up animations after delays
+        setTimeout(() => setBounceAnimation(false), 1000);
+        setTimeout(() => setShowKnowledgeFlow(false), 3000);
+        setTimeout(() => setIsNotifying(false), 5000);
       }
     };
     
@@ -90,28 +100,53 @@ export default function JournalIcon() {
   };
   
   return (
-    <div className="fixed bottom-4 left-4 z-40">
+    <div className="fixed bottom-4 right-4 z-40">
       <button
         className={`
           relative w-12 h-12 rounded-md shadow-lg
           flex items-center justify-center
-          hover:scale-110 transition-all duration-300
+          transition-all duration-300
           ${isPulsing ? 'animate-pulse' : ''}
+          ${isNotifying ? 'scale-110' : 'hover:scale-105'}
           ${gamePhase === 'night' ? 'shadow-educational/30' : ''}
         `}
-        style={getIconStyle()}
+        style={{
+          ...getIconStyle(),
+          transform: `translateY(${bounceAnimation ? '-4px' : '0px'})`,
+        }}
         onClick={() => {
           toggleJournal();
           if (playSound) playSound('ui-click');
         }}
         aria-label="Open Journal"
       >
-        {/* Book icon with letter J */}
-        <div className="text-white font-pixel text-xl">J</div>
+        {/* Journal progression visualization */}
+        <div className="relative w-full h-full flex items-center justify-center">
+          {/* Book icon with letter J - would be replaced with actual journal sprites */}
+          <div className="text-white font-pixel text-xl">J</div>
+        </div>
         
-        {/* Notification indicator */}
+        {/* Enhanced notification indicator */}
         {isNotifying && (
-          <div className="absolute -top-2 -right-2 w-4 h-4 bg-educational rounded-full animate-ping"></div>
+          <div className="absolute -top-2 -right-2 w-4 h-4 bg-educational rounded-full">
+            <div className="absolute inset-0 bg-educational rounded-full animate-ping"></div>
+          </div>
+        )}
+        
+        {/* Knowledge flow visualization */}
+        {showKnowledgeFlow && (
+          <div className="absolute inset-0 pointer-events-none overflow-hidden">
+            {/* Ambient glow */}
+            <div className="absolute inset-0 rounded-md bg-educational/20 animate-pulse"></div>
+            
+            {/* Constellation-themed particles */}
+            <div className="absolute top-0 left-1/2 w-1 h-1 bg-educational rounded-full"
+                 style={{ animation: 'float-particle 2s ease-in-out infinite' }}></div>
+            <div className="absolute top-1/3 right-0 w-2 h-2 bg-clinical rounded-full"
+                 style={{ animation: 'float-particle 1.8s ease-in-out infinite', animationDelay: '300ms' }}></div>
+            <div className="absolute bottom-0 left-1/4 w-1 h-1 bg-qa rounded-full"
+                 style={{ animation: 'float-particle 2.2s ease-in-out infinite', animationDelay: '600ms' }}></div>
+          </div>
         )}
         
         {/* Night phase special glow */}
@@ -120,11 +155,12 @@ export default function JournalIcon() {
         )}
       </button>
       
-      {/* Contextual label - only shown during specific moments */}
-      {(gamePhase === 'night' || isPulsing) && (
-        <div className="absolute -top-8 left-0 w-32 bg-surface px-2 py-1 text-center">
+      {/* Enhanced contextual label */}
+      {(isNotifying || gamePhase === 'night' || isPulsing) && (
+        <div className="absolute -top-10 right-0 w-32 bg-surface px-2 py-1 text-center pixel-borders-thin animate-fade-in">
           <PixelText className="text-xs">
-            {gamePhase === 'night' ? 'Record learnings' : 'Open Journal'}
+            {isNotifying ? 'New Knowledge!' : 
+             gamePhase === 'night' ? 'Record learnings' : 'Open Journal'}
           </PixelText>
         </div>
       )}

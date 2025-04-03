@@ -2,9 +2,11 @@
 ├── README.md
 ├── app
 │   ├── components
+│   │   ├── EquipmentDisplay.tsx
 │   │   ├── GameContainer.tsx
 │   │   ├── GameEffects.tsx
 │   │   ├── GameOver.tsx
+│   │   ├── GameSprite.tsx
 │   │   ├── HillHomeScene.tsx
 │   │   ├── Inventory.tsx
 │   │   ├── ItemSprite.tsx
@@ -76,4 +78,4 @@
 ├── tailwind.config.js
 └── tsconfig.json
 
-13 directories, 63 files
+13 directories, 65 files
