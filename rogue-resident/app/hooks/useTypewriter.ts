@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef } from 'react';
 
 interface TypewriterOptions {
   speed?: number;
@@ -7,11 +7,8 @@ interface TypewriterOptions {
 }
 
 /**
- * A hook that provides typewriter-style text animation
- * 
- * @param text The text to animate
- * @param options Configuration options for the typewriter effect
- * @returns Object containing the current display text, typing status, and control functions
+ * Production-quality typewriter effect that properly handles all character encoding,
+ * including special characters and apostrophes.
  */
 export function useTypewriter(text: string, options: TypewriterOptions = {}) {
   const { 
@@ -20,37 +17,69 @@ export function useTypewriter(text: string, options: TypewriterOptions = {}) {
     onComplete
   } = options;
   
-  // Initialize with first character already showing to avoid first-character flicker
-  const [displayText, setDisplayText] = useState(() => text.length > 0 ? text.charAt(0) : '');
-  const [isComplete, setIsComplete] = useState(false);
+  // Track current progress - crucial to use Array.from to handle multi-byte characters correctly
+  const [progress, setProgress] = useState(0);
   const [isTyping, setIsTyping] = useState(false);
+  const [isComplete, setIsComplete] = useState(false);
   const [showContinueIndicator, setShowContinueIndicator] = useState(false);
   
-  // Use refs to maintain persistence across renders
-  const indexRef = useRef(text.length > 0 ? 1 : 0); // Start from second character
-  const intervalRef = useRef<NodeJS.Timeout | null>(null);
-  const timeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const continueIndicatorTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const isFirstRender = useRef(true);
+  // Store the full text in a ref to avoid dependencies
+  const fullTextRef = useRef(text);
+  
+  // Store the text as an array of characters (including multi-byte) to handle properly
+  const charactersRef = useRef(Array.from(text || ''));
+  
+  // Refs for timers
+  const typingTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const continueIndicatorTimerRef = useRef<NodeJS.Timeout | null>(null);
+  
+  // Helper to clear all timers
+  const clearAllTimers = () => {
+    if (typingTimerRef.current) {
+      clearTimeout(typingTimerRef.current);
+      typingTimerRef.current = null;
+    }
+    
+    if (continueIndicatorTimerRef.current) {
+      clearTimeout(continueIndicatorTimerRef.current);
+      continueIndicatorTimerRef.current = null;
+    }
+  };
+  
+  // Function to advance the typing animation
+  const advanceTyping = () => {
+    setProgress(prev => {
+      const next = prev + 1;
+      
+      if (next >= charactersRef.current.length) {
+        // Complete the animation
+        setIsTyping(false);
+        setIsComplete(true);
+        
+        continueIndicatorTimerRef.current = setTimeout(() => {
+          setShowContinueIndicator(true);
+        }, 500);
+        
+        if (onComplete) {
+          onComplete();
+        }
+        
+        return next;
+      }
+      
+      // Schedule the next character
+      typingTimerRef.current = setTimeout(advanceTyping, speed);
+      return next;
+    });
+  };
+  
+  // Compute the display text based on current progress
+  const displayText = charactersRef.current.slice(0, progress + 1).join('');
   
   // Function to skip to the end
-  const complete = useCallback(() => {
-    if (intervalRef.current) {
-      clearInterval(intervalRef.current);
-      intervalRef.current = null;
-    }
-    
-    if (timeoutRef.current) {
-      clearTimeout(timeoutRef.current);
-      timeoutRef.current = null;
-    }
-    
-    if (continueIndicatorTimeoutRef.current) {
-      clearTimeout(continueIndicatorTimeoutRef.current);
-      continueIndicatorTimeoutRef.current = null;
-    }
-    
-    setDisplayText(text);
+  const complete = () => {
+    clearAllTimers();
+    setProgress(charactersRef.current.length - 1);
     setIsTyping(false);
     setIsComplete(true);
     setShowContinueIndicator(true);
@@ -58,106 +87,51 @@ export function useTypewriter(text: string, options: TypewriterOptions = {}) {
     if (onComplete) {
       onComplete();
     }
-  }, [text, onComplete]);
+  };
   
   // Restart typing from beginning
-  const restart = useCallback(() => {
-    indexRef.current = text.length > 0 ? 1 : 0; // Start from second character on restart
-    setDisplayText(text.length > 0 ? text.charAt(0) : ''); // Show first character immediately
-    setIsComplete(false);
-    setIsTyping(false);
-    setShowContinueIndicator(false);
-  }, [text]);
+  const restart = () => {
+    clearAllTimers();
+    setProgress(0);
+    setIsTyping(charactersRef.current.length > 1);
+    setIsComplete(charactersRef.current.length <= 1);
+    setShowContinueIndicator(charactersRef.current.length <= 1);
+    
+    if (charactersRef.current.length > 1) {
+      typingTimerRef.current = setTimeout(advanceTyping, startDelay);
+    }
+  };
   
-  // Reset effect when text changes
+  // Effect to handle text changes
   useEffect(() => {
-    // Clean up any existing intervals/timeouts
-    if (intervalRef.current) {
-      clearInterval(intervalRef.current);
-      intervalRef.current = null;
-    }
+    // Update our refs with the new text
+    fullTextRef.current = text;
+    charactersRef.current = Array.from(text || '');
     
-    if (timeoutRef.current) {
-      clearTimeout(timeoutRef.current);
-      timeoutRef.current = null;
-    }
+    // Clean up any existing timers
+    clearAllTimers();
     
-    if (continueIndicatorTimeoutRef.current) {
-      clearTimeout(continueIndicatorTimeoutRef.current);
-      continueIndicatorTimeoutRef.current = null;
-    }
-    
-    // Special handling for first render to prevent missing initial character
-    if (isFirstRender.current) {
-      isFirstRender.current = false;
-    }
-    
-    // Reset state - initialize with the first character already visible
-    indexRef.current = text.length > 0 ? 1 : 0; // Start from second character
-    setDisplayText(text.length > 0 ? text.charAt(0) : ''); // Show first character immediately
-    setIsComplete(false);
-    setShowContinueIndicator(false);
-    
-    // Don't start if text is empty
-    if (!text) {
-      setIsComplete(true);
-      return;
-    }
-    
-    // If there's only one character, complete immediately
-    if (text.length === 1) {
+    // Don't start if text is empty or only one character
+    if (!text || text.length <= 1) {
+      setProgress(text ? 0 : -1);
+      setIsTyping(false);
       setIsComplete(true);
       setShowContinueIndicator(true);
       if (onComplete) onComplete();
       return;
     }
     
-    // Start typing after delay
+    // Start at the first character
+    setProgress(0);
     setIsTyping(true);
+    setIsComplete(false);
+    setShowContinueIndicator(false);
     
-    const startTyping = () => {
-      intervalRef.current = setInterval(() => {
-        if (indexRef.current < text.length) {
-          setDisplayText(prev => prev + text.charAt(indexRef.current));
-          indexRef.current++;
-        } else {
-          if (intervalRef.current) {
-            clearInterval(intervalRef.current);
-            intervalRef.current = null;
-          }
-          setIsTyping(false);
-          setIsComplete(true);
-          
-          // Show continue indicator after typing is complete with a slight delay
-          continueIndicatorTimeoutRef.current = setTimeout(() => {
-            setShowContinueIndicator(true);
-          }, 500);
-          
-          if (onComplete) {
-            onComplete();
-          }
-        }
-      }, speed);
-    };
+    // Start the typing sequence after the delay
+    typingTimerRef.current = setTimeout(advanceTyping, startDelay);
     
-    if (startDelay > 0) {
-      timeoutRef.current = setTimeout(startTyping, startDelay);
-    } else {
-      startTyping();
-    }
-    
-    // Cleanup
-    return () => {
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-      }
-      if (timeoutRef.current) {
-        clearTimeout(timeoutRef.current);
-      }
-      if (continueIndicatorTimeoutRef.current) {
-        clearTimeout(continueIndicatorTimeoutRef.current);
-      }
-    };
+    // Cleanup function
+    return clearAllTimers;
   }, [text, speed, startDelay, onComplete]);
   
   return { 
