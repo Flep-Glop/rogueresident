@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import PixelThemeProvider from "./components/PixelThemeProvider";
 import { GameEffectsProvider } from "./components/GameEffects";
 import "./globals.css";
+import "./styles/map-visibility-fix.css"; // Add our visibility fixes
 import FontLoadingContainer from "./components/FontLoadingContainer";
 
 const geistSans = Geist({

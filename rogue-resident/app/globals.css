@@ -974,3 +974,19 @@ img.pixel-art,
 .animate-fade-in {
   animation: animate-fade-in 0.3s ease-in-out forwards;
 }
+
+.debug-box {
+  position: fixed;
+  bottom: 40px;
+  left: 10px;
+  background: rgba(0,0,0,0.8);
+  color: lime;
+  font-family: monospace;
+  padding: 10px;
+  border: 1px solid lime;
+  z-index: 9999;
+  max-width: 300px;
+  overflow: auto;
+  max-height: 150px;
+  font-size: 12px;
+}

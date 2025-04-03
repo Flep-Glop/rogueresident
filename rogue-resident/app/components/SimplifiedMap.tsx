@@ -27,6 +27,7 @@ export default function SimplifiedMap() {
   const [activeNode, setActiveNode] = useState<string | null>(null);
   const [hoveredNode, setHoveredNode] = useState<string | null>(null);
   const [isMapReady, setIsMapReady] = useState(false);
+  const [renderState, setRenderState] = useState<string>('initial');
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const nodeSelectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   
@@ -35,6 +36,9 @@ export default function SimplifiedMap() {
   
   // Map initialization and stability checks
   useEffect(() => {
+    // Set render state for debugging
+    setRenderState('map-initializing');
+    
     // Initialize mapNodes from actual game map
     if (map && map.nodes) {
       const nodesMap: Record<string, Node> = {};
@@ -48,7 +52,10 @@ export default function SimplifiedMap() {
       // Add a short delay to ensure map is ready for rendering
       setTimeout(() => {
         setIsMapReady(true);
+        setRenderState('map-ready');
       }, 100);
+    } else {
+      setRenderState('no-map-data');
     }
     
     return () => {
@@ -70,6 +77,8 @@ export default function SimplifiedMap() {
     
     // Only attempt node selection when map is ready
     if (isMapReady && !currentNodeId && !activeNode && map) {
+      setRenderState('selecting-initial-node');
+      
       // Auto-select the kapoorCalibrationNode if available, otherwise use map's startNodeId
       const calibrationNode = map.nodes.find(node => node.type === 'kapoorCalibration');
       const nodeToSelect = calibrationNode?.id || map.startNodeId;
@@ -175,54 +184,6 @@ export default function SimplifiedMap() {
     }
   };
   
-  // Get connection visual style with enhanced animation
-  const getConnectionStyle = (sourceId: string, targetId: string) => {
-    const sourceCompleted = isNodeCompleted(sourceId);
-    const targetAccessible = isNodeAccessible(targetId);
-    const sourceState = getNodeState(sourceId);
-    const targetState = getNodeState(targetId);
-    
-    let pathColor = 'rgba(75, 85, 99, 0.3)'; // Dimmer default 
-    let pathWidth = 2;
-    let pathOpacity = 0.3;
-    let pathClass = '';
-    let glowEffect = '';
-    
-    if (sourceCompleted && targetAccessible) {
-      // Highlight available path with pulsing glow
-      pathColor = 'rgba(52, 211, 153, 0.9)';
-      pathWidth = 3;
-      pathOpacity = 0.9;
-      pathClass = 'animate-pulse-path';
-      glowEffect = 'filter: drop-shadow(0 0 3px rgba(52, 211, 153, 0.5));';
-    } else if (sourceCompleted) {
-      // Completed but next node isn't accessible yet
-      pathColor = 'rgba(52, 211, 153, 0.6)';
-      pathWidth = 2;
-      pathOpacity = 0.7;
-    } else if (sourceState === 'active' && targetState === 'accessible') {
-      // Current possible route
-      pathColor = 'rgba(79, 107, 187, 0.8)';
-      pathWidth = 2.5;
-      pathOpacity = 0.8;
-      pathClass = 'animate-pulse-path-subtle';
-    } else if (sourceState === 'future' || targetState === 'future') {
-      // Future connections are very dim
-      pathOpacity = 0.2;
-    } else if (sourceState === 'locked' || targetState === 'locked') {
-      // Almost invisible
-      pathOpacity = 0.05;
-    }
-    
-    return {
-      color: pathColor,
-      width: pathWidth,
-      opacity: pathOpacity,
-      className: pathClass,
-      glowEffect
-    };
-  };
-  
   // Enhanced node class generator
   const getNodeClasses = (nodeId: string, node: Node): string => {
     const state = getNodeState(nodeId);
@@ -232,7 +193,7 @@ export default function SimplifiedMap() {
     // Base classes with transition
     let classes = 'transition-all duration-300 relative';
     
-    // Visual variations by state - enhanced
+    // Visual variations by state - more direct visibility
     switch (state) {
       case 'active':
         classes += ' transform scale-110 z-30 shadow-pixel-lg brightness-110';
@@ -241,17 +202,16 @@ export default function SimplifiedMap() {
         classes += ' z-20 shadow-pixel opacity-90';
         break;
       case 'accessible':
-        // Add pulsing glow for accessible nodes
-        classes += ' hover:scale-105 z-10 shadow-pixel cursor-pointer node-accessible';
+        classes += ' hover:scale-105 z-10 shadow-pixel cursor-pointer';
         if (isHovered) classes += ' brightness-110';
         break;
       case 'future':
-        // Future nodes are significantly muted but still visible
-        classes += ' opacity-40 grayscale z-0 blur-[1px]';
+        // Much higher visibility for future nodes
+        classes += ' opacity-70 z-10';
         break;
       case 'locked':
-        // Locked nodes barely visible, creating progressive revealing effect
-        classes += ' opacity-15 grayscale z-0 blur-[2px]';
+        // Higher visibility for locked nodes
+        classes += ' opacity-60 z-5';
         break;
     }
     
@@ -299,11 +259,18 @@ export default function SimplifiedMap() {
     const nodeWidth = isCalibrationNode ? 'w-64' : 'w-56';
     const nodeHeight = isCalibrationNode ? 'h-28' : 'h-20';
     
+    // CRITICAL FIX: Force visibility of nodes and their content
     return (
         <div 
           id={uniqueNodeId}
           key={nodeId}
           className={`${nodeWidth} ${nodeHeight} relative ${getNodeClasses(nodeId, node)}`}
+          style={{
+            // Force visibility, higher z-index, and proper opacity
+            opacity: isNodeLocked ? 0.7 : 0.9,
+            zIndex: 50,
+            filter: 'none'
+          }}
           onClick={() => isInteractive && handleNodeSelect(nodeId)}
           onMouseEnter={() => {
             setHoveredNode(nodeId);
@@ -329,7 +296,7 @@ export default function SimplifiedMap() {
             ></div>
           </div>
       
-          {/* Character positioned at bottom-left breaking out of node */}
+          {/* Character positioned at bottom-left breaking out of node - CRITICAL FIX */}
           <div 
             className="absolute left-0 bottom-0 transform -translate-x-1/3 translate-y-1/4 z-40"
             style={{ 
@@ -342,17 +309,17 @@ export default function SimplifiedMap() {
               style={{ 
                 borderColor: getNodeColor(node),
                 boxShadow: isActive || isHovered ? `0 0 10px ${getNodeColor(node)}80` : 'none',
+                opacity: 1, // Force full opacity
+                visibility: 'visible' // Force visibility
               }}
             >
-              {!isNodeLocked && (
-                <Image
-                  src={getCharacterImage(node.character)}
-                  alt={node.character || 'Character'}
-                  width={80}
-                  height={80}
-                  className="object-cover scale-110"
-                />
-              )}
+              {/* LOCAL TESTING FALLBACK */}
+              <div
+                className="w-full h-full flex items-center justify-center bg-gray-800 text-white"
+                style={{color: getNodeColor(node)}}
+              >
+                {node.character ? node.character.charAt(0).toUpperCase() : 'K'}
+              </div>
             </div>
             
             {/* Character "ground shadow" for visual anchoring */}
@@ -365,7 +332,7 @@ export default function SimplifiedMap() {
             ></div>
           </div>
           
-          {/* Content - just title and minimal info */}
+          {/* Content - just title and minimal info - CRITICAL FIX */}
           <div className="absolute inset-0 flex flex-col justify-center pl-16 pr-3">
             <PixelText 
               className={`
@@ -373,12 +340,13 @@ export default function SimplifiedMap() {
                 ${isActive || isHovered ? 'text-white' : 'text-gray-300'}
                 transition-colors duration-300
               `}
+              style={{opacity: 1, visibility: 'visible'}} // Force visibility
             >
-              {showContent ? node.title : '???'}
+              {showContent ? (node.title || 'Node') : '???'}
             </PixelText>
             
             {/* Just the minimal type indicator - no badge */}
-            <div className="flex items-center mt-1">
+            <div className="flex items-center mt-1" style={{opacity: 1, visibility: 'visible'}}> {/* Force visibility */}
               <div 
                 className="w-2 h-2 rounded-full mr-2" 
                 style={{ backgroundColor: getNodeColor(node) }}
@@ -399,7 +367,7 @@ export default function SimplifiedMap() {
               {showFullContent && (
                 <div className="ml-auto mr-1">
                   <span className="text-xs" style={{ color: getNodeColor(node) }}>
-                    +{node.insightReward}
+                    +{node.insightReward || 10}
                   </span>
                 </div>
               )}
@@ -445,32 +413,28 @@ export default function SimplifiedMap() {
         const angle = Math.atan2(targetY - sourceY, targetX - sourceX) * 180 / Math.PI;
         const length = Math.sqrt(Math.pow(targetX - sourceX, 2) + Math.pow(targetY - sourceY, 2));
         
-        // Connection styling with enhanced visual effects
-        const style = getConnectionStyle(node.id, targetId);
-        
+        // Connection styling - CRITICAL FIX: Higher opacity and z-index
         return (
           <div 
             key={`connection-${node.id}-${targetId}-${index}`}
-            className={`absolute transition-opacity duration-500 ${style.className}`}
+            className="absolute transition-opacity duration-500"
             style={{
               left: `${sourceX}%`,
               top: `${sourceY}%`,
               width: '1px', // Will be scaled
               height: `${length}%`,
-              backgroundColor: style.color,
-              opacity: style.opacity,
+              backgroundColor: 'rgba(255, 255, 255, 0.4)', // Higher contrast
+              opacity: 0.7, // Higher baseline opacity for all connections
               transform: `rotate(${angle}deg)`,
               transformOrigin: 'top left',
-              scale: `${style.width} 1`,
-              zIndex: 5,
-              filter: node.id === activeNode || targetId === activeNode ? 
-                'drop-shadow(0 0 5px rgba(255,255,255,0.3))' : 'none'
+              scale: `3 1`, // Thicker lines
+              zIndex: 40, // Higher z-index
             }}
           />
         );
       })
     ).filter(Boolean); // Filter out null connections
-  }, [map, activeNode, getConnectionStyle]);
+  }, [map, activeNode]);
   
   // Handle end day click with enhanced feedback
   const handleEndDay = useCallback(() => {
@@ -514,6 +478,32 @@ export default function SimplifiedMap() {
     }
   }, [playSound, flashScreen, completedNodeIds, completeDay]);
   
+  // Emergency visibility function
+  const forceNodeVisibility = () => {
+    // Force all nodes to maximum visibility
+    document.querySelectorAll('[id^="node-"]').forEach(node => {
+      const element = node as HTMLElement;
+      element.style.opacity = '1';
+      element.style.zIndex = '1000';
+      element.style.filter = 'none';
+      
+      // Force child elements to be visible
+      Array.from(element.querySelectorAll('*')).forEach(child => {
+        (child as HTMLElement).style.opacity = '1';
+        (child as HTMLElement).style.visibility = 'visible';
+      });
+    });
+    
+    // Make connections visible too
+    document.querySelectorAll('div[style*="rotate"]').forEach(conn => {
+      const element = conn as HTMLElement;
+      element.style.opacity = '1';
+      element.style.zIndex = '999';
+    });
+    
+    console.log("Emergency visibility activated on all nodes");
+  };
+  
   // Check if we're showing the single node calibration experience
   const isSingleNodeMode = map?.nodes.length === 1 && map.nodes[0].type === 'kapoorCalibration';
   
@@ -535,109 +525,122 @@ export default function SimplifiedMap() {
           <div className="w-16 h-2 bg-surface mx-auto">
             <div className="w-1/2 h-full bg-clinical animate-pulse"></div>
           </div>
+          <p className="mt-2 text-xs text-gray-400">
+            Render state: {renderState} | Init: {isMapReady ? 'ready' : 'loading'}
+          </p>
         </div>
       </div>
     );
   }
   
   return (
-    <div 
-      ref={mapContainerRef}
-      className="h-full w-full p-8 flex flex-col items-center justify-center bg-background starfield-bg"
-      style={{ minHeight: '500px' }} // Ensure we have enough height to render
-    >
-      <div className="text-center mb-8 relative">
-        <PixelText className="text-4xl text-white font-pixel-heading mb-2 glow-text">
-          {titleText}
-        </PixelText>
-        <PixelText className="text-lg text-blue-300">
-          {subtitleText}
-        </PixelText>
-      </div>
-      
-      {/* Node map - show either single node or full map */}
-      {isSingleNodeMode ? (
-        // Single calibration node centered
-        <div className="relative w-full h-64 max-w-xl mx-auto">
-          {/* Position node at center */}
-          <div
-            className="absolute transform -translate-x-1/2 -translate-y-1/2"
-            style={{
-              left: '50%',
-              top: '50%',
-            }}
+    <>
+      {/* Debug controls */}
+      {process.env.NODE_ENV !== 'production' && (
+        <div className="fixed bottom-4 left-2 z-[1000]">
+          <button 
+            onClick={forceNodeVisibility}
+            className="bg-red-500 hover:bg-red-600 text-white text-xs px-2 py-1 rounded"
           >
-            {map.nodes[0] && renderNode(map.nodes[0].id, map.nodes[0])}
-          </div>
+            Emergency Visibility
+          </button>
         </div>
-      ) : (
-        // Full node map with branching paths
-        <div className="relative w-full h-[600px] max-w-5xl mx-auto">
-          {/* Connection paths first (so they're behind nodes) */}
-          {renderConnections()}
-          
-          {/* Position nodes by percentage coordinates */}
-          {map.nodes.map(node => (
+      )}
+      
+      <div 
+        ref={mapContainerRef}
+        className="h-full w-full p-8 flex flex-col items-center justify-center bg-background starfield-bg"
+        style={{ 
+          minHeight: '100vh',
+          position: 'relative',
+          zIndex: 5,
+        }}
+        data-renderstate={renderState}
+      >
+        <div className="text-center mb-8 relative">
+          <PixelText className="text-4xl text-white font-pixel-heading mb-2 glow-text">
+            {titleText}
+          </PixelText>
+          <PixelText className="text-lg text-blue-300">
+            {subtitleText}
+          </PixelText>
+        </div>
+        
+        {/* Node map - show either single node or full map */}
+        {isSingleNodeMode ? (
+          // Single calibration node centered
+          <div className="relative w-full h-64 max-w-xl mx-auto">
+            {/* Position node at center */}
             <div
-              key={node.id}
-              className="absolute transform -translate-x-1/2 -translate-y-1/2 transition-all duration-300"
+              className="absolute transform -translate-x-1/2 -translate-y-1/2"
               style={{
-                left: `${node.position.x}%`,
-                top: `${node.position.y}%`,
+                left: '50%',
+                top: '50%',
               }}
             >
-              {renderNode(node.id, node)}
-            </div>
-          ))}
-        </div>
-      )}
-      
-      {/* Return to Hill Home button */}
-      <div className="fixed bottom-6 left-1/2 transform -translate-x-1/2 bg-surface/90 backdrop-blur-sm pixel-borders-thin px-4 py-2 flex items-center space-x-4 z-30">
-        <PixelButton
-          className={`end-day-button bg-surface hover:bg-clinical text-text-primary px-4 py-2 relative overflow-hidden group ${completedNodeIds.length === 0 ? 'opacity-80' : ''}`}
-          onClick={handleEndDay}
-        >
-          <span className="relative z-10">Return to Hill Home</span>
-          <span className="absolute inset-0 bg-clinical opacity-0 group-hover:opacity-100 transition-opacity duration-300"></span>
-          {completedNodeIds.length === 0 && (
-            <span className="absolute -top-6 left-1/2 transform -translate-x-1/2 text-xs text-warning-light whitespace-nowrap">
-              Complete at least one node first
-            </span>
-          )}
-        </PixelButton>
-      </div>
-      
-      {/* Map legend with better visual hierarchy - only show for multi-node maps */}
-      {!isSingleNodeMode && (
-        <div className="absolute bottom-20 right-4 bg-surface/80 backdrop-blur-sm p-3 text-xs pixel-borders-thin z-40">
-          <PixelText className="font-semibold mb-2">Map Progress</PixelText>
-          <div className="space-y-2">
-            <div className="flex items-center space-x-2">
-              <div className="w-3 h-3 bg-success rounded-sm"></div>
-              <PixelText className="text-text-secondary">Completed</PixelText>
-            </div>
-            <div className="flex items-center space-x-2">
-              <div className="w-3 h-3 bg-clinical rounded-sm animate-pulse-slow"></div>
-              <PixelText className="text-text-secondary">Available</PixelText>
-            </div>
-            <div className="flex items-center space-x-2">
-              <div className="w-3 h-3 bg-gray-700 rounded-sm"></div>
-              <PixelText className="text-text-secondary">Future</PixelText>
+              {map.nodes[0] && renderNode(map.nodes[0].id, map.nodes[0])}
             </div>
           </div>
+        ) : (
+          // Full node map with branching paths
+          <div className="relative w-full h-[600px] max-w-5xl mx-auto">
+            {/* Connection paths first (so they're behind nodes) */}
+            {renderConnections()}
+            
+            {/* Position nodes by percentage coordinates */}
+            {map.nodes.map(node => (
+              <div
+                key={node.id}
+                className="absolute transform -translate-x-1/2 -translate-y-1/2 transition-all duration-300"
+                style={{
+                  left: `${node.position.x}%`,
+                  top: `${node.position.y}%`,
+                  zIndex: 45,
+                }}
+              >
+                {renderNode(node.id, node)}
+              </div>
+            ))}
+          </div>
+        )}
+        
+        {/* Return to Hill Home button */}
+        <div className="fixed bottom-6 left-1/2 transform -translate-x-1/2 bg-surface/90 backdrop-blur-sm pixel-borders-thin px-4 py-2 flex items-center space-x-4 z-30">
+          <PixelButton
+            className={`end-day-button bg-surface hover:bg-clinical text-text-primary px-4 py-2 relative overflow-hidden group ${completedNodeIds.length === 0 ? 'opacity-80' : ''}`}
+            onClick={handleEndDay}
+          >
+            <span className="relative z-10">Return to Hill Home</span>
+            <span className="absolute inset-0 bg-clinical opacity-0 group-hover:opacity-100 transition-opacity duration-300"></span>
+            {completedNodeIds.length === 0 && (
+              <span className="absolute -top-6 left-1/2 transform -translate-x-1/2 text-xs text-warning-light whitespace-nowrap">
+                Complete at least one node first
+              </span>
+            )}
+          </PixelButton>
         </div>
-      )}
-      
-      {/* Debug mode indicator in development */}
-      {process.env.NODE_ENV !== 'production' && (
-        <div className="fixed top-20 left-2 bg-black/70 text-white text-xs px-2 py-1 z-50">
-          Mode: {isSingleNodeMode ? 'Single Calibration Node' : 'Full Map'} | 
-          Nodes: {map.nodes.length} | 
-          Current: {currentNodeId || 'none'} | 
-          Active: {activeNode || 'none'}
-        </div>
-      )}
-    </div>
+        
+        {/* Map legend with better visual hierarchy - only show for multi-node maps */}
+        {!isSingleNodeMode && (
+          <div className="absolute bottom-20 right-4 bg-surface/80 backdrop-blur-sm p-3 text-xs pixel-borders-thin z-40">
+            <PixelText className="font-semibold mb-2">Map Progress</PixelText>
+            <div className="space-y-2">
+              <div className="flex items-center space-x-2">
+                <div className="w-3 h-3 bg-success rounded-sm"></div>
+                <PixelText className="text-text-secondary">Completed</PixelText>
+              </div>
+              <div className="flex items-center space-x-2">
+                <div className="w-3 h-3 bg-clinical rounded-sm animate-pulse-slow"></div>
+                <PixelText className="text-text-secondary">Available</PixelText>
+              </div>
+              <div className="flex items-center space-x-2">
+                <div className="w-3 h-3 bg-gray-700 rounded-sm"></div>
+                <PixelText className="text-text-secondary">Future</PixelText>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    </>
   );
 }

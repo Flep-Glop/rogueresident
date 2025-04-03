@@ -1,7 +1,7 @@
 // app/page.tsx
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useGameStore } from './store/gameStore';
 import GameContainer from './components/GameContainer';
 import StartScreen from './components/StartScreen';
@@ -14,9 +14,38 @@ export default function Home() {
   const [showTransition, setShowTransition] = useState(false);
   const [transitionFrom, setTransitionFrom] = useState<'day' | 'night'>('day');
   const [transitionTo, setTransitionTo] = useState<'day' | 'night'>('night');
+  const mountCountRef = useRef<number>(0);
+  const cleanupRef = useRef<boolean>(false);
+  
+  // Anti-duplication mount tracking
+  useEffect(() => {
+    mountCountRef.current += 1;
+    console.log(`Home component mounted (count: ${mountCountRef.current})`);
+    
+    // Detect and clean up duplicate mounts after a short delay
+    setTimeout(() => {
+      const gameContainers = document.querySelectorAll('[data-game-container]');
+      if (gameContainers.length > 1) {
+        console.warn(`Found ${gameContainers.length} game containers, cleaning extras`);
+        
+        // Remove all but the first container
+        for (let i = 1; i < gameContainers.length; i++) {
+          gameContainers[i].remove();
+        }
+      }
+    }, 100);
+    
+    return () => {
+      cleanupRef.current = true;
+      console.log("Home component unmounting");
+    };
+  }, []);
   
   // Store initialization protection
   useEffect(() => {
+    // Skip if we're already cleaning up
+    if (cleanupRef.current) return;
+    
     const store = useGameStore.getState();
     console.log("🎮 Store state in page.tsx:", store);
     

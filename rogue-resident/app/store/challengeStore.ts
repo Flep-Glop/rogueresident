@@ -110,12 +110,28 @@ export const useChallengeStore = create<ChallengeState>((set, get) => ({
     }
     
     // Always move to outcome stage, regardless of completion success
-    // This ensures the game flow continues even if there's an issue
     set((state) => ({
       currentChallenge: state.currentChallenge
         ? { ...state.currentChallenge, stage: 'outcome', grade }
         : null
     }));
+    
+    // CRITICAL FIX: Properly sequence the transition back to map
+    // We need to wait a moment for state to settle before clearing node selection
+    setTimeout(() => {
+      console.log("🔄 Challenge complete, scheduling transition to map");
+      
+      // First reset challenge (this one's immediate)
+      set({ currentChallenge: null });
+      
+      // Then clear the node selection with a small additional delay
+      // This creates a clean sequence of state updates
+      setTimeout(() => {
+        console.log("🗺️ Clearing node selection to show map");
+        const gameStore = useGameStore.getState();
+        gameStore.setCurrentNode("");
+      }, 50);
+    }, 1000); // Allow time for outcome animations/screens
   },
   
   resetChallenge: () => {

@@ -1,0 +1,101 @@
+/* Emergency visibility fixes for map rendering */
+
+/* Enhanced starfield background to ensure visibility */
+.starfield-bg {
+    background-color: #0f111a;
+    background-image: 
+      radial-gradient(circle, rgba(255, 255, 255, 0.2) 1px, transparent 1px),
+      radial-gradient(circle, rgba(255, 255, 255, 0.15) 1px, transparent 1px),
+      radial-gradient(circle, rgba(255, 255, 255, 0.1) 1px, transparent 1px);
+    background-size: 30px 30px, 80px 80px, 150px 150px;
+    background-position: 0 0, 25px 25px, 50px 50px;
+    min-height: 100vh; /* Force minimum height */
+    position: relative; /* Ensure proper stacking */
+    z-index: 1; /* Establish stacking context */
+  }
+  
+  /* Visibility debugging helper */
+  .debug-visible {
+    position: absolute !important;
+    top: 0 !important;
+    left: 0 !important;
+    width: 100vw !important;
+    height: 100vh !important;
+    background-color: rgba(255, 0, 255, 0.2) !important;
+    z-index: 9999 !important;
+    pointer-events: none !important;
+  }
+  
+  /* Fixed map container */
+  .map-container-fixed {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    overflow: hidden;
+    min-height: 100vh;
+    background-color: #0f1117;
+    z-index: 5;
+  }
+  
+  /* Enforce proper dimensions for nodes */
+  .node-container-fixed {
+    width: auto !important;
+    height: auto !important;
+    min-width: 100px;
+    min-height: 50px;
+    position: relative;
+    z-index: 10;
+  }
+  
+  /* Emergency resets for edge cases */
+  .force-visible {
+    visibility: visible !important;
+    opacity: 1 !important;
+    display: block !important;
+  }
+  
+  /* Fix for potential z-index stacking issues */
+  .reset-stacking-context {
+    isolation: isolate;
+  }
+  
+  /* Fix for high-contrast nodes to ensure they're always visible */
+  .node-always-visible {
+    background-color: rgba(79, 107, 187, 0.8);
+    box-shadow: 0 0 10px rgba(79, 107, 187, 0.5);
+    border: 1px solid white;
+  }
+  
+  /* Emergancy animation to help spot elements */
+  @keyframes emergency-pulse {
+    0%, 100% { outline: 2px solid rgba(255, 0, 0, 0.5); }
+    50% { outline: 2px solid rgba(255, 255, 0, 0.5); }
+  }
+  
+  .emergency-highlight {
+    animation: emergency-pulse 2s infinite;
+  }
+  
+  /* State debugging outlines */
+  [data-renderstate="map-ready"] {
+    outline: 1px solid rgba(0, 255, 0, 0.2);
+  }
+  
+  [data-renderstate="map-initializing"] {
+    outline: 1px solid rgba(255, 255, 0, 0.2);
+  }
+  
+  [data-renderstate="no-map-data"],
+  [data-renderstate="force-update"] {
+    outline: 1px solid rgba(255, 0, 0, 0.2);
+  }
+  
+  /* These rules force the map to be visible, no matter what */
+  body [class*="map-container"],
+  body [class*="starfield"] {
+    display: block !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+  }

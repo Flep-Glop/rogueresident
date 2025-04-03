@@ -16,6 +16,8 @@ export default function GameContainer() {
   const [renderCount, setRenderCount] = useState(0);
   const [forceRerender, setForceRerender] = useState(0);
   const [debugInfo, setDebugInfo] = useState<any>({});
+  // New state to track rendering errors
+  const [mapRenderError, setMapRenderError] = useState<string | null>(null);
   const mapRef = useRef<HTMLDivElement>(null);
   const initTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   
@@ -24,11 +26,31 @@ export default function GameContainer() {
     currentNodeId, 
     map,
     completeNight,
-    startGame
+    startGame,
+    setCurrentNode
   } = useGameStore();
   
   const { currentChallenge, resetChallenge } = useChallengeStore();
   const { playSound } = useGameEffects();
+  
+  // Anti-duplication check - FIX FOR DUPLICATE RENDERING
+  useEffect(() => {
+    // Clean up duplicates if they exist
+    const containers = document.querySelectorAll('[data-game-container]');
+    if (containers.length > 1) {
+      console.warn(`Found ${containers.length} duplicate game containers, cleaning up extras`);
+      for (let i = 1; i < containers.length; i++) {
+        containers[i].remove();
+      }
+    }
+    
+    return () => {
+      // Cleanup any artifacts on unmount
+      if (initTimeoutRef.current) {
+        clearTimeout(initTimeoutRef.current);
+      }
+    };
+  }, []);
   
   // Increment render counter once on mount only for debugging
   useEffect(() => {
@@ -107,20 +129,6 @@ export default function GameContainer() {
     };
   }, [map, startGame, isInitialized, renderCount]); // Removed currentNodeId to avoid potential render loops
   
-  // Separate effect for forcing rerender after delay
-  useEffect(() => {
-    if (isInitialized && !currentNodeId && map && renderCount < 5) {
-      const forceTimer = setTimeout(() => {
-        if (!mapRef.current || !mapRef.current.querySelector('.starfield-bg')) {
-          console.log("🔄 Forcing rerender to help display map");
-          setForceRerender(prev => prev + 1);
-        }
-      }, 2000);
-      
-      return () => clearTimeout(forceTimer);
-    }
-  }, [isInitialized, currentNodeId, map, renderCount]);
-  
   // Handle phase transition sounds with error catching
   useEffect(() => {
     if (playSound && isInitialized) {
@@ -143,26 +151,20 @@ export default function GameContainer() {
     }
   }, [currentNodeId, currentChallenge, resetChallenge]);
   
-  // Safer diagnostic effect that won't cause render loops
-  useEffect(() => {
-    // Log render decision without state updates
-    console.log(`🖥️ Render output decided: ${
-      !isInitialized ? 'loading screen' :
-      gamePhase === 'night' ? 'night scene' :
-      !currentNodeId || !map ? 'map view' :
-      'challenge view'
-    }`);
+  // FIX: Force transition to map helper function
+  const forceTransitionToMap = () => {
+    console.log("🔄 Forcing transition to map");
     
-    // Only run DOM checks once without setting state
-    if (isInitialized && gamePhase === 'day' && (!currentNodeId || !map)) {
-      const checkTimer = setTimeout(() => {
-        const mapElement = document.querySelector('[class*="starfield-bg"]');
-        console.log(`🔍 Map element check: ${mapElement ? 'Found in DOM' : 'Not found in DOM'}`);
-      }, 500);
-      
-      return () => clearTimeout(checkTimer);
-    }
-  }, [isInitialized, gamePhase, currentNodeId, map]);
+    // Step 1: Reset challenge state
+    resetChallenge();
+    
+    // Step 2: Clear node selection with small delay
+    setTimeout(() => {
+      setCurrentNode("");
+      // Step 3: Force rerender
+      setForceRerender(prev => prev + 1);
+    }, 50);
+  };
   
   // Content router with fallback states for stability
   const renderGameContent = () => {
@@ -191,19 +193,35 @@ export default function GameContainer() {
       return <HillHomeScene onComplete={completeNight} />;
     }
     
-    // Map view (main navigation hub)
+    // MAJOR ENHANCEMENT: More robust map view rendering
     if (!currentNodeId || !map) {
       return (
         <div 
           ref={mapRef} 
-          className="h-full w-full relative" 
-          style={{ minHeight: '500px' }} // Force minimum height to ensure visibility
+          className="h-full w-full relative overflow-hidden bg-black" 
+          style={{ 
+            minHeight: '100vh', // Ensure full height
+            zIndex: 5,
+          }}
           data-rerender-key={forceRerender}
         >
-          <SimplifiedMap key={`map-${gamePhase}-${forceRerender}`} />
+          {/* Map wrapper with explicit dimensions - CRITICAL FOR VISIBILITY */}
+          <div className="absolute inset-0 starfield-bg" 
+               style={{ 
+                 minHeight: '100vh', 
+                 zIndex: 5,
+                 /* Force visibility */
+                 opacity: 1,
+                 visibility: 'visible' 
+               }}>
+            {/* Render the map with a key to force fresh render */}
+            <SimplifiedMap key={`map-${gamePhase}-${forceRerender}`} />
+          </div>
+          
           {process.env.NODE_ENV !== 'production' && (
             <div className="absolute top-2 right-2 bg-black/70 text-white text-xs p-1 z-50">
-              Map render key: {`${gamePhase}-${forceRerender}`}
+              Map render key: {`${gamePhase}-${forceRerender}`} | 
+              NodeId: {currentNodeId || 'none'}
             </div>
           )}
         </div>
@@ -219,6 +237,12 @@ export default function GameContainer() {
     if (process.env.NODE_ENV !== 'production') {
       return (
         <div className="fixed top-20 right-2 z-50 flex flex-col gap-1">
+          <button 
+            className="bg-green-600 text-white text-xs px-2 py-1 rounded opacity-70 hover:opacity-100"
+            onClick={forceTransitionToMap}
+          >
+            Show Map
+          </button>
           <button 
             className="bg-red-600 text-white text-xs px-2 py-1 rounded opacity-70 hover:opacity-100"
             onClick={() => setForceRerender(prev => prev + 1)}
@@ -241,17 +265,20 @@ export default function GameContainer() {
   };
   
   return (
-    <div className="relative h-screen w-full overflow-hidden bg-background">
-      {/* Player HUD - only show when initialized */}
-      <div className="relative h-full w-full pt-16 pb-0">
+    <div 
+      className="relative h-screen w-full overflow-hidden bg-background" 
+      data-game-container="true" // For anti-duplication
+    >
+      {/* Player HUD - only show when initialized - RESTRICT HEIGHT AND LAYER */}
+      <div className="relative h-full w-full">
         {isInitialized && (
-          <div className="absolute top-0 left-0 right-0 z-40">
+          <div className="absolute top-0 left-0 right-0" style={{ zIndex: 20, height: '16rem' }}>
             <PlayerStats />
           </div>
         )}
         
-        {/* Main gameplay area */}
-        <div className="h-full w-full">
+        {/* Main gameplay area - EXPLICIT ZINDEX FOR LAYERING */}
+        <div className="h-full w-full" style={{ zIndex: 25, position: 'relative' }}>
           {renderGameContent()}
         </div>
       </div>
