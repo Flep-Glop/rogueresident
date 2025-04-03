@@ -79,6 +79,7 @@
 │   ├── styles
 │   │   └── pixel-assets.css
 │   ├── types
+│   │   ├── audio.ts
 │   │   ├── challenge.ts
 │   │   ├── encounterTypes.ts
 │   │   └── map.ts
@@ -96,4 +97,4 @@
 ├── tailwind.config.js
 └── tsconfig.json
 
-16 directories, 80 files
+16 directories, 81 files
