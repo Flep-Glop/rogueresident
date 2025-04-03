@@ -15,7 +15,8 @@ interface PhaseTransitionProps {
  * Phase transition component that creates a meaningful pause between day and night cycles
  * 
  * The transition emphasizes the conceptual and physical journey between the hospital and 
- * hillside home, reinforcing the core game rhythm without being visually intrusive.
+ * hillside home, reinforcing the core game rhythm while ensuring content isn't visible
+ * during transitions.
  */
 export default function PhaseTransition({ fromPhase, toPhase, onComplete }: PhaseTransitionProps) {
   const [opacity, setOpacity] = useState(0);
@@ -30,6 +31,9 @@ export default function PhaseTransition({ fromPhase, toPhase, onComplete }: Phas
   
   // Create background gradients based on time of day
   useEffect(() => {
+    // Immediately set high opacity to prevent flickering of underlying content
+    setOpacity(1);
+    
     if (fromPhase === 'day' && toPhase === 'night') {
       // Day to night: sunset gradient
       setBackgroundImage('linear-gradient(to bottom, #0B1026 0%, #2F2032 50%, #764C29 100%)');
@@ -47,20 +51,16 @@ export default function PhaseTransition({ fromPhase, toPhase, onComplete }: Phas
     if (playSound) {
       // Use sound effects that are compatible with the SoundEffect type
       playSound(fromPhase === 'day' && toPhase === 'night' ? 'success' : 'click');
-      
-      // TODO: Add actual evening/morning sounds to SoundEffect type when audio is implemented
-      // For now, use compatible sound effects as placeholders
     }
     
-    // Stage 0: Initial fade in
-    setOpacity(0);
+    // Ensure we start fully opaque to hide content underneath
+    setOpacity(1);
     setTransitionStage(0);
     
     const timers = [
-      // Stage 1: Fade in (300ms)
+      // Stage 1: Show text after a brief delay (300ms)
       setTimeout(() => {
         if (!isMounted.current) return;
-        setOpacity(1);
         setShowText(true);
         setTransitionStage(1);
       }, 300),
@@ -71,15 +71,14 @@ export default function PhaseTransition({ fromPhase, toPhase, onComplete }: Phas
         setTransitionStage(2);
       }, 2300),
       
-      // Stage 3: Fade out (500ms)
+      // Stage 3: Begin fade out (3500ms)
       setTimeout(() => {
         if (!isMounted.current) return;
-        setOpacity(0);
         setShowText(false);
         setTransitionStage(3);
       }, 3500),
       
-      // Stage 4: Complete
+      // Stage 4: Complete transition after fade out (4000ms)
       setTimeout(() => {
         if (!isMounted.current) return;
         onComplete();
@@ -117,8 +116,7 @@ export default function PhaseTransition({ fromPhase, toPhase, onComplete }: Phas
       className="fixed inset-0 z-50 flex items-center justify-center"
       style={{ 
         background: backgroundImage,
-        transition: 'opacity 0.5s ease-in-out',
-        opacity: opacity
+        opacity: 1, // Always maintain full opacity to ensure no content bleeds through
       }}
     >
       {showText && (

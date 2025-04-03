@@ -16,20 +16,22 @@ interface TypewriterOptions {
 export function useTypewriter(text: string, options: TypewriterOptions = {}) {
   const { 
     speed = 25, 
-    startDelay = 150, // Added default delay to prevent first letter cutoff
+    startDelay = 150,
     onComplete
   } = options;
   
-  const [displayText, setDisplayText] = useState('');
+  // Initialize with first character already showing to avoid first-character flicker
+  const [displayText, setDisplayText] = useState(() => text.length > 0 ? text.charAt(0) : '');
   const [isComplete, setIsComplete] = useState(false);
   const [isTyping, setIsTyping] = useState(false);
   const [showContinueIndicator, setShowContinueIndicator] = useState(false);
   
   // Use refs to maintain persistence across renders
-  const indexRef = useRef(0);
+  const indexRef = useRef(text.length > 0 ? 1 : 0); // Start from second character
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
   const continueIndicatorTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const isFirstRender = useRef(true);
   
   // Function to skip to the end
   const complete = useCallback(() => {
@@ -60,14 +62,12 @@ export function useTypewriter(text: string, options: TypewriterOptions = {}) {
   
   // Restart typing from beginning
   const restart = useCallback(() => {
-    indexRef.current = 0;
-    setDisplayText('');
+    indexRef.current = text.length > 0 ? 1 : 0; // Start from second character on restart
+    setDisplayText(text.length > 0 ? text.charAt(0) : ''); // Show first character immediately
     setIsComplete(false);
     setIsTyping(false);
     setShowContinueIndicator(false);
-    
-    // This will trigger the effect to start typing again
-  }, []);
+  }, [text]);
   
   // Reset effect when text changes
   useEffect(() => {
@@ -87,15 +87,28 @@ export function useTypewriter(text: string, options: TypewriterOptions = {}) {
       continueIndicatorTimeoutRef.current = null;
     }
     
-    // Reset state
-    indexRef.current = 0;
-    setDisplayText('');
+    // Special handling for first render to prevent missing initial character
+    if (isFirstRender.current) {
+      isFirstRender.current = false;
+    }
+    
+    // Reset state - initialize with the first character already visible
+    indexRef.current = text.length > 0 ? 1 : 0; // Start from second character
+    setDisplayText(text.length > 0 ? text.charAt(0) : ''); // Show first character immediately
     setIsComplete(false);
     setShowContinueIndicator(false);
     
     // Don't start if text is empty
     if (!text) {
       setIsComplete(true);
+      return;
+    }
+    
+    // If there's only one character, complete immediately
+    if (text.length === 1) {
+      setIsComplete(true);
+      setShowContinueIndicator(true);
+      if (onComplete) onComplete();
       return;
     }
     

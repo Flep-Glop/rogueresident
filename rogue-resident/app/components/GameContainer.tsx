@@ -1,12 +1,9 @@
-
 // app/components/GameContainer.tsx
 'use client';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useGameStore } from '../store/gameStore';
 import { useChallengeStore } from '../store/challengeStore';
-import { useJournalStore } from '../store/journalStore';
-import { clinicalChallenges } from '../data/clinicalChallenges';
-import SimplifiedMap from './SimplifiedMap'; // Import the enhanced simplified map
+import SimplifiedMap from './SimplifiedMap';
 import PlayerStats from './PlayerStats';
 import Inventory from './Inventory';
 import StorageCloset from './challenges/StorageCloset';
@@ -19,23 +16,24 @@ import { useGameEffects } from './GameEffects';
 import CharacterInteractionNode from './challenges/CharacterInteractionNode';
 import Journal from './journal/Journal';
 import JournalIcon from './journal/JournalIcon';
+
 interface GameContainerProps {
-  useSimplifiedMap?: boolean; // Flag to use the simplified map
+  useSimplifiedMap?: boolean;
 }
 
 /**
  * GameContainer - Main game interface container with enhanced phase transitions
- * 
- * Features:
- * - Rhythmic day/night transitions with thematic context
- * - Adaptive sidebar with collapsible behavior
- * - Contextual content rendering based on node types
- * - Preservation of progression state across phases
+ * and added loading state management to prevent display flicker
  */
 export default function GameContainer({ useSimplifiedMap = true }: GameContainerProps) {
   const { currentNodeId, completedNodeIds, map, gamePhase, player, completeDay, currentDay } = useGameStore();
   const { currentChallenge, startChallenge } = useChallengeStore();
   const { playSound } = useGameEffects();
+  
+  // Loading state management
+  const [assetsReady, setAssetsReady] = useState(false);
+  const [gameInitialized, setGameInitialized] = useState(false);
+  const initialLoadComplete = useRef(false);
   
   // Phase transition states
   const [showTransition, setShowTransition] = useState(false);
@@ -44,6 +42,41 @@ export default function GameContainer({ useSimplifiedMap = true }: GameContainer
   
   // UI states
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  
+  // Initial game loading and asset preparation
+  useEffect(() => {
+    const prepareGame = async () => {
+      // Don't run initialization multiple times
+      if (initialLoadComplete.current) return;
+      
+      try {
+        // Simulate asset loading (replace with actual asset loading logic)
+        await new Promise(resolve => setTimeout(resolve, 200));
+        
+        // Mark assets as ready
+        setAssetsReady(true);
+        
+        // For new game, we want to show the day transition first
+        if (currentDay === 1 && gamePhase === 'day' && !initialLoadComplete.current) {
+          setTransitionFrom('night');
+          setTransitionTo('day');
+          setShowTransition(true);
+        } else {
+          // For saved games or continuing, just mark as initialized
+          setGameInitialized(true);
+        }
+        
+        initialLoadComplete.current = true;
+      } catch (error) {
+        console.error('Failed to load game assets:', error);
+        // Still mark as initialized to avoid blocking the UI completely
+        setAssetsReady(true);
+        setGameInitialized(true);
+      }
+    };
+    
+    prepareGame();
+  }, [currentDay, gamePhase]);
   
   // In the getCurrentNodeType function - add explicit support for kapoorCalibration type
   const getCurrentNodeType = () => {
@@ -142,13 +175,13 @@ export default function GameContainer({ useSimplifiedMap = true }: GameContainer
       useGameStore.getState().completeNight();
     }
     
-    // Hide the transition component
+    // Hide the transition component and mark game as initialized
     setShowTransition(false);
+    setGameInitialized(true);
   };
   
   // Enhanced renderMainContent with dual-approach node resolution 
   // Uses both explicit ID routing and type-based adaptive routing
-
   const renderMainContent = () => {
     // First check if we're in night phase - preserve the rhythm of the day/night cycle
     if (gamePhase === 'night') {
@@ -227,7 +260,7 @@ export default function GameContainer({ useSimplifiedMap = true }: GameContainer
                 </PixelText>
                 <PixelButton
                   className="bg-clinical text-white"
-                  onClick={() => setCurrentNode(null)} // Return to map view
+                  onClick={() => useGameStore.getState().setCurrentNode(null)} // Return to map view
                 >
                   Return to Map
                 </PixelButton>
@@ -243,11 +276,11 @@ export default function GameContainer({ useSimplifiedMap = true }: GameContainer
   };
 
   // Add a debug overlay to help during development
-  {process.env.NODE_ENV !== 'production' && (
+  const debugOverlay = process.env.NODE_ENV !== 'production' && (
     <div className="fixed bottom-0 left-0 bg-black/70 text-white p-2 font-mono text-xs z-50">
       Current Node: {currentNodeId || 'none'} | Type: {getCurrentNodeType() || 'none'}
     </div>
-  )}
+  );
 
   // Toggle sidebar with animation
   const toggleSidebar = () => {
@@ -256,6 +289,19 @@ export default function GameContainer({ useSimplifiedMap = true }: GameContainer
     // Play UI feedback sound
     if (playSound) playSound('click');
   };
+
+  // Show loading state if assets aren't ready or game isn't initialized
+  if (!assetsReady) {
+    return (
+      <div className="flex flex-col h-screen bg-background items-center justify-center">
+        <div className="pixel-borders bg-surface-dark p-6 max-w-md text-center">
+          <div className="w-12 h-12 border-4 border-clinical border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <PixelText className="text-2xl text-text-primary">Loading Rogue Resident</PixelText>
+          <PixelText className="text-sm text-text-secondary mt-2">Preparing hospital systems...</PixelText>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col h-screen bg-background">
@@ -268,77 +314,85 @@ export default function GameContainer({ useSimplifiedMap = true }: GameContainer
         />
       )}
     
-      <header className="p-4 bg-dark-gray/90 backdrop-blur-sm border-b border-border sticky top-0 z-40">
-        <div className="flex justify-between items-center">
-          <PixelText className="text-2xl text-text-primary font-pixel-heading glow-text">
-            Rogue Resident
-          </PixelText>
-          
-          <div className="flex items-center space-x-4">
-            {/* Game phase indicator with enhanced styling */}
-            <div className="px-3 py-1 rounded-full bg-surface-dark flex items-center space-x-2">
-              <div className={`w-2 h-2 rounded-full ${gamePhase === 'day' ? 'bg-yellow-300' : 'bg-blue-400'} animate-pulse-slow`}></div>
-              <PixelText className="text-sm">
-                {gamePhase === 'day' ? `Day ${currentDay} - Hospital` : gamePhase === 'night' ? 'Night - Hill Home' : ''}
+      {/* Only show game content when initialized and not in transition */}
+      {gameInitialized && !showTransition && (
+        <>
+          <header className="p-4 bg-dark-gray/90 backdrop-blur-sm border-b border-border sticky top-0 z-40">
+            <div className="flex justify-between items-center">
+              <PixelText className="text-2xl text-text-primary font-pixel-heading glow-text">
+                Rogue Resident
               </PixelText>
+              
+              <div className="flex items-center space-x-4">
+                {/* Game phase indicator with enhanced styling */}
+                <div className="px-3 py-1 rounded-full bg-surface-dark flex items-center space-x-2">
+                  <div className={`w-2 h-2 rounded-full ${gamePhase === 'day' ? 'bg-yellow-300' : 'bg-blue-400'} animate-pulse-slow`}></div>
+                  <PixelText className="text-sm">
+                    {gamePhase === 'day' ? `Day ${currentDay} - Hospital` : gamePhase === 'night' ? 'Night - Hill Home' : ''}
+                  </PixelText>
+                </div>
+                
+                {/* Sidebar toggle button with enhanced feedback */}
+                <button 
+                  className="p-2 bg-surface hover:bg-clinical transition-colors enhanced-button"
+                  onClick={toggleSidebar}
+                  aria-label={sidebarCollapsed ? 'Show sidebar' : 'Hide sidebar'}
+                >
+                  {sidebarCollapsed ? '◀' : '▶'}
+                </button>
+              </div>
             </div>
+          </header>
+          
+          <main className="flex flex-1 relative overflow-hidden">
+            {/* Main content area with smooth width transition */}
+            <section className={`
+              transition-all duration-300 ease-in-out ${sidebarCollapsed ? 'w-full' : 'w-[calc(100%-320px)]'} relative
+            `}>
+              {renderMainContent()}
+            </section>
             
-            {/* Sidebar toggle button with enhanced feedback */}
-            <button 
-              className="p-2 bg-surface hover:bg-clinical transition-colors enhanced-button"
-              onClick={toggleSidebar}
-              aria-label={sidebarCollapsed ? 'Show sidebar' : 'Hide sidebar'}
+            {/* Sidebar with smooth width transition */}
+            <aside 
+              className={`
+                transition-all duration-300 ease-in-out
+                ${sidebarCollapsed ? 'w-0 opacity-0 pointer-events-none' : 'w-[320px] opacity-100'}
+                overflow-hidden border-l border-border
+              `}
             >
-              {sidebarCollapsed ? '◀' : '▶'}
-            </button>
-          </div>
-        </div>
-      </header>
+              <PlayerStats />
+              <Inventory />
+            </aside>
+            
+            {/* Collapsed sidebar indicator - small floating player stats */}
+            {sidebarCollapsed && (
+              <div className="absolute top-4 right-4 bg-surface/90 backdrop-blur-sm pixel-borders-thin p-2 z-40">
+                <div className="flex items-center space-x-2 mb-2">
+                  <span className="w-2 h-2 bg-danger rounded-full"></span>
+                  <PixelText className="text-sm">Health: {player.health}/{player.maxHealth}</PixelText>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <span className="w-2 h-2 bg-clinical rounded-full"></span>
+                  <PixelText className="text-sm">Insight: {player.insight}</PixelText>
+                </div>
+              </div>
+            )}
+            
+            {/* Journal Icon and Component */}
+            <JournalIcon />
+            <Journal />
+          </main>
+          
+          {/* Add scanlines effect over the entire interface */}
+          <div className="pointer-events-none fixed inset-0 scanlines opacity-10 z-50"></div>
+          
+          {/* Add pixel noise overlay for retro effect */}
+          <div className="pointer-events-none fixed inset-0 pixel-noise z-40"></div>
+        </>
+      )}
       
-      <main className="flex flex-1 relative overflow-hidden">
-        {/* Main content area with smooth width transition */}
-        <section className={`
-          transition-all duration-300 ease-in-out ${sidebarCollapsed ? 'w-full' : 'w-[calc(100%-320px)]'} relative
-        `}>
-          {renderMainContent()}
-        </section>
-        
-        {/* Sidebar with smooth width transition */}
-        <aside 
-          className={`
-            transition-all duration-300 ease-in-out
-            ${sidebarCollapsed ? 'w-0 opacity-0 pointer-events-none' : 'w-[320px] opacity-100'}
-            overflow-hidden border-l border-border
-          `}
-        >
-          <PlayerStats />
-          <Inventory />
-        </aside>
-        
-        {/* Collapsed sidebar indicator - small floating player stats */}
-        {sidebarCollapsed && (
-          <div className="absolute top-4 right-4 bg-surface/90 backdrop-blur-sm pixel-borders-thin p-2 z-40">
-            <div className="flex items-center space-x-2 mb-2">
-              <span className="w-2 h-2 bg-danger rounded-full"></span>
-              <PixelText className="text-sm">Health: {player.health}/{player.maxHealth}</PixelText>
-            </div>
-            <div className="flex items-center space-x-2">
-              <span className="w-2 h-2 bg-clinical rounded-full"></span>
-              <PixelText className="text-sm">Insight: {player.insight}</PixelText>
-            </div>
-          </div>
-        )}
-        
-        {/* Journal Icon and Component */}
-        <JournalIcon />
-        <Journal />
-      </main>
-      
-      {/* Add scanlines effect over the entire interface */}
-      <div className="pointer-events-none fixed inset-0 scanlines opacity-10 z-50"></div>
-      
-      {/* Add pixel noise overlay for retro effect */}
-      <div className="pointer-events-none fixed inset-0 pixel-noise z-40"></div>
+      {/* Always show debug overlay regardless of initialization state */}
+      {debugOverlay}
     </div>
   );
 }
