@@ -1,11 +1,13 @@
 // app/components/challenges/CalibrationChallenge.tsx
 'use client';
+import { useEffect } from 'react';
 import { useGameStore } from '../../store/gameStore';
 import { useChallengeStore } from '../../store/challengeStore';
 import { useJournalStore } from '../../store/journalStore';
 import ConversationFormat, { InteractionResults } from './formats/ConversationFormat';
 import { DialogueStage } from '../../hooks/useDialogueFlow';
 import { CharacterId } from '../../types/challenge';
+import { gameEvents, GameEventType, useEventBus, GameEventPayloads } from '../../core/events/GameEvents';
 
 interface CalibrationChallengeProps {
   character: CharacterId;
@@ -22,6 +24,51 @@ export default function CalibrationChallenge({ character }: CalibrationChallenge
     hasJournal 
   } = useJournalStore();
   
+  // Subscribe to journal acquisition events
+  useEffect(() => {
+    // Set up listener for journal acquisition events
+    const unsubscribe = useEventBus.getState().subscribe<GameEventType.JOURNAL_ACQUIRED>(
+      GameEventType.JOURNAL_ACQUIRED,
+      (event) => {
+        const { tier, character: sourceCharacter } = event.payload;
+        
+        console.log(`[JOURNAL] Acquisition event received: ${tier} from ${sourceCharacter}`);
+        
+        // Only process if this is the journal-giving character (Kapoor) and we don't have a journal yet
+        if (sourceCharacter === 'kapoor' && !hasJournal) {
+          // Initialize journal with the appropriate tier
+          initializeJournal(tier);
+          
+          // Add special items based on journal tier
+          if (tier === 'technical' || tier === 'annotated') {
+            addKapoorReferenceSheets();
+          }
+          
+          if (tier === 'annotated') {
+            addKapoorAnnotatedNotes();
+          }
+          
+          // Add first journal entry
+          addEntry({
+            id: 'kapoor-calibration',
+            title: 'LINAC Calibration with Dr. Kapoor',
+            date: new Date().toISOString(),
+            content: `My first calibration session with Dr. Kapoor focused on output measurement. Key learnings include understanding electronic equilibrium principles, the importance of PTP correction, and maintaining proper tolerance during calibration.`,
+            tags: ['kapoor', 'calibration', 'linac', 'qa']
+          });
+          
+          console.log(`[JOURNAL] Journal initialized with tier: ${tier}`);
+        }
+      }
+    );
+    
+    // Cleanup subscription
+    return () => unsubscribe();
+  }, [
+    initializeJournal, addKapoorReferenceSheets, 
+    addKapoorAnnotatedNotes, addEntry, hasJournal
+  ]);
+  
   // Handle completion of the challenge
   const handleCompletion = (results: InteractionResults) => {
     // Determine challenge grade based on results
@@ -29,36 +76,46 @@ export default function CalibrationChallenge({ character }: CalibrationChallenge
                   results.relationshipChange >= 1 ? 'A' : 
                   results.relationshipChange >= 0 ? 'B' : 'C';
                   
-    // For the Kapoor challenge specifically, initialize journal
-    if (character === 'kapoor' && !hasJournal) {
-      // Initialize journal with the appropriate tier
-      initializeJournal(results.journalTier);
+    // For the Kapoor challenge specifically, trigger journal acquisition event
+    if (character === 'kapoor') {
+      gameEvents.dispatch<GameEventType.JOURNAL_ACQUIRED>(
+        GameEventType.JOURNAL_ACQUIRED, 
+        {
+          tier: results.journalTier || 'base',
+          character,
+          source: 'challenge_completion'
+        }
+      );
       
-      // Add special items based on journal tier
-      if (results.journalTier === 'technical' || results.journalTier === 'annotated') {
-        addKapoorReferenceSheets();
-      }
-      
-      if (results.journalTier === 'annotated') {
-        addKapoorAnnotatedNotes();
-      }
-      
-      // Add first journal entry
-      addEntry({
-        id: 'kapoor-calibration',
-        title: 'LINAC Calibration with Dr. Kapoor',
-        date: new Date().toISOString(),
-        content: `My first calibration session with Dr. Kapoor focused on output measurement. Key learnings:\n\n${
-          results.knowledgeGained['electron_equilibrium_understood'] ? '- Electronic equilibrium principles for accurate dosimetry\n' : ''
-        }${
-          results.knowledgeGained['ptp_correction_understood'] ? '- Importance of PTP correction for daily measurements\n' : ''
-        }${
-          results.knowledgeGained['output_calibration_tolerance'] ? '- ±2% tolerance for clinical use\n' : ''
-        }${
-          results.knowledgeGained['clinical_dose_significance'] ? '- Clinical impact: 1% error on 70 Gy = 0.7 Gy difference\n' : ''
-        }\nTotal insight gained: ${results.insightGained}`,
-        tags: ['kapoor', 'calibration', 'linac', 'qa']
-      });
+      // Run critical progression safety check
+      setTimeout(() => {
+        if (!hasJournal) {
+          console.warn('[PROGRESSION] Critical item missing: Journal not acquired after Kapoor challenge');
+          
+          // Force journal acquisition as a last resort
+          gameEvents.dispatch<GameEventType.JOURNAL_ACQUIRED>(
+            GameEventType.JOURNAL_ACQUIRED, 
+            {
+              tier: 'base',
+              character,
+              source: 'progression_repair',
+              forced: true
+            }
+          );
+        }
+      }, 500);
+    }
+    
+    // Log critical concept mastery data
+    if (currentNodeId) {
+      gameEvents.dispatch<GameEventType.KNOWLEDGE_GAINED>(
+        GameEventType.KNOWLEDGE_GAINED, 
+        {
+          conceptMastery: results.knowledgeGained,
+          character,
+          nodeId: currentNodeId
+        }
+      );
     }
     
     // Complete the challenge in the challenge store

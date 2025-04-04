@@ -1,11 +1,19 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useJournalStore } from '../../store/journalStore';
 import { useGameStore } from '../../store/gameStore';
 import { useKnowledgeStore } from '../../store/knowledgeStore';
 import { useGameEffects } from '../GameEffects';
 import { PixelText } from '../PixelThemeProvider';
+import { GameEventType, useEventBus } from '../../core/events/GameEvents';
 import Image from 'next/image';
+
+// Define expanded sound effect types
+export type JournalSoundEffect = 
+  | 'ui-click' 
+  | 'success' 
+  | 'item-acquired' 
+  | 'challenge-complete';
 
 export default function JournalIcon() {
   const { 
@@ -18,11 +26,17 @@ export default function JournalIcon() {
   const { gamePhase } = useGameStore();
   const { playSound } = useGameEffects();
   
+  // Track previous journal state for acquisition detection
+  const previousHasJournalRef = useRef(hasJournal);
+  
   // Enhanced animation states
   const [isNotifying, setIsNotifying] = useState(false);
   const [isPulsing, setIsPulsing] = useState(false);
   const [showKnowledgeFlow, setShowKnowledgeFlow] = useState(false);
   const [bounceAnimation, setBounceAnimation] = useState(false);
+  
+  // Journal acquisition animation state
+  const [showAcquisitionAnimation, setShowAcquisitionAnimation] = useState(false);
   
   // Set pulse animation based on game phase
   useEffect(() => {
@@ -32,6 +46,34 @@ export default function JournalIcon() {
       setIsPulsing(false);
     }
   }, [gamePhase, hasJournal]);
+  
+  // Listen for journal acquisition events
+  useEffect(() => {
+    // Subscribe to journal acquisition events
+    const unsubscribe = useEventBus.getState().subscribe(
+      GameEventType.JOURNAL_ACQUIRED,
+      (event) => {
+        console.log(`[JOURNAL ICON] Journal acquisition event received:`, event.payload);
+        
+        // Only show animation if this is a new journal (not already had one)
+        if (!previousHasJournalRef.current && hasJournal) {
+          triggerAcquisitionAnimation();
+        }
+      }
+    );
+    
+    return () => unsubscribe();
+  }, [hasJournal]);
+  
+  // Check for journal acquisition based on direct state changes
+  useEffect(() => {
+    if (hasJournal && !previousHasJournalRef.current) {
+      console.log('[JOURNAL ICON] Journal newly acquired!');
+      triggerAcquisitionAnimation();
+    }
+    
+    previousHasJournalRef.current = hasJournal;
+  }, [hasJournal]);
   
   // When new knowledge is added, show enhanced notification
   useEffect(() => {
@@ -59,6 +101,27 @@ export default function JournalIcon() {
       return () => clearTimeout(timer);
     }
   }, [hasJournal, isOpen]);
+  
+  // Helper to trigger acquisition animation with sound effect
+  const triggerAcquisitionAnimation = () => {
+    console.log('[JOURNAL ICON] Triggering acquisition animation');
+    setShowAcquisitionAnimation(true);
+    
+    // Play acquisition sound
+    if (playSound) {
+      // Use a sound that's already defined in your game's sound system
+      // This could be 'success' or 'challenge-complete' instead of 'item-acquired'
+      playSound('success');
+      setTimeout(() => playSound('success'), 300);
+    }
+    
+    // Add bounce effect
+    setBounceAnimation(true);
+    
+    // Clear animations after delay
+    setTimeout(() => setBounceAnimation(false), 1500);
+    setTimeout(() => setShowAcquisitionAnimation(false), 3000);
+  };
   
   // Don't render if player doesn't have journal yet
   if (!hasJournal) return null;
@@ -153,15 +216,45 @@ export default function JournalIcon() {
         {gamePhase === 'night' && (
           <div className="absolute inset-0 rounded-md bg-educational/20 animate-pulse"></div>
         )}
+        
+        {/* Journal acquisition animation */}
+        {showAcquisitionAnimation && (
+          <div className="absolute inset-0 overflow-hidden z-50">
+            {/* Radial glow */}
+            <div className="absolute inset-0 bg-clinical/30 animate-pulse rounded-md"></div>
+            
+            {/* Particles */}
+            <div className="absolute inset-0">
+              <div className="absolute top-0 left-1/2 transform -translate-x-1/2 w-2 h-2 bg-clinical rounded-full animate-float-up"></div>
+              <div className="absolute top-1/4 left-1/4 w-1 h-1 bg-clinical-light rounded-full animate-float-up" style={{ animationDelay: '200ms' }}></div>
+              <div className="absolute top-1/4 right-1/4 w-1 h-1 bg-clinical-light rounded-full animate-float-up" style={{ animationDelay: '400ms' }}></div>
+              <div className="absolute top-1/2 left-1/3 w-2 h-2 bg-clinical rounded-full animate-float-up" style={{ animationDelay: '300ms' }}></div>
+              <div className="absolute top-1/2 right-1/3 w-1 h-1 bg-clinical-light rounded-full animate-float-up" style={{ animationDelay: '500ms' }}></div>
+            </div>
+            
+            {/* Acquisition message */}
+            <div className="absolute -top-16 left-1/2 transform -translate-x-1/2 bg-surface px-3 py-1 rounded-md pixel-borders-thin whitespace-nowrap">
+              <PixelText className="text-clinical">Journal Acquired!</PixelText>
+            </div>
+          </div>
+        )}
       </button>
       
       {/* Enhanced contextual label */}
-      {(isNotifying || gamePhase === 'night' || isPulsing) && (
+      {(isNotifying || gamePhase === 'night' || isPulsing || showAcquisitionAnimation) && (
         <div className="absolute -top-10 right-0 w-32 bg-surface px-2 py-1 text-center pixel-borders-thin animate-fade-in">
           <PixelText className="text-xs">
-            {isNotifying ? 'New Knowledge!' : 
+            {showAcquisitionAnimation ? 'Journal Acquired!' :
+             isNotifying ? 'New Knowledge!' : 
              gamePhase === 'night' ? 'Record learnings' : 'Open Journal'}
           </PixelText>
+        </div>
+      )}
+      
+      {/* For debugging only - shows if journal exists but isn't visible */}
+      {process.env.NODE_ENV === 'development' && hasJournal === false && (
+        <div className="absolute -top-10 left-0 bg-red-500 text-white px-2 py-1 text-xs">
+          Journal exists but not showing!
         </div>
       )}
     </div>

@@ -71,7 +71,7 @@ export default function PlayerStats() {
               src="/images/resident-full.png" // In production: resident-${characterState}.png
               alt="The Resident"
               fill
-              className="pixel-art object-contain scale-150"
+              className="pixel-art object-contain scale-110"
               priority
               sizes="160px"
             />

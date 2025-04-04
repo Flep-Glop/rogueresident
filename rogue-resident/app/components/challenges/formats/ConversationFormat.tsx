@@ -9,6 +9,7 @@ import { PixelButton, PixelText } from '../../PixelThemeProvider';
 import { useGameEffects } from '../../GameEffects';
 import KnowledgeUpdate from '../../knowledge/KnowledgeUpdate';
 import { EquipmentDisplay } from '../../ItemSprite';
+import { gameEvents, GameEventType } from '../../../core/events/GameEvents';
 import Image from 'next/image';
 
 // Results interface for challenge completion
@@ -123,9 +124,19 @@ export default function ConversationFormat({
             [conceptId]: true
           }));
         }
+        
+        // Emit knowledge gained event
+        gameEvents.dispatch(GameEventType.KNOWLEDGE_GAINED, {
+          conceptId: option.knowledgeGain.conceptId,
+          amount: option.knowledgeGain.amount,
+          domainId: option.knowledgeGain.domainId,
+          character
+        });
       }
     },
     onStageChange: (newStageId, prevStageId) => {
+      console.log(`[DIALOGUE] Stage transition: ${prevStageId} → ${newStageId}`);
+      
       // Check if we need to trigger backstory
       if (selectedOption?.triggersBackstory && characterRespect >= 2) {
         const backstoryId = selectedOption.id === 'correct-ptp' 
@@ -139,6 +150,24 @@ export default function ConversationFormat({
           
           // Additional insight for witnessing backstory
           useGameStore.getState().updateInsight(5);
+        }
+      }
+      
+      // Critical state change detection for journal acquisition
+      if (newStageId === 'journal-presentation') {
+        console.log(`[CRITICAL PATH] Journal presentation state reached`);
+        
+        // Dispatch journal acquisition event early to ensure it happens
+        // This creates redundant protection for this critical progression moment
+        if (character === 'kapoor') {
+          const journalTier = characterRespect >= 3 ? 'annotated' : 
+                            characterRespect >= 0 ? 'technical' : 'base';
+                            
+          gameEvents.dispatch(GameEventType.JOURNAL_ACQUIRED, {
+            tier: journalTier,
+            character,
+            source: 'dialogue_state_machine'
+          });
         }
       }
     }
@@ -181,6 +210,14 @@ export default function ConversationFormat({
   
   // Handle continue button click
   const handleContinue = () => {
+    // Debug logging for state transition checks
+    console.log(`[DIALOGUE] Transition check:
+      - currentStageId: ${currentStageId}
+      - character: ${character}
+      - isConclusion: ${currentStage.isConclusion}
+      - showResponse: ${showResponse}
+    `);
+    
     // If actively typing, skip to the end
     if (showBackstory && isTypingBackstory) {
       skipBackstoryTyping();
@@ -197,9 +234,19 @@ export default function ConversationFormat({
       return;
     }
     
+    // Special case for Kapoor - force journal transition from any conclusion
+    if (character === 'kapoor' && currentStage.isConclusion) {
+      console.log(`[DIALOGUE] Forcing Kapoor journal transition`);
+      setCurrentStageId('journal-presentation');
+      return;
+    }
+    
     // If at conclusion stage and showing response, proceed to journal presentation
     if (currentStage.isConclusion && showResponse) {
+      console.log(`[DIALOGUE] Attempting journal transition`);
       setCurrentStageId('journal-presentation');
+      // This won't show new value yet due to React's state update timing
+      console.log(`[DIALOGUE] Stage set to: ${currentStageId}`); 
       return;
     }
     
@@ -214,6 +261,13 @@ export default function ConversationFormat({
   
   // Handle completion of the challenge node
   const finalizeChallenge = () => {
+    // Debug logging
+    console.log(`[DIALOGUE] Finalizing challenge:
+      - character: ${character}
+      - currentStageId: ${currentStageId}
+      - currentNodeId: ${currentNodeId}
+    `);
+    
     // Mark node as completed in game state
     if (currentNodeId) {
       completeNode(currentNodeId);
@@ -235,6 +289,24 @@ export default function ConversationFormat({
     const journalTier = characterRespect >= 3 ? 'annotated' : 
                       characterRespect >= 0 ? 'technical' : 'base';
     
+    console.log(`[DIALOGUE] Journal acquisition check:
+      - isJournalAcquisition: ${isJournalAcquisition}
+      - journalTier: ${journalTier}
+    `);
+    
+    // Final event for node completion that's picked up by progression guarantor
+    if (currentNodeId) {
+      gameEvents.dispatch(GameEventType.NODE_COMPLETED, {
+        nodeId: currentNodeId,
+        character,
+        result: {
+          relationshipChange: characterRespect,
+          journalTier,
+          isJournalAcquisition
+        }
+      });
+    }
+    
     // Call onComplete with results
     onComplete({
       insightGained: totalInsightGained,
@@ -250,7 +322,7 @@ export default function ConversationFormat({
     
     // Narrative timing - give journal acquisition a more dramatic pause
     setTimeout(() => {
-      setCurrentNode(null); // Return to map view
+      setCurrentNode(currentNodeId); // Return to map view
     }, isJournalAcquisition ? 800 : 300);
   };
   
