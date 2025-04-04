@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import PixelThemeProvider from "./components/PixelThemeProvider";
 import { GameEffectsProvider } from "./components/GameEffects";
+import DebugWrapper from "./layout-debug";
 import "./globals.css";
 import "./styles/map-visibility-fix.css"; // Add our visibility fixes
 import FontLoadingContainer from "./components/FontLoadingContainer";
@@ -73,6 +74,9 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  // Determine if we're in development mode
+  const isDevelopment = process.env.NODE_ENV !== 'production';
+  
   return (
     <html lang="en">
       <head>
@@ -84,10 +88,18 @@ export default function RootLayout({
         <PixelThemeProvider>
           {/* Wrap with GameEffectsProvider to make effects available throughout the app */}
           <GameEffectsProvider>
-            {/* We'll use a client component wrapper that handles font loading state */}
-            <FontLoadingContainer>
-              {children}
-            </FontLoadingContainer>
+            {/* In development, wrap with DebugWrapper to enable testing tools */}
+            {isDevelopment ? (
+              <DebugWrapper>
+                <FontLoadingContainer>
+                  {children}
+                </FontLoadingContainer>
+              </DebugWrapper>
+            ) : (
+              <FontLoadingContainer>
+                {children}
+              </FontLoadingContainer>
+            )}
           </GameEffectsProvider>
         </PixelThemeProvider>
       </body>

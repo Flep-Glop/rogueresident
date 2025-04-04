@@ -8,9 +8,9 @@
     "start": "next start",
     "lint": "next lint",
     "test:progression": "node tests/runTests.js",
-    "test:progression:ts": "ts-node tests/runTests.ts",
-    "test:progression:js-transpile": "ts-node --transpile-only tests/runTests.ts",
-    "test:progression:debug": "node tests/runTests.js --debug"
+    "test:progression:specific": "node tests/runTests.js journalAcquisition",
+    "test:progression:debug": "node tests/runTests.js --debug",
+    "dev:test": "cross-env NODE_ENV=development ENABLE_TESTING=true next dev --turbopack"
   },
   "dependencies": {
     "immer": "^10.1.1",

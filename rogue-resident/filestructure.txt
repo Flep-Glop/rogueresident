@@ -38,6 +38,9 @@
 │   │   │       ├── ConversationFormat.tsx
 │   │   │       ├── InteractiveFormat.tsx
 │   │   │       └── ProceduralFormat.tsx
+│   │   ├── debug
+│   │   │   ├── TestHarness.tsx
+│   │   │   └── TestResultsViewer.tsx
 │   │   ├── dialogue
 │   │   │   ├── DialogueSystem.tsx
 │   │   │   └── UnlockableDialogueOptions.tsx
@@ -55,6 +58,8 @@
 │   │       ├── KnowledgeUpdate.tsx
 │   │       └── NotificationManager.tsx
 │   ├── core
+│   │   ├── debug
+│   │   │   └── EventRecorder.ts
 │   │   ├── dialogue
 │   │   │   └── DialogueStateMachine.ts
 │   │   ├── events
@@ -79,6 +84,7 @@
 │   │   ├── useCharacterInteraction.ts
 │   │   ├── useDialogueFlow.ts
 │   │   └── useTypewriter.ts
+│   ├── layout-debug.tsx
 │   ├── layout.tsx
 │   ├── page.tsx
 │   ├── store
@@ -109,14 +115,10 @@
 ├── postcss.config.mjs
 ├── tailwind.config.js
 ├── tests
-│   ├── DialogueStateMachine.test.ts
-│   ├── ProgressionTestSuite.ts
-│   ├── runTests.ts
-│   ├── setup.js
-│   ├── testDefinitions.ts
-│   └── utils
-│       ├── testEventRecorder.ts
-│       └── testStoreMocks.ts
+│   ├── gameInterface.js
+│   ├── progressionValidators.js
+│   ├── runTests.js
+│   └── testDefinitions.js
 └── tsconfig.json
 
-21 directories, 98 files
+22 directories, 99 files
