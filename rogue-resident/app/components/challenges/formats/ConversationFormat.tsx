@@ -9,7 +9,10 @@ import { PixelButton, PixelText } from '../../PixelThemeProvider';
 import { useGameEffects } from '../../GameEffects';
 import KnowledgeUpdate from '../../knowledge/KnowledgeUpdate';
 import { EquipmentDisplay } from '../../ItemSprite';
-import { gameEvents, GameEventType } from '../../../core/events/GameEvents';
+import { 
+  useEventBus, 
+  GameEventType 
+} from '../../../core/events/CentralEventBus';
 import Image from 'next/image';
 
 // Results interface for challenge completion
@@ -46,6 +49,12 @@ export default function ConversationFormat({
     'clinical_dose_significance': false
   });
   
+  // Flag to track progression validation
+  const [progressionValidated, setProgressionValidated] = useState(false);
+  
+  // Track critical progression states for analytics
+  const [progressionHistory, setProgressionHistory] = useState<string[]>([]);
+  
   // Character data mapping
   const characterData = {
     'kapoor': {
@@ -71,6 +80,14 @@ export default function ConversationFormat({
       primaryColor: "var(--educational-color)",
       textClass: "text-educational-light",
       bgClass: "bg-educational"
+    },
+    'garcia': {
+      name: "Dr. Garcia",
+      title: "Radiation Oncologist",
+      sprite: "/characters/garcia.png", 
+      primaryColor: "var(--clinical-alt-color)",
+      textClass: "text-clinical-light",
+      bgClass: "bg-clinical"
     }
   };
   
@@ -92,7 +109,7 @@ export default function ConversationFormat({
     }
   });
   
-  // Initialize the dialogue flow hook
+  // Initialize the dialogue flow hook with enhanced progression tracking
   const {
     currentStage,
     currentStageId,
@@ -103,7 +120,9 @@ export default function ConversationFormat({
     handleOptionSelect,
     handleContinue: progressDialogue,
     showBackstorySegment,
-    setCurrentStageId
+    setCurrentStageId,
+    isProgressionValid,
+    dialogueStateMachine
   } = useDialogueFlow({
     stages: dialogueStages,
     onOptionSelected: (option) => {
@@ -126,16 +145,49 @@ export default function ConversationFormat({
         }
         
         // Emit knowledge gained event
-        gameEvents.dispatch(GameEventType.KNOWLEDGE_GAINED, {
+        useEventBus.getState().dispatch(GameEventType.KNOWLEDGE_GAINED, {
           conceptId: option.knowledgeGain.conceptId,
           amount: option.knowledgeGain.amount,
           domainId: option.knowledgeGain.domainId,
           character
         });
       }
+      
+      // Track critical path steps for detailed analytics
+      if (option.isCriticalPath) {
+        setProgressionHistory(prev => [...prev, `option-${option.id}`]);
+        
+        // Log through event system
+        useEventBus.getState().dispatch(GameEventType.UI_BUTTON_CLICKED, {
+          componentId: 'conversationFormat',
+          action: 'criticalPathOptionSelected',
+          metadata: {
+            optionId: option.id,
+            stageId: currentStageId,
+            character
+          }
+        });
+      }
     },
     onStageChange: (newStageId, prevStageId) => {
       console.log(`[DIALOGUE] Stage transition: ${prevStageId} → ${newStageId}`);
+      
+      // Track critical stages
+      const newStage = dialogueStages.find(s => s.id === newStageId);
+      if (newStage?.isCriticalPath) {
+        setProgressionHistory(prev => [...prev, `stage-${newStageId}`]);
+        
+        // Log through event system
+        useEventBus.getState().dispatch(GameEventType.UI_BUTTON_CLICKED, {
+          componentId: 'conversationFormat',
+          action: 'criticalPathStageReached',
+          metadata: {
+            stageId: newStageId,
+            previousStageId: prevStageId,
+            character
+          }
+        });
+      }
       
       // Check if we need to trigger backstory
       if (selectedOption?.triggersBackstory && characterRespect >= 2) {
@@ -157,20 +209,27 @@ export default function ConversationFormat({
       if (newStageId === 'journal-presentation') {
         console.log(`[CRITICAL PATH] Journal presentation state reached`);
         
-        // Dispatch journal acquisition event early to ensure it happens
-        // This creates redundant protection for this critical progression moment
-        if (character === 'kapoor') {
-          const journalTier = characterRespect >= 3 ? 'annotated' : 
-                            characterRespect >= 0 ? 'technical' : 'base';
-                            
-          gameEvents.dispatch(GameEventType.JOURNAL_ACQUIRED, {
-            tier: journalTier,
+        // Mark journey step for analytics
+        setProgressionHistory(prev => [...prev, 'journal-presentation-reached']);
+        
+        // Log key progression event with detailed metadata
+        useEventBus.getState().dispatch(GameEventType.UI_BUTTON_CLICKED, {
+          componentId: 'conversationFormat',
+          action: 'journalStageReached',
+          metadata: {
             character,
-            source: 'dialogue_state_machine'
-          });
-        }
+            characterRespect,
+            journalTier: characterRespect >= 3 ? 'annotated' : 
+                         characterRespect >= 0 ? 'technical' : 'base',
+            progressionSteps: progressionHistory.length,
+            currentProgressionState: isProgressionValid ? 'valid' : 'repair-needed',
+            nodeId: currentNodeId
+          }
+        });
       }
-    }
+    },
+    characterId: character,
+    nodeId: currentNodeId || undefined
   });
   
   // Set conclusion text based on performance when reaching conclusion stage
@@ -207,6 +266,66 @@ export default function ConversationFormat({
   useEffect(() => {
     processKnowledgeQueue();
   }, [showKnowledgeGain, processKnowledgeQueue]);
+  
+  // Critical progression check
+  useEffect(() => {
+    // If this is Kapoor and we reached the conclusion, validate progression
+    if (character === 'kapoor' && 
+        (currentStage.isConclusion || currentStageId === 'journal-presentation')) {
+      
+      // Only need to do this once
+      if (!progressionValidated) {
+        // Get progression status directly from state machine
+        const progressionStatus = dialogueStateMachine.getProgressionStatus();
+        
+        // Log progression state
+        console.log(`[DIALOGUE] Validating progression at ${currentStageId}:`, progressionStatus);
+        
+        setProgressionValidated(true);
+        
+        // If we detect a progression issue, try to repair
+        if (progressionStatus.progressionBlocked) {
+          console.warn(`[DIALOGUE] Progression validation failed - repair required`);
+          
+          // Log the issue
+          useEventBus.getState().dispatch(GameEventType.UI_BUTTON_CLICKED, {
+            componentId: 'conversationFormat',
+            action: 'progressionRepairNeeded',
+            metadata: {
+              character,
+              currentStageId,
+              progressionStatus,
+              progressionHistory
+            }
+          });
+          
+          // After short delay, force progression repair
+          setTimeout(() => {
+            dialogueStateMachine.forceProgressionRepair();
+          }, 300);
+        } else {
+          // Log successful validation
+          useEventBus.getState().dispatch(GameEventType.UI_BUTTON_CLICKED, {
+            componentId: 'conversationFormat',
+            action: 'progressionValidated',
+            metadata: {
+              character,
+              currentStageId,
+              progressionStatus,
+              progressionHistory
+            }
+          });
+        }
+      }
+    }
+  }, [
+    character, 
+    currentStage.isConclusion, 
+    currentStageId, 
+    progressionValidated, 
+    dialogueStateMachine,
+    progressionHistory
+  ]);
   
   // Handle continue button click
   const handleContinue = () => {
@@ -296,7 +415,7 @@ export default function ConversationFormat({
     
     // Final event for node completion that's picked up by progression guarantor
     if (currentNodeId) {
-      gameEvents.dispatch(GameEventType.NODE_COMPLETED, {
+      useEventBus.getState().dispatch(GameEventType.NODE_COMPLETED, {
         nodeId: currentNodeId,
         character,
         result: {
@@ -322,6 +441,22 @@ export default function ConversationFormat({
     
     // Narrative timing - give journal acquisition a more dramatic pause
     setTimeout(() => {
+      // Log final completion analytics
+      useEventBus.getState().dispatch(GameEventType.UI_BUTTON_CLICKED, {
+        componentId: 'conversationFormat',
+        action: 'challengeCompleted',
+        metadata: {
+          character,
+          nodeId: currentNodeId,
+          relationshipScore: characterRespect,
+          journalTier,
+          isJournalAcquisition,
+          progressionHistory,
+          progressionValid: isProgressionValid,
+          insightGained: totalInsightGained
+        }
+      });
+      
       setCurrentNode(currentNodeId); // Return to map view
     }, isJournalAcquisition ? 800 : 300);
   };
@@ -382,6 +517,11 @@ export default function ConversationFormat({
               fill
               className="object-cover"
             />
+            
+            {/* Debug indicator for progression status */}
+            {process.env.NODE_ENV !== 'production' && (
+              <div className={`absolute top-0 right-0 w-3 h-3 rounded-full ${isProgressionValid ? 'bg-green-500' : 'bg-red-500'}`}></div>
+            )}
           </div>
           
           {/* Equipment visualization */}
@@ -436,7 +576,7 @@ export default function ConversationFormat({
                 {currentStage.options.map((option) => (
                   <button
                     key={option.id}
-                    className="w-full text-left p-3 bg-surface hover:bg-surface-dark pixel-borders-thin"
+                    className={`w-full text-left p-3 ${option.isCriticalPath ? 'bg-surface border-l-2 border-educational' : 'bg-surface'} hover:bg-surface-dark pixel-borders-thin`}
                     onClick={() => handleChoiceSelect(option)}
                     disabled={isTyping}
                   >
@@ -464,6 +604,14 @@ export default function ConversationFormat({
           )}
         </div>
       </div>
+      
+      {/* Debug info - only shown in development */}
+      {process.env.NODE_ENV !== 'production' && (
+        <div className="mt-4 border-t border-border pt-2 text-xs text-gray-500">
+          <div>Stage: {currentStageId} | Respect: {characterRespect} | Progression Valid: {isProgressionValid ? '✓' : '✗'}</div>
+          <div>Critical Path: {progressionHistory.slice(-3).join(' → ')}{progressionHistory.length > 3 ? '...' : ''}</div>
+        </div>
+      )}
     </div>
   );
 }
