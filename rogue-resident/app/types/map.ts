@@ -91,12 +91,18 @@ export interface Node {
 export type MapNode = Node;
 
 /**
- * Game map structure
+ * Game map structure with seed support for deterministic generation
  */
 export interface GameMap {
   nodes: Node[];
   startNodeId: string;
   bossNodeId: string;
+  
+  // Procedural generation properties
+  seed?: number;           // Random seed used to generate this map
+  seedName?: string;       // Human-readable seed name
+  generationTimestamp?: string; // When the map was generated
+  
   dimensions?: {
     width: number;  // Logical width of map (percentage units)
     height: number; // Logical height of map (percentage units)
@@ -120,6 +126,17 @@ export interface MapViewState {
   offsetY: number;
   zoom: number;
   isDragging: boolean;
+}
+
+/**
+ * Run configuration for seed management
+ */
+export interface RunConfig {
+  seed?: number;
+  useDailyChallenge?: boolean;
+  difficultyLevel?: number;
+  includeStorage?: boolean;
+  includeVendor?: boolean;
 }
 
 /**
@@ -155,6 +172,10 @@ export const mapUtils = {
         width: 100,
         height: 100
       },
+      // Preserve seed properties if available
+      seed: legacyMap.seed,
+      seedName: legacyMap.seedName,
+      generationTimestamp: legacyMap.generationTimestamp || new Date().toISOString()
     };
   },
 };
@@ -162,7 +183,10 @@ export const mapUtils = {
 // Helper function to map challenge content to node type
 function mapChallengeTypeToNodeType(content: ChallengeContent): NodeType {
   switch(content) {
-    case 'calibration': return 'clinical';
+    case 'calibration': 
+      // Map calibration content to kapoorCalibration node type
+      // This preserves the connection between your old and new systems
+      return 'kapoorCalibration';
     case 'patient_case': return 'clinical';
     case 'equipment_qa': return 'qa';
     case 'lecture': return 'educational';

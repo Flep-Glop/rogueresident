@@ -2,8 +2,17 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { Item } from '../data/items';
-import { Node, NodeState, GameMap, mapUtils } from '../types/map';
+import { Node, NodeState, GameMap, mapUtils, RunConfig } from '../types/map';
 import { generateMap } from '../utils/mapGenerator';
+import { 
+  createSeedUrl, 
+  DEV_SEEDS, 
+  generateSeedName, 
+  getRandomSeed, 
+  RunData, 
+  saveRun,
+  updateCurrentRun
+} from '../utils/seedUtils';
 
 // Game phase types
 export type GamePhase = 'day' | 'night' | 'game_over' | 'victory';
@@ -39,6 +48,10 @@ type GameState = {
   tutorialStep: TutorialStep;
   showHints: boolean;
   
+  // Run tracking and seeded generation
+  currentRun: RunData | null;
+  recentRuns: RunData[];
+  
   // Permanent upgrades
   bonuses: {
     clinical: number;
@@ -51,7 +64,7 @@ type GameState = {
   _lastUpdated: string;
   
   // Actions
-  startGame: () => void;
+  startGame: (config?: RunConfig) => void;
   setCurrentNode: (nodeId: string) => void;
   completeNode: (nodeId: string) => void;
   updateHealth: (amount: number) => void;
@@ -74,6 +87,11 @@ type GameState = {
   setGamePhase: (phase: GamePhase) => void;
   completeDay: () => void;
   completeNight: () => void;
+  
+  // Enhanced seed & run management
+  replaySeed: (seed: number) => void;
+  useDailyChallenge: () => void;
+  useRandomSeed: () => void;
   
   // Enhanced map functionality
   isNodeAccessible: (nodeId: string) => boolean;
@@ -109,6 +127,10 @@ const initialState = {
   tutorialStep: 0,
   showHints: true,
   
+  // Run tracking
+  currentRun: null,
+  recentRuns: [],
+  
   // Bonuses
   bonuses: {
     clinical: 0,
@@ -117,7 +139,7 @@ const initialState = {
   },
   
   // Store metadata
-  _storeVersion: '1.0.0',
+  _storeVersion: '1.1.0', // Updated for seed support
   _lastUpdated: new Date().toISOString(),
 };
 
@@ -130,15 +152,36 @@ export const useGameStore = create<GameState>()(
     (set, get) => ({
       ...initialState,
       
-      startGame: () => {
-        console.log("🎮 Starting new game");
+      startGame: (config: RunConfig = {}) => {
+        console.log("🎮 Starting new game with config:", config);
         
-        // Generate a new map
-        const newMap = generateMap();
-        console.log("🗺️ Generated new map for game start:", {
-          nodeCount: newMap.nodes.length, 
-          startNode: newMap.startNodeId
+        // Determine which seed to use
+        const seed = config.seed || getRandomSeed();
+        
+        // Generate a new map with the seed
+        const newMap = generateMap({
+          ...config,
+          seed,
+          mapType: 'tutorial'
         });
+        
+        console.log(`🗺️ Generated new map for game start with seed ${seed}:`, {
+          nodeCount: newMap.nodes.length, 
+          startNode: newMap.startNodeId,
+          seedName: newMap.seedName
+        });
+        
+        // Create run data
+        const runData: RunData = {
+          seed,
+          seedName: generateSeedName(seed),
+          timestamp: new Date().toISOString(),
+          completed: false,
+          dayCount: 1
+        };
+        
+        // Save run to history
+        saveRun(runData);
         
         // Validate the map has at least one node
         if (!newMap.nodes || newMap.nodes.length === 0) {
@@ -158,6 +201,8 @@ export const useGameStore = create<GameState>()(
             }],
             startNodeId: 'emergency_node',
             bossNodeId: 'emergency_node',
+            seed,
+            seedName: generateSeedName(seed),
             dimensions: { width: 100, height: 100 }
           };
           
@@ -166,6 +211,7 @@ export const useGameStore = create<GameState>()(
             gamePhase: 'day',
             map: fallbackMap,
             currentNodeId: null,
+            currentRun: runData,
             _lastUpdated: new Date().toISOString()
           });
           
@@ -178,6 +224,7 @@ export const useGameStore = create<GameState>()(
           gamePhase: 'day',
           map: newMap,
           currentNodeId: null,
+          currentRun: runData,
           _lastUpdated: new Date().toISOString()
         });
       },
@@ -217,6 +264,11 @@ export const useGameStore = create<GameState>()(
         
         // If health reaches 0, update gameState
         if (newHealth <= 0) {
+          // Mark current run as completed (but not successful)
+          if (state.currentRun) {
+            updateCurrentRun({ completed: true });
+          }
+          
           return {
             player: {
               ...state.player,
@@ -278,6 +330,8 @@ export const useGameStore = create<GameState>()(
         if (currentState.gameState !== 'not_started') {
           set({ 
             ...initialState,
+            hasPlayedBefore: currentState.hasPlayedBefore, // Preserve tutorial state
+            recentRuns: currentState.recentRuns, // Preserve run history
             _lastUpdated: new Date().toISOString() 
           });
         } else {
@@ -289,12 +343,13 @@ export const useGameStore = create<GameState>()(
       resetCurrentRun: () => {
         console.log("🔄 Resetting current run while preserving meta-progress");
         
-        const { hasPlayedBefore, bonuses } = get();
+        const { hasPlayedBefore, bonuses, recentRuns } = get();
         
         set({
           ...initialState,
           hasPlayedBefore, // Preserve tutorial state
           bonuses, // Preserve permanent upgrades
+          recentRuns, // Preserve run history
           _lastUpdated: new Date().toISOString()
         });
         
@@ -357,7 +412,7 @@ export const useGameStore = create<GameState>()(
       },
       
       completeDay: () => {
-        const { map, completedNodeIds, player } = get();
+        const { map, completedNodeIds, player, currentRun } = get();
         
         // Can't complete if no map
         if (!map) {
@@ -368,6 +423,12 @@ export const useGameStore = create<GameState>()(
         // Check if player has run out of health
         if (player.health <= 0) {
           console.log("💀 Player has run out of health, transitioning to game over");
+          
+          // Update run data
+          if (currentRun) {
+            updateCurrentRun({ completed: true });
+          }
+          
           set({ 
             gameState: 'game_over',
             gamePhase: 'game_over',
@@ -390,6 +451,15 @@ export const useGameStore = create<GameState>()(
         
         if (isBossDefeated) {
           console.log("🏆 Boss defeated, transitioning to victory");
+          
+          // Update run data
+          if (currentRun) {
+            updateCurrentRun({ 
+              completed: true,
+              score: player.insight
+            });
+          }
+          
           set({ 
             gameState: 'victory',
             gamePhase: 'victory',
@@ -414,6 +484,7 @@ export const useGameStore = create<GameState>()(
       
       completeNight: () => {
         console.log("☀️ Night phase complete, starting new day");
+        const { currentRun, currentDay } = get();
         
         // Increment day counter
         set((state) => ({ 
@@ -422,9 +493,24 @@ export const useGameStore = create<GameState>()(
           _lastUpdated: new Date().toISOString()
         }));
         
+        // Update run data
+        if (currentRun) {
+          updateCurrentRun({ 
+            dayCount: currentDay + 1
+          });
+        }
+        
         // Generate a new map with more nodes/complexity based on current day
-        const newMap = generateMap();
-        console.log("🗺️ Generated new map for day", get().currentDay + 1);
+        // Use the same seed for consistent generation
+        const seed = currentRun?.seed || get().map?.seed || getRandomSeed();
+        
+        const newMap = generateMap({
+          seed,
+          difficultyLevel: currentDay,
+          mapType: 'tutorial'
+        });
+        
+        console.log(`🗺️ Generated new map for day ${get().currentDay + 1} with seed ${seed}`);
         
         // In a full implementation, this would apply upgrades and 
         // possibly restore some health
@@ -442,17 +528,80 @@ export const useGameStore = create<GameState>()(
         });
       },
       
+      // Enhanced seed management
+      replaySeed: (seed: number) => {
+        console.log(`🎲 Replaying seed: ${seed}`);
+        
+        // Reset game state while preserving meta-progress
+        const { hasPlayedBefore, bonuses, recentRuns } = get();
+        
+        set({
+          ...initialState,
+          hasPlayedBefore,
+          bonuses,
+          recentRuns,
+          _lastUpdated: new Date().toISOString()
+        });
+        
+        // Start new game with specified seed
+        setTimeout(() => get().startGame({ seed }), 10);
+      },
+      
+      useDailyChallenge: () => {
+        console.log(`📅 Starting daily challenge run`);
+        
+        // Reset game state while preserving meta-progress
+        const { hasPlayedBefore, bonuses, recentRuns } = get();
+        
+        set({
+          ...initialState,
+          hasPlayedBefore,
+          bonuses,
+          recentRuns,
+          _lastUpdated: new Date().toISOString()
+        });
+        
+        // Start new game with daily challenge config
+        setTimeout(() => get().startGame({ useDailyChallenge: true }), 10);
+      },
+      
+      useRandomSeed: () => {
+        console.log(`🎲 Starting random seed run`);
+        
+        // Reset game state while preserving meta-progress
+        const { hasPlayedBefore, bonuses, recentRuns } = get();
+        
+        set({
+          ...initialState,
+          hasPlayedBefore,
+          bonuses,
+          recentRuns,
+          _lastUpdated: new Date().toISOString()
+        });
+        
+        // Start new game with random seed
+        setTimeout(() => get().startGame(), 10);
+      },
+      
       isNodeAccessible: (nodeId) => {
         const { map, completedNodeIds } = get();
         if (!map) return false;
         
         // Find the node
         const node = map.nodes.find(n => n.id === nodeId);
+        if (!node) return false;
         
-        // Special cases that are always accessible
-        if (node?.type === 'entrance' || node?.type === 'kapoorCalibration') return true;
+        // Start node is always accessible
+        if (map.startNodeId === nodeId) return true;
         
-        // Normal connection logic
+        // Content-based accessibility (rather than type-based)
+        // Any calibration node with Kapoor should be an entry point
+        if (node.challengeContent === 'calibration' && node.character === 'kapoor') return true;
+        
+        // Special cases from the old system - keep for backward compatibility
+        if (node.type === 'entrance' || node.type === 'kapoorCalibration') return true;
+        
+        // Normal connection logic - if connected to a completed node
         return map.nodes.some(n => 
           n.connections.includes(nodeId) && completedNodeIds.includes(n.id)
         );
@@ -492,6 +641,8 @@ export const useGameStore = create<GameState>()(
         bonuses: state.bonuses,
         inventory: state.inventory,
         completedNodeIds: state.completedNodeIds,
+        recentRuns: state.recentRuns,
+        currentRun: state.currentRun,
         _storeVersion: state._storeVersion,
         _lastUpdated: new Date().toISOString(),
         
@@ -509,6 +660,7 @@ export const useGameStore = create<GameState>()(
           return {
             ...currentState,
             hasPlayedBefore: persistedState.hasPlayedBefore || false,
+            recentRuns: persistedState.recentRuns || [],
           };
         }
         
@@ -572,6 +724,8 @@ if (typeof window !== 'undefined' && process.env.NODE_ENV !== 'production') {
           hasMap: !!store.map,
           nodeCount: store.map?.nodes.length || 0,
           day: store.currentDay,
+          seed: store.map?.seed || 'none',
+          currentRun: store.currentRun
         },
         persisted: persistedState ? "Available" : "None",
         persistedKeys: persistedState ? Object.keys(persistedState.state) : [],
@@ -585,79 +739,29 @@ if (typeof window !== 'undefined' && process.env.NODE_ENV !== 'production') {
       return hasPersistedState ? "Persistence active" : "No persisted state";
     },
     
-    // Save current state as a loadable checkpoint
-    saveCheckpoint: (name = "quicksave") => {
-      const state = useGameStore.getState();
-      const saveData = {
-        player: state.player,
-        currentDay: state.currentDay,
-        inventory: state.inventory,
-        gameState: state.gameState,
-        gamePhase: state.gamePhase,
-        timestamp: new Date().toISOString(),
-      };
-      
-      localStorage.setItem(`rogue-resident-checkpoint-${name}`, JSON.stringify(saveData));
-      console.log(`💾 Checkpoint saved: ${name}`);
-      return `Checkpoint "${name}" saved`;
+    // Run specific seed
+    runSeed: (seed: number) => {
+      useGameStore.getState().replaySeed(seed);
+      return `Starting game with seed: ${seed}`;
     },
     
-    // Load a previously saved checkpoint
-    loadCheckpoint: (name = "quicksave") => {
-      const savedData = localStorage.getItem(`rogue-resident-checkpoint-${name}`);
-      if (!savedData) {
-        console.error(`❌ No checkpoint found with name: ${name}`);
-        return `No checkpoint named "${name}" exists`;
-      }
-      
-      try {
-        const checkpoint = JSON.parse(savedData);
-        const store = useGameStore.getState();
-        
-        // Apply checkpoint data
-        store.resetGame();
-        setTimeout(() => {
-          store.startGame();
-          
-          // Apply saved state
-          useGameStore.setState({
-            player: checkpoint.player,
-            currentDay: checkpoint.currentDay,
-            inventory: checkpoint.inventory,
-            gameState: checkpoint.gameState,
-            gamePhase: checkpoint.gamePhase,
-          });
-          
-          console.log(`✅ Checkpoint loaded: ${name}`);
-        }, 100);
-        
-        return `Checkpoint "${name}" loaded`;
-      } catch (err) {
-        console.error("❌ Error loading checkpoint:", err);
-        return "Error loading checkpoint";
-      }
+    // Run daily challenge
+    runDailyChallenge: () => {
+      useGameStore.getState().useDailyChallenge();
+      return "Starting daily challenge";
     },
     
-    // Get a list of all saved checkpoints
-    listCheckpoints: () => {
-      const checkpoints = [];
-      for (let i = 0; i < localStorage.length; i++) {
-        const key = localStorage.key(i);
-        if (key?.startsWith('rogue-resident-checkpoint-')) {
-          const name = key.replace('rogue-resident-checkpoint-', '');
-          const data = JSON.parse(localStorage.getItem(key) || '{}');
-          checkpoints.push({
-            name,
-            saved: data.timestamp,
-            day: data.currentDay,
-            health: data.player?.health,
-            insight: data.player?.insight,
-          });
-        }
-      }
-      
-      console.table(checkpoints);
-      return checkpoints;
+    // Get seed URL
+    getSeedUrl: () => {
+      const seed = useGameStore.getState().map?.seed;
+      if (!seed) return "No active seed";
+      return createSeedUrl(seed);
+    },
+    
+    // List dev seeds
+    listDevSeeds: () => {
+      console.table(DEV_SEEDS);
+      return "See console for dev seed list";
     }
   };
   

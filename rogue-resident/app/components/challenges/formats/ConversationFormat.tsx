@@ -30,7 +30,10 @@ export default function ConversationFormat({
   dialogueStages,
   onComplete
 }: ConversationFormatProps) {
-  const { currentNodeId, completeNode, updateInsight } = useGameStore();
+  const { currentNodeId, completeNode } = useGameStore();
+  // Add direct access to navigation method
+  const setCurrentNode = useGameStore(state => state.setCurrentNode);
+  
   const { playSound, flashScreen, showRewardEffect } = useGameEffects();
   
   // Core state
@@ -81,7 +84,7 @@ export default function ConversationFormat({
     completeKnowledgeGain
   } = useCharacterInteraction({
     onInsightGain: (amount) => {
-      updateInsight(amount);
+      useGameStore.getState().updateInsight(amount);
       if (amount >= 10 && showRewardEffect) {
         showRewardEffect(amount, window.innerWidth / 2, window.innerHeight / 2);
       }
@@ -135,7 +138,7 @@ export default function ConversationFormat({
           showBackstorySegment(backstoryStage.text);
           
           // Additional insight for witnessing backstory
-          updateInsight(5);
+          useGameStore.getState().updateInsight(5);
         }
       }
     }
@@ -223,9 +226,14 @@ export default function ConversationFormat({
     // Set encounter completed flag
     setEncounterComplete(true);
     
+    // Special case for journal acquisition
+    const isJournalAcquisition = 
+      character === 'kapoor' && 
+      currentStageId === 'journal-presentation';
+    
     // Calculate journal tier based on performance
     const journalTier = characterRespect >= 3 ? 'annotated' : 
-                        characterRespect >= 0 ? 'technical' : 'base';
+                      characterRespect >= 0 ? 'technical' : 'base';
     
     // Call onComplete with results
     onComplete({
@@ -239,6 +247,11 @@ export default function ConversationFormat({
         }, {} as Record<string, number>),
       journalTier
     });
+    
+    // Narrative timing - give journal acquisition a more dramatic pause
+    setTimeout(() => {
+      setCurrentNode(null); // Return to map view
+    }, isJournalAcquisition ? 800 : 300);
   };
   
   // If knowledge gain is showing, render that UI

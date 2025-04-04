@@ -39,9 +39,18 @@ export default function PlayerStats() {
   }, [knowledgeLevel]);
   
   return (
-    <div className="bg-surface p-4 space-y-4 border-l border-gray-700 h-full">
-      {/* Enhanced Character Container - Now the central visual element */}
-      <div className="character-container relative mb-6 min-h-[280px] pixel-borders-thin overflow-hidden">
+    <div className="h-full flex flex-col">
+      {/* Header with character identity */}
+      <div className="p-4 border-b border-gray-800">
+        <PixelText className="text-lg font-pixel">The Resident</PixelText>
+        <div className="text-xs font-pixel text-educational-light">
+          {characterState === 'default' ? 'Novice' : 
+           characterState === 'confident' ? 'Practitioner' : 'Expert'}
+        </div>
+      </div>
+    
+      {/* Enhanced Character Container */}
+      <div className="character-container relative p-4 min-h-[320px] flex justify-center">
         {/* Day/Night state-aware backdrop */}
         <div className={`absolute inset-0 ${gamePhase === 'night' ? 'bg-gradient-to-b from-indigo-900/30 to-surface-dark' : 'bg-surface-dark'}`}>
           {/* Environmental elements that reflect progression */}
@@ -50,19 +59,24 @@ export default function PlayerStats() {
           )}
         </div>
         
+        {/* Ambient character presence */}
+        <div className="absolute inset-0 flex items-center justify-center">
+          <div className="w-48 h-48 rounded-full bg-educational/5 animate-pulse-slow opacity-25 blur-md"></div>
+        </div>
+        
         {/* Full body character visualization with proper framing */}
-        <div className="relative h-full w-full flex justify-center">
-          <div className="relative h-[240px] w-[180px] mt-2">
+        <div className="relative h-full w-full flex justify-center items-center">
+          <div className="relative h-[240px] w-[160px]">
             <Image
               src="/images/resident-full.png" // In production: resident-${characterState}.png
               alt="The Resident"
               fill
-              className="pixel-art object-contain"
+              className="pixel-art object-contain scale-150"
               priority
-              sizes="180px"
+              sizes="160px"
             />
             
-            {/* Equipment progression visualization - only visible with appropriate knowledge level */}
+            {/* Equipment progression visualization */}
             {equipmentLevel > 0 && (
               <div className="absolute top-0 left-0 w-full h-full">
                 <div className={`absolute inset-0 bg-educational/5 transition-opacity duration-500 ${equipmentLevel > 0 ? 'opacity-100' : 'opacity-0'}`}></div>
@@ -77,24 +91,13 @@ export default function PlayerStats() {
             )}
           </div>
         </div>
-        
-        {/* Character identity element with state-responsive styling */}
-        <div className="absolute bottom-0 left-0 w-full px-3 py-2 bg-surface-dark/80 border-t border-border">
-          <div className="flex justify-between items-center">
-            <PixelText className="text-text-primary">The Resident</PixelText>
-            <div className="text-xs font-pixel px-2 py-1 bg-educational/20 text-educational-light">
-              {characterState === 'default' ? 'Novice' : 
-               characterState === 'confident' ? 'Practitioner' : 'Expert'}
-            </div>
-          </div>
-        </div>
       </div>
       
-      {/* Player vitals moved below character for clear hierarchy */}
-      <div className="pixel-borders-thin mb-4">
-        <h2 className="pixel-heading bg-surface-dark px-3 py-2 border-b border-border">Vitals</h2>
+      {/* Player vitals section */}
+      <div className="flex-shrink-0 p-4 border-t border-b border-gray-800">
+        <h2 className="pixel-heading text-lg mb-3">Vitals</h2>
         
-        <div className="p-3 space-y-4">
+        <div className="space-y-4">
           <div className="space-y-2">
             <div className="flex justify-between items-center">
               <PixelText className="text-text-primary">Health</PixelText>
@@ -124,13 +127,11 @@ export default function PlayerStats() {
       </div>
       
       {/* Inventory section */}
-      <div className="pixel-borders-thin">
-        <div className="bg-surface-dark px-3 py-2 border-b border-border">
-          <PixelText>Inventory</PixelText>
+      <div className="flex-grow p-4 overflow-auto">
+        <div className="mb-2">
+          <PixelText className="font-pixel">Inventory</PixelText>
         </div>
-        <div className="p-2">
-          <Inventory compact={true} />
-        </div>
+        <Inventory compact={true} />
       </div>
     </div>
   );
