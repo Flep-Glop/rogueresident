@@ -2,7 +2,7 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { Item } from '../data/items';
-import { Node, NodeState, GameMap, mapUtils, RunConfig } from '../types/map';
+import { Node, NodeState, GameMap, mapUtils, RunConfig, NodeType } from '../types/map';
 import { generateMap } from '../utils/mapGenerator';
 import { 
   createSeedUrl, 
@@ -98,6 +98,11 @@ type GameState = {
   getNodeState: (nodeId: string) => NodeState;
 };
 
+// Type for persisted state to handle typing more safely
+type PersistedGameState = Partial<Omit<GameState, 'map' | 'currentNodeId'>> & {
+  _storeVersion?: string;
+};
+
 // Initial state for reuse in resetGame
 const initialState = {
   gameState: 'not_started' as const,
@@ -187,12 +192,12 @@ export const useGameStore = create<GameState>()(
         if (!newMap.nodes || newMap.nodes.length === 0) {
           console.error("🚨 Map generation failed - no nodes available");
           // Generate a fallback single-node map for stability
-          const fallbackMap = {
+          const fallbackMap: GameMap = {
             nodes: [{
               id: 'emergency_node',
               title: 'Emergency Calibration',
               description: 'Emergency fallback node',
-              type: 'kapoorCalibration',
+              type: 'kapoorCalibration' as NodeType,
               position: { x: 50, y: 50 },
               connections: [],
               isLocked: false,
@@ -651,22 +656,25 @@ export const useGameStore = create<GameState>()(
         currentNodeId: undefined,
       }),
       // Only merge whitelisted keys on hydration
-      merge: (persistedState, currentState) => {
+      merge: (persistedState: any, currentState) => {
         console.log("🔄 Hydrating store from persisted state");
         
+        // Safely typed persisted state
+        const typedPersistedState = persistedState as PersistedGameState;
+        
         // Check for version mismatch
-        if (persistedState._storeVersion !== currentState._storeVersion) {
-          console.warn(`⚠️ Store version mismatch: ${persistedState._storeVersion} vs ${currentState._storeVersion}`);
+        if (typedPersistedState._storeVersion !== currentState._storeVersion) {
+          console.warn(`⚠️ Store version mismatch: ${typedPersistedState._storeVersion} vs ${currentState._storeVersion}`);
           return {
             ...currentState,
-            hasPlayedBefore: persistedState.hasPlayedBefore || false,
-            recentRuns: persistedState.recentRuns || [],
+            hasPlayedBefore: typedPersistedState.hasPlayedBefore || false,
+            recentRuns: typedPersistedState.recentRuns || [],
           };
         }
         
         return {
           ...currentState,  // Start with current state
-          ...persistedState,  // Override with persisted values
+          ...typedPersistedState, // Apply persisted values with proper typing
           
           // Safety: Always regenerate map, never restore from persistence
           map: currentState.map, 

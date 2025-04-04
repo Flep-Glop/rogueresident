@@ -640,9 +640,11 @@ export default function SimplifiedMap() {
             <button 
               className="ml-2 px-2 py-1 bg-blue-600 text-white rounded text-xs"
               onClick={() => {
-                const url = createSeedUrl(map.seed);
-                navigator.clipboard.writeText(url);
-                flashScreen && flashScreen('blue');
+                if (map?.seed !== undefined) {
+                  const url = createSeedUrl(map.seed);
+                  navigator.clipboard.writeText(url);
+                  flashScreen && flashScreen('blue');
+                }
               }}
             >
               Copy URL
