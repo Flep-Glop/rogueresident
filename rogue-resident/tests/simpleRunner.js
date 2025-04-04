@@ -6,6 +6,7 @@ const { testNodeAccessibility } = require('./testNodeAccessibility');
 const { testItemEffectSystem } = require('./testItemEffectSystem');
 const { testKnowledgeDecay } = require('./testKnowledgeDecay');
 const { testCharacterTeachingStyles } = require('./testCharacterTeachingStyles');
+const { testGameStateMachine } = require('./testGameStateMachine');
 
 function runTests() {
   console.log("🧪 ROGUE RESIDENT - PROGRESSION TESTS 🧪");
@@ -20,7 +21,8 @@ function runTests() {
     testNodeAccessibility,
     testItemEffectSystem,
     testKnowledgeDecay,
-    testCharacterTeachingStyles
+    testCharacterTeachingStyles,
+    testGameStateMachine  // Add our new state machine test
   ];
   
   let passed = 0;

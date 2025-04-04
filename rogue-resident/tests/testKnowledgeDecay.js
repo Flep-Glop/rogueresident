@@ -58,7 +58,11 @@ function testKnowledgeDecay() {
       const node = this.nodes[nodeId];
       if (!node) return false;
       
-      node.lastPracticed = Date.now();
+      // Ensure timestamp is definitely newer by forcing a minimum increment
+      // This prevents test failures on fast systems where Date.now() might return
+      // the same value for rapid consecutive calls
+      const forceNewerTimestamp = Date.now() + 1;
+      node.lastPracticed = forceNewerTimestamp;
       node.mastery = Math.min(1.0, node.mastery + masteryGain);
       this.updateVisualState(nodeId);
       
