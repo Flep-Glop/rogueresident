@@ -10,36 +10,42 @@
 
 // Set up any global mocks needed
 if (typeof window === 'undefined') {
-  (global as any).window = {
+  // Use standard JS syntax instead of TypeScript type assertion
+  global.window = {
     // Mock any browser APIs needed for tests
     localStorage: {
       getItem: jest.fn(),
       setItem: jest.fn(),
       removeItem: jest.fn()
+    },
+    fs: {
+      readFile: jest.fn().mockImplementation((path, options) => {
+        return Promise.resolve(Buffer.from('Mock file content'));
+      })
     }
   };
 }
 
 // Set up mock for Jest
 if (typeof jest === 'undefined') {
-  (global as any).jest = {
+  global.jest = {
     fn: () => {
-      const mockFn = (...args: any[]) => {
+      const mockFn = (...args) => {
         mockFn.mock.calls.push(args);
         return mockFn.mockImplementation ? mockFn.mockImplementation(...args) : undefined;
       };
       mockFn.mock = { calls: [] };
-      mockFn.mockReturnValue = (val: any) => {
+      mockFn.mockReturnValue = (val) => {
         mockFn.mockImplementation = () => val;
         return mockFn;
       };
-      mockFn.mockImplementation = (impl: Function) => {
+      mockFn.mockImplementation = (impl) => {
         mockFn.mockImplementation = impl;
         return mockFn;
       };
       return mockFn;
     },
-    mock: (moduleName: string, factory?: () => any) => {
+    mock: (moduleName, factory) => {
       // Simple mock for testing
       console.log(`Mocking module: ${moduleName}`);
     },

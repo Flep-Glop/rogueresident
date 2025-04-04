@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "test:progression": "node --loader ts-node/esm tests/runTests.ts"
+    "test:progression": "ts-node tests/runTests.ts",
+    "test:progression:js": "ts-node --transpile-only tests/runTests.ts"
   },
   "dependencies": {
     "immer": "^10.1.1",
