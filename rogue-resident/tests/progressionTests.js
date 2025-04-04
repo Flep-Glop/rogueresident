@@ -106,8 +106,31 @@ function testBossEncounter() {
   assertIncludes(gameState.completedNodes, 'boss-ionix', "Boss node should be completed");
 }
 
+// Export all tests
 module.exports = {
   testJournalAcquisition,
   testDialogueProgression,
   testBossEncounter
 };
+
+// Run test directly when executed as a standalone file
+function runTest() {
+  console.log("🧪 Running progression tests");
+  try {
+    testJournalAcquisition();
+    console.log("✅ PASSED: testJournalAcquisition");
+    testDialogueProgression();
+    console.log("✅ PASSED: testDialogueProgression");
+    testBossEncounter();
+    console.log("✅ PASSED: testBossEncounter");
+    return true;
+  } catch (error) {
+    console.error(`❌ FAILED: ${error.message}`);
+    return false;
+  }
+}
+
+// Run directly only when executed as main
+if (require.main === module) {
+  runTest();
+}
