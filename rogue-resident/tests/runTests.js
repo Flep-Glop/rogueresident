@@ -1,68 +1,58 @@
-// tests/runTests.ts
+// tests/js/runTests.js
 /**
- * Test Runner for Progression Tests
+ * Progression Test Runner
  * 
- * This module dynamically imports the test suite to avoid circular dependencies.
- * It sets up a minimal test environment and formats test results.
+ * A streamlined test runner that focuses on progression validation
+ * without the constraints of TypeScript's type system.
  * 
- * Run with: npm run test:progression
+ * Run with: node tests/js/runTests.js
  */
 
-// Set up any global mocks needed
-if (typeof window === 'undefined') {
-  // Use standard JS syntax instead of TypeScript type assertion
-  global.window = {
-    // Mock any browser APIs needed for tests
-    localStorage: {
-      getItem: jest.fn(),
-      setItem: jest.fn(),
-      removeItem: jest.fn()
-    },
-    fs: {
-      readFile: jest.fn().mockImplementation((path, options) => {
-        return Promise.resolve(Buffer.from('Mock file content'));
-      })
-    }
-  };
-}
+// Configure environment for testing
+global.window = global.window || {
+  localStorage: {
+    getItem: (key) => global.localStorage[key],
+    setItem: (key, value) => { global.localStorage[key] = value; },
+    removeItem: (key) => { delete global.localStorage[key]; },
+    clear: () => { global.localStorage = {}; }
+  },
+  fs: {
+    readFile: (path, options) => Promise.resolve(Buffer.from('Mock file content'))
+  }
+};
 
-// Set up mock for Jest
-if (typeof jest === 'undefined') {
-  global.jest = {
-    fn: () => {
-      const mockFn = (...args) => {
-        mockFn.mock.calls.push(args);
-        return mockFn.mockImplementation ? mockFn.mockImplementation(...args) : undefined;
-      };
-      mockFn.mock = { calls: [] };
-      mockFn.mockReturnValue = (val) => {
-        mockFn.mockImplementation = () => val;
-        return mockFn;
-      };
-      mockFn.mockImplementation = (impl) => {
-        mockFn.mockImplementation = impl;
-        return mockFn;
-      };
+// Initialize localStorage
+global.localStorage = {};
+
+// Mock for Jest if needed
+global.jest = {
+  fn: () => {
+    const mockFn = (...args) => {
+      mockFn.mock.calls.push(args);
+      return mockFn.mockImplementation ? mockFn.mockImplementation(...args) : undefined;
+    };
+    mockFn.mock = { calls: [] };
+    mockFn.mockReturnValue = (val) => {
+      mockFn.mockImplementation = () => val;
       return mockFn;
-    },
-    mock: (moduleName, factory) => {
-      // Simple mock for testing
-      console.log(`Mocking module: ${moduleName}`);
-    },
-    clearAllMocks: () => {
-      console.log('Clearing all mocks');
-    },
-    resetAllMocks: () => {
-      console.log('Resetting all mocks');
-    },
-    restoreAllMocks: () => {
-      console.log('Restoring all mocks');
-    }
-  };
-}
+    };
+    mockFn.mockImplementation = (impl) => {
+      mockFn.mockImplementation = impl;
+      return mockFn;
+    };
+    return mockFn;
+  },
+  clearAllMocks: () => console.log('Clearing all mocks'),
+  resetAllMocks: () => console.log('Resetting all mocks'),
+  restoreAllMocks: () => console.log('Restoring all mocks'),
+  mock: (moduleName, factory) => console.log(`Mocking module: ${moduleName}`)
+};
+
+// Import the test suite
+const { runProgressionTestSuite } = require('./progressionTestSuite');
 
 /**
- * Run the test suite
+ * Run the test suite with formatted output
  */
 async function main() {
   console.log("🧪 ROGUE RESIDENT - PROGRESSION TEST SUITE 🧪");
@@ -70,9 +60,6 @@ async function main() {
   console.log("Testing critical game progression paths...\n");
   
   try {
-    // Dynamically import the test suite to avoid circular dependencies
-    const { runProgressionTestSuite } = await import('./ProgressionTestSuite.js');
-    
     // Run tests and get results
     const results = await runProgressionTestSuite();
     

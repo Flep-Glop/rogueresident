@@ -7,8 +7,10 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "test:progression": "ts-node tests/runTests.ts",
-    "test:progression:js": "ts-node --transpile-only tests/runTests.ts"
+    "test:progression": "node tests/runTests.js",
+    "test:progression:ts": "ts-node tests/runTests.ts",
+    "test:progression:js-transpile": "ts-node --transpile-only tests/runTests.ts",
+    "test:progression:debug": "node tests/runTests.js --debug"
   },
   "dependencies": {
     "immer": "^10.1.1",
