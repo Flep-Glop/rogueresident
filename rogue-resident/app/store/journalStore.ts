@@ -1,7 +1,7 @@
 // app/store/journalStore.ts
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
-import { GameEventType, useEventBus } from '../core/events/GameEvents';
+import { GameEventType, legacyEventBus } from '../core/events/GameEvents';
 
 export type JournalEntry = {
   id: string;
@@ -100,7 +100,7 @@ export const useJournalStore = create<JournalState>()(
         // Emit event when journal is initialized
         if (typeof window !== 'undefined') {
           // Get event bus and emit event
-          const eventBus = useEventBus.getState();
+          const eventBus = legacyEventBus.getState();
           if (eventBus) {
             eventBus.dispatch(GameEventType.UI_JOURNAL_OPENED, {
               upgrade,
@@ -173,7 +173,7 @@ export const useJournalStore = create<JournalState>()(
         
         // Emit events for journal open/close
         if (typeof window !== 'undefined') {
-          const eventBus = useEventBus.getState();
+          const eventBus = legacyEventBus.getState();
           if (eventBus) {
             eventBus.dispatch(
               nextIsOpen ? GameEventType.UI_JOURNAL_OPENED : GameEventType.UI_JOURNAL_CLOSED, 

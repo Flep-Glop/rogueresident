@@ -9,8 +9,18 @@ import ChallengeRouter from './challenges/ChallengeRouter';
 import HillHomeScene from './HillHomeScene';
 import PlayerStats from './PlayerStats';
 import { SoundEffect } from '../types/audio';
+import { useGameState } from '../core/statemachine/GameStateMachine';
+import { useEventBus, GameEventType, playSoundEffect } from '../core/events/CentralEventBus';
 
 export default function GameContainer() {
+  // Use the new state machine for game phase management
+  const { 
+    gamePhase, 
+    isDay,
+    isNight,
+    completeNight
+  } = useGameState();
+  
   // Track component initialization state
   const [isInitialized, setIsInitialized] = useState(false);
   const [renderCount, setRenderCount] = useState(0);
@@ -19,20 +29,34 @@ export default function GameContainer() {
   const mapRef = useRef<HTMLDivElement>(null);
   const initTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   
+  // Maintain compatibility with the old store during migration
   const { 
-    gamePhase, 
     currentNodeId, 
     map,
-    completeNight,
     startGame
   } = useGameStore();
   
   const { currentChallenge, resetChallenge } = useChallengeStore();
+  
+  // Keep compatibility with sound system during migration
   const { playSound } = useGameEffects();
   
   // Increment render counter once on mount only for debugging
   useEffect(() => {
     setRenderCount(prev => prev + 1);
+    
+    // Log component mount through the event system
+    useEventBus.getState().dispatch(
+      GameEventType.UI_BUTTON_CLICKED,
+      {
+        componentId: 'gameContainer',
+        action: 'mounted',
+        metadata: {
+          renderCount: renderCount + 1,
+          timestamp: Date.now()
+        }
+      }
+    );
   }, []);
   
   // Stable logging helper that won't cause render loops
@@ -78,6 +102,20 @@ export default function GameContainer() {
       // Force map generation if needed
       if (!map) {
         console.log("🗺️ No map detected, initializing game state");
+        
+        // Dispatch the event through CentralEventBus
+        useEventBus.getState().dispatch(
+          GameEventType.UI_BUTTON_CLICKED,
+          {
+            componentId: 'gameContainer',
+            action: 'initializeGame',
+            metadata: {
+              reason: 'map_missing',
+              timestamp: Date.now()
+            }
+          }
+        );
+        
         startGame();
         
         // Give time for state to propagate before continuing
@@ -85,6 +123,19 @@ export default function GameContainer() {
           if (mounted) {
             console.log("✅ Initialization complete");
             setIsInitialized(true);
+            
+            // Log initialization completion through the event system
+            useEventBus.getState().dispatch(
+              GameEventType.UI_BUTTON_CLICKED,
+              {
+                componentId: 'gameContainer',
+                action: 'initializationComplete',
+                metadata: {
+                  mapNodeCount: useGameStore.getState().map?.nodes?.length || 0,
+                  timestamp: Date.now()
+                }
+              }
+            );
           }
         }, 500); // Increased timeout for stability
       } else {
@@ -97,6 +148,19 @@ export default function GameContainer() {
     if (renderCount > 3 && !isInitialized && map) {
       console.log("⚠️ Forcing initialization after multiple renders");
       setIsInitialized(true);
+      
+      // Log forced initialization through the event system
+      useEventBus.getState().dispatch(
+        GameEventType.UI_BUTTON_CLICKED,
+        {
+          componentId: 'gameContainer',
+          action: 'forcedInitialization',
+          metadata: {
+            renderCount,
+            timestamp: Date.now()
+          }
+        }
+      );
     }
     
     return () => {
@@ -105,7 +169,7 @@ export default function GameContainer() {
         clearTimeout(initTimeoutRef.current);
       }
     };
-  }, [map, startGame, isInitialized, renderCount]); // Removed currentNodeId to avoid potential render loops
+  }, [map, startGame, isInitialized, renderCount, gamePhase]); 
   
   // Separate effect for forcing rerender after delay
   useEffect(() => {
@@ -114,6 +178,20 @@ export default function GameContainer() {
         if (!mapRef.current || !mapRef.current.querySelector('.starfield-bg')) {
           console.log("🔄 Forcing rerender to help display map");
           setForceRerender(prev => prev + 1);
+          
+          // Log forced rerender through the event system
+          useEventBus.getState().dispatch(
+            GameEventType.UI_BUTTON_CLICKED,
+            {
+              componentId: 'gameContainer',
+              action: 'forcedRerender',
+              metadata: {
+                renderCount,
+                forceRerender: forceRerender + 1,
+                timestamp: Date.now()
+              }
+            }
+          );
         }
       }, 2000);
       
@@ -123,46 +201,48 @@ export default function GameContainer() {
   
   // Handle phase transition sounds with error catching
   useEffect(() => {
-    if (playSound && isInitialized) {
+    if (isInitialized) {
       try {
-        if (gamePhase === 'day') {
-          playSound('day-start' as SoundEffect);
-        } else if (gamePhase === 'night') {
-          playSound('night-start' as SoundEffect);
+        // Use new sound system
+        if (isDay) {
+          playSoundEffect('click', 1.0, false);
+        } else if (isNight) {
+          playSoundEffect('success', 1.0, false);
+        }
+        
+        // Fallback to old system
+        if (playSound) {
+          if (isDay) {
+            playSound('day-start' as SoundEffect);
+          } else if (isNight) {
+            playSound('night-start' as SoundEffect);
+          }
         }
       } catch (error) {
         console.warn("Sound effect failed to play, continuing without audio");
       }
     }
-  }, [gamePhase, playSound, isInitialized]);
+  }, [isDay, isNight, playSound, isInitialized]);
   
   // Clean up challenge state when returning to map
   useEffect(() => {
     if (!currentNodeId && currentChallenge) {
       resetChallenge();
+      
+      // Log challenge reset through the event system
+      useEventBus.getState().dispatch(
+        GameEventType.UI_BUTTON_CLICKED,
+        {
+          componentId: 'gameContainer',
+          action: 'resetChallenge',
+          metadata: {
+            previousChallengeId: currentChallenge.id,
+            timestamp: Date.now()
+          }
+        }
+      );
     }
   }, [currentNodeId, currentChallenge, resetChallenge]);
-  
-  // Safer diagnostic effect that won't cause render loops
-  useEffect(() => {
-    // Log render decision without state updates
-    console.log(`🖥️ Render output decided: ${
-      !isInitialized ? 'loading screen' :
-      gamePhase === 'night' ? 'night scene' :
-      !currentNodeId || !map ? 'map view' :
-      'challenge view'
-    }`);
-    
-    // Only run DOM checks once without setting state
-    if (isInitialized && gamePhase === 'day' && (!currentNodeId || !map)) {
-      const checkTimer = setTimeout(() => {
-        const mapElement = document.querySelector('[class*="starfield-bg"]');
-        console.log(`🔍 Map element check: ${mapElement ? 'Found in DOM' : 'Not found in DOM'}`);
-      }, 500);
-      
-      return () => clearTimeout(checkTimer);
-    }
-  }, [isInitialized, gamePhase, currentNodeId, map]);
   
   // Content router with fallback states for stability
   const renderGameContent = () => {
@@ -187,8 +267,27 @@ export default function GameContainer() {
     }
     
     // Night phase takes precedence
-    if (gamePhase === 'night') {
-      return <HillHomeScene onComplete={completeNight} />;
+    if (isNight) {
+      return (
+        <HillHomeScene 
+          onComplete={() => {
+            // Dispatch night completion through the event system
+            useEventBus.getState().dispatch(
+              GameEventType.UI_BUTTON_CLICKED,
+              {
+                componentId: 'nightCompleteButton',
+                action: 'click',
+                metadata: {
+                  timestamp: Date.now()
+                }
+              }
+            );
+            
+            // Also call the state machine action directly for migration
+            completeNight();
+          }} 
+        />
+      );
     }
     
     // Map view (main navigation hub)
@@ -220,13 +319,40 @@ export default function GameContainer() {
         <div className="fixed top-20 right-2 z-50 flex flex-col gap-1">
           <button 
             className="bg-red-600 text-white text-xs px-2 py-1 rounded opacity-70 hover:opacity-100"
-            onClick={() => setForceRerender(prev => prev + 1)}
+            onClick={() => {
+              setForceRerender(prev => prev + 1);
+              
+              // Log debug action through the event system
+              useEventBus.getState().dispatch(
+                GameEventType.UI_BUTTON_CLICKED,
+                {
+                  componentId: 'debugForceRerenderButton',
+                  action: 'click',
+                  metadata: {
+                    renderCount,
+                    timestamp: Date.now()
+                  }
+                }
+              );
+            }}
           >
             Force Rerender
           </button>
           <button 
             className="bg-blue-600 text-white text-xs px-2 py-1 rounded opacity-70 hover:opacity-100"
             onClick={() => {
+              // Log action through the event system before clearing storage
+              useEventBus.getState().dispatch(
+                GameEventType.UI_BUTTON_CLICKED,
+                {
+                  componentId: 'debugClearStorageButton',
+                  action: 'click',
+                  metadata: {
+                    timestamp: Date.now()
+                  }
+                }
+              );
+              
               localStorage.removeItem('rogue-resident-game');
               window.location.reload();
             }}
@@ -240,7 +366,12 @@ export default function GameContainer() {
   };
   
   return (
-    <div className="relative h-screen w-full bg-background flex flex-col">
+    <div 
+      className="relative h-screen w-full bg-background flex flex-col" 
+      data-game-container
+      data-phase={gamePhase}
+      data-initialized={isInitialized}
+    >
       {/* Top section - Game title bar, can be uncommented if needed */}
       {/* <div className="h-12 w-full bg-surface-dark flex items-center px-4 border-b border-gray-800">
         <h1 className="text-xl font-pixel-heading text-text-primary">Rogue Resident</h1>

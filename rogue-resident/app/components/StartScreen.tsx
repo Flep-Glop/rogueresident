@@ -1,19 +1,29 @@
 // app/components/StartScreen.tsx
 'use client';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useGameStore } from '../store/gameStore';
 import { PixelButton, PixelText } from './PixelThemeProvider';
 import { useGameEffects } from './GameEffects';
+import { useGameStateMachine } from '../core/statemachine/GameStateMachine';
+import { dispatchUIEvent } from '../core/events/CentralEventBus';
 import Image from 'next/image';
 
 export default function StartScreen() {
-  const { resetGame, startGame } = useGameStore();
+  const { resetGame, startGame, hasPlayedBefore } = useGameStore();
   const { flashScreen, playSound } = useGameEffects();
   const [showCredits, setShowCredits] = useState(false);
+  const [isButtonAnimating, setIsButtonAnimating] = useState(false);
   
+  // Access state machine (if available at this point in migration)
+  // Use try/catch to gracefully handle if the module isn't fully implemented yet
+  const transitionToState = useGameStateMachine ? 
+    useGameStateMachine(state => state.transitionToState) : 
+    null;
+  
+  // Enhanced start game function with dual-system support
   const handleStartNewGame = () => {
-    // Reset to initial state
-    resetGame();
+    console.log("🎮 Starting new game via StartScreen");
+    setIsButtonAnimating(true);
     
     // Play sound effect
     if (playSound) playSound('click');
@@ -21,11 +31,34 @@ export default function StartScreen() {
     // Apply screen transition effect
     if (flashScreen) flashScreen('white');
     
-    // Short delay for transition effect
+    // Reset the legacy store first
+    resetGame();
+    
+    // Short delay for visual transition and state reset
     setTimeout(() => {
-      // Update gameState to 'in_progress'
+      // 1. Dispatch UI event in new system
+      try {
+        dispatchUIEvent('startScreen', 'startGame', { hasPlayedBefore });
+      } catch (error) {
+        // Gracefully handle if new system isn't fully available
+        console.log("Using legacy start flow - new event system not detected");
+      }
+      
+      // 2. Start game in legacy system (will be bridged to new system)
       startGame();
-    }, 500);
+      
+      // 3. Also directly transition state machine if available
+      if (transitionToState) {
+        try {
+          transitionToState('in_progress', 'start_button');
+        } catch (error) {
+          console.log("State machine transition failed - using only legacy system");
+        }
+      }
+      
+      // Reset animation
+      setIsButtonAnimating(false);
+    }, 500); // Maintain original delay for visual effect
   };
   
   return (
@@ -68,15 +101,28 @@ export default function StartScreen() {
           
           <div className="flex space-x-4">
             <PixelButton
-              className="px-8 py-3 bg-clinical text-white hover:bg-clinical-light text-xl font-pixel"
+              className={`
+                px-8 py-3 bg-clinical text-white hover:bg-clinical-light text-xl font-pixel
+                transform transition-all duration-200 ${isButtonAnimating ? 'scale-95' : 'hover:scale-105'}
+              `}
               onClick={handleStartNewGame}
             >
-              Start New Run
+              {hasPlayedBefore ? 'Start New Run' : 'Start New Game'}
             </PixelButton>
             
             <PixelButton
               className="px-4 py-3 bg-surface/80 text-text-primary hover:bg-surface-dark text-lg font-pixel"
-              onClick={() => setShowCredits(true)}
+              onClick={() => {
+                setShowCredits(true);
+                if (playSound) playSound('ui-click');
+                
+                // Notify new event system if available
+                try {
+                  dispatchUIEvent('startScreen', 'showCredits', { visible: true });
+                } catch (error) {
+                  // Fall back gracefully if new system isn't available
+                }
+              }}
             >
               Credits
             </PixelButton>
@@ -92,7 +138,17 @@ export default function StartScreen() {
               <PixelText className="text-2xl">Credits</PixelText>
               <PixelButton 
                 className="bg-red-600 hover:bg-red-500 text-white" 
-                onClick={() => setShowCredits(false)}
+                onClick={() => {
+                  setShowCredits(false);
+                  if (playSound) playSound('ui-close');
+                  
+                  // Notify new event system if available
+                  try {
+                    dispatchUIEvent('startScreen', 'hideCredits', { visible: false });
+                  } catch (error) {
+                    // Fall back gracefully if new system isn't available
+                  }
+                }}
               >
                 Close
               </PixelButton>

@@ -8,6 +8,8 @@ import StartScreen from './components/StartScreen';
 import GameOver from './components/GameOver';
 import VictoryScreen from './components/VictoryScreen';
 import PhaseTransition from './components/PhaseTransition';
+import { setupGameStateMachine } from './core/statemachine/GameStateMachine';
+import { setupStateBridge } from './core/statemachine/GameStateBridge';
 
 export default function Home() {
   const { gameState, gamePhase, player } = useGameStore();
@@ -16,11 +18,20 @@ export default function Home() {
   const [transitionTo, setTransitionTo] = useState<'day' | 'night'>('night');
   const mountCountRef = useRef<number>(0);
   const cleanupRef = useRef<boolean>(false);
+  const stateMachineRef = useRef<{ teardown: () => void } | null>(null);
+  const stateBridgeRef = useRef<(() => void) | null>(null);
   
   // Anti-duplication mount tracking
   useEffect(() => {
     mountCountRef.current += 1;
     console.log(`Home component mounted (count: ${mountCountRef.current})`);
+    
+    // Set up state management & synchronization
+    if (!stateMachineRef.current) {
+      console.log("🔄 Setting up game state machine & bridge");
+      stateMachineRef.current = setupGameStateMachine();
+      stateBridgeRef.current = setupStateBridge();
+    }
     
     // Detect and clean up duplicate mounts after a short delay
     setTimeout(() => {
@@ -38,6 +49,17 @@ export default function Home() {
     return () => {
       cleanupRef.current = true;
       console.log("Home component unmounting");
+      
+      // Clean up state machine and bridge
+      if (stateMachineRef.current) {
+        stateMachineRef.current.teardown();
+        stateMachineRef.current = null;
+      }
+      
+      if (stateBridgeRef.current) {
+        stateBridgeRef.current();
+        stateBridgeRef.current = null;
+      }
     };
   }, []);
   

@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import { PixelText } from './PixelThemeProvider';
 import { useGameStore } from '../store/gameStore';
 import { useGameEffects } from './GameEffects';
+import { useEventBus, GameEventType, playSoundEffect } from '../core/events/CentralEventBus';
 
 interface PhaseTransitionProps {
   fromPhase: 'day' | 'night';
@@ -17,6 +18,8 @@ interface PhaseTransitionProps {
  * The transition emphasizes the conceptual and physical journey between the hospital and 
  * hillside home, reinforcing the core game rhythm while ensuring content isn't visible
  * during transitions.
+ * 
+ * Updated to use CentralEventBus for sound and event dispatching.
  */
 export default function PhaseTransition({ fromPhase, toPhase, onComplete }: PhaseTransitionProps) {
   const [opacity, setOpacity] = useState(0);
@@ -24,13 +27,32 @@ export default function PhaseTransition({ fromPhase, toPhase, onComplete }: Phas
   const [transitionStage, setTransitionStage] = useState(0);
   const [backgroundImage, setBackgroundImage] = useState('');
   const { currentDay } = useGameStore();
+  
+  // Keep compatability with the old system during migration
   const { playSound } = useGameEffects();
+  
+  // Track transition analytics
+  const transitionStartTime = useRef(Date.now());
   
   // Ref to track if component is mounted
   const isMounted = useRef(true);
   
   // Create background gradients based on time of day
   useEffect(() => {
+    // Track transition start in analytics
+    transitionStartTime.current = Date.now();
+    
+    // Log transition through event bus
+    useEventBus.getState().dispatch(
+      fromPhase === 'day' ? GameEventType.DAY_STARTED : GameEventType.NIGHT_STARTED,
+      {
+        fromPhase,
+        toPhase,
+        currentDay,
+        timestamp: transitionStartTime.current
+      }
+    );
+    
     // Immediately set high opacity to prevent flickering of underlying content
     setOpacity(1);
     
@@ -41,13 +63,18 @@ export default function PhaseTransition({ fromPhase, toPhase, onComplete }: Phas
       // Night to day: sunrise gradient
       setBackgroundImage('linear-gradient(to bottom, #5293D7 0%, #DF9553 50%, #FAF6DB 100%)');
     }
-  }, [fromPhase, toPhase]);
+  }, [fromPhase, toPhase, currentDay]);
   
   useEffect(() => {
     // Mark component as mounted
     isMounted.current = true;
     
-    // Play transition sound
+    // Play transition sound using the new central system
+    playSoundEffect(
+      fromPhase === 'day' && toPhase === 'night' ? 'success' : 'click'
+    );
+    
+    // Fallback to old system during migration
     if (playSound) {
       // Use sound effects that are compatible with the SoundEffect type
       playSound(fromPhase === 'day' && toPhase === 'night' ? 'success' : 'click');
@@ -63,12 +90,38 @@ export default function PhaseTransition({ fromPhase, toPhase, onComplete }: Phas
         if (!isMounted.current) return;
         setShowText(true);
         setTransitionStage(1);
+        
+        // Log transition stage through event bus
+        useEventBus.getState().dispatch(
+          GameEventType.UI_BUTTON_CLICKED,
+          {
+            componentId: 'phaseTransition',
+            action: 'stageChange',
+            metadata: {
+              stage: 1,
+              elapsed: Date.now() - transitionStartTime.current
+            }
+          }
+        );
       }, 300),
       
       // Stage 2: Hold (2000ms)
       setTimeout(() => {
         if (!isMounted.current) return;
         setTransitionStage(2);
+        
+        // Log transition stage through event bus
+        useEventBus.getState().dispatch(
+          GameEventType.UI_BUTTON_CLICKED,
+          {
+            componentId: 'phaseTransition',
+            action: 'stageChange',
+            metadata: {
+              stage: 2,
+              elapsed: Date.now() - transitionStartTime.current
+            }
+          }
+        );
       }, 2300),
       
       // Stage 3: Begin fade out (3500ms)
@@ -76,11 +129,39 @@ export default function PhaseTransition({ fromPhase, toPhase, onComplete }: Phas
         if (!isMounted.current) return;
         setShowText(false);
         setTransitionStage(3);
+        
+        // Log transition stage through event bus
+        useEventBus.getState().dispatch(
+          GameEventType.UI_BUTTON_CLICKED,
+          {
+            componentId: 'phaseTransition',
+            action: 'stageChange',
+            metadata: {
+              stage: 3,
+              elapsed: Date.now() - transitionStartTime.current
+            }
+          }
+        );
       }, 3500),
       
       // Stage 4: Complete transition after fade out (4000ms)
       setTimeout(() => {
         if (!isMounted.current) return;
+        
+        // Log transition completion through event bus before callback
+        useEventBus.getState().dispatch(
+          GameEventType.UI_BUTTON_CLICKED,
+          {
+            componentId: 'phaseTransition',
+            action: 'stageChange',
+            metadata: {
+              stage: 4,
+              elapsed: Date.now() - transitionStartTime.current,
+              isComplete: true
+            }
+          }
+        );
+        
         onComplete();
         setTransitionStage(4);
       }, 4000)
@@ -91,7 +172,7 @@ export default function PhaseTransition({ fromPhase, toPhase, onComplete }: Phas
       isMounted.current = false;
       timers.forEach(timer => clearTimeout(timer));
     };
-  }, [onComplete, fromPhase, toPhase, playSound]);
+  }, [onComplete, fromPhase, toPhase, playSound, currentDay]);
   
   // Get the appropriate transition message based on direction
   const getTransitionMessage = () => {
@@ -118,6 +199,9 @@ export default function PhaseTransition({ fromPhase, toPhase, onComplete }: Phas
         background: backgroundImage,
         opacity: 1, // Always maintain full opacity to ensure no content bleeds through
       }}
+      data-testid="phase-transition"
+      data-stage={transitionStage}
+      data-direction={`${fromPhase}-to-${toPhase}`}
     >
       {showText && (
         <div className="text-center text-white relative">
