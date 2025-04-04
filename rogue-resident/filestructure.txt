@@ -101,6 +101,7 @@
 │       └── seedUtils.ts
 ├── eslint.config.mjs
 ├── filestructure.txt
+├── jest-config.js
 ├── next-env.d.ts
 ├── next.config.ts
 ├── package-lock.json
@@ -110,7 +111,12 @@
 ├── tests
 │   ├── DialogueStateMachine.test.ts
 │   ├── ProgressionTestSuite.ts
-│   └── runTests.ts
+│   ├── runTests.ts
+│   ├── setup.js
+│   ├── testDefinitions.ts
+│   └── utils
+│       ├── testEventRecorder.ts
+│       └── testStoreMocks.ts
 └── tsconfig.json
 
-20 directories, 93 files
+21 directories, 98 files
