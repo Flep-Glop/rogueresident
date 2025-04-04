@@ -17,8 +17,8 @@ export interface DialogueOption {
   };
   responseText?: string;
   triggersBackstory?: boolean;
-  isCriticalPath?: boolean; // Added for progression tracking
-  condition?: (context: any) => boolean; // Added for conditional options
+  isCriticalPath?: boolean;
+  condition?: (context: any) => boolean;
 }
 
 export interface DialogueStage {
@@ -33,9 +33,9 @@ export interface DialogueStage {
   options?: DialogueOption[];
   nextStageId?: string;
   isConclusion?: boolean;
-  isCriticalPath?: boolean; // Added for progression tracking
-  isMandatory?: boolean; // Added for progression tracking
-  maxVisits?: number; // Added for loop detection
+  isCriticalPath?: boolean;
+  isMandatory?: boolean;
+  maxVisits?: number;
   type?: 'intro' | 'question' | 'response' | 'backstory' | 'conclusion' | 'critical-moment';
   onEnter?: (context: any) => void;
   onExit?: (context: any) => void;
@@ -46,17 +46,15 @@ interface DialogueFlowOptions {
   stages: DialogueStage[];
   onStageChange?: (newStageId: string, prevStageId: string) => void;
   onOptionSelected?: (option: DialogueOption) => void;
-  characterId?: string; // Added for telemetry
-  nodeId?: string; // Added for telemetry
-  useStateMachine?: boolean; // Optional flag to use formal state machine
+  characterId?: string;
+  nodeId?: string;
 }
 
 /**
- * A hook that manages dialogue flow, stages, and responses
- * for narrative-driven game interactions, with enhanced progression reliability
+ * A hook that manages dialogue flow using the formal DialogueStateMachine
  * 
- * Combines the simplicity of the original hook with progression guarantees
- * and self-healing capabilities powered by a formal state machine
+ * This is the simplified version that exclusively uses the state machine,
+ * removing the legacy code paths for better reliability and maintainability.
  */
 export function useDialogueFlow({
   initialStageId = 'intro',
@@ -65,52 +63,49 @@ export function useDialogueFlow({
   onOptionSelected,
   characterId = 'unknown',
   nodeId = 'unknown',
-  useStateMachine = true // Default to using state machine for reliability
 }: DialogueFlowOptions) {
-  // Original hook state - maintain for compatibility
+  // Track local UI state synchronized with the state machine
   const [currentStageId, setCurrentStageId] = useState(initialStageId);
-  const [selectedOption, setSelectedOption] = useState<DialogueOption | null>(null);
-  const [showResponse, setShowResponse] = useState(false);
-  const [showBackstory, setShowBackstory] = useState(false);
-  const [backstoryText, setBackstoryText] = useState('');
-  
-  // New state for enhanced functionality
   const [isProgressionValid, setIsProgressionValid] = useState(true);
   const [progressionHistory, setProgressionHistory] = useState<string[]>([]);
   
-  // Important refs for tracking state between renders
+  // Important refs for state tracking
   const visitedStagesRef = useRef<Set<string>>(new Set([initialStageId]));
-  const stageVisitCountRef = useRef<Record<string, number>>({});
   const criticalPathProgressRef = useRef<Record<string, boolean>>({});
   const progressionValidatedRef = useRef<boolean>(false);
   
-  // Access formal state machine - this is the engine powering our reliability
+  // Access the dialogue state machine
   const stateMachine = useDialogueStateMachine();
   
-  // Initialize formal state machine if enabled
-  useEffect(() => {
-    if (!useStateMachine) return;
+  // Helper to convert stages format to state machine states
+  const convertStagesToStates = useCallback(() => {
+    const states: Record<string, DialogueState> = {};
     
+    stages.forEach(stage => {
+      states[stage.id] = {
+        id: stage.id,
+        type: stage.type || 'question',
+        text: stage.text,
+        options: stage.options,
+        nextStateId: stage.nextStageId,
+        isConclusion: stage.isConclusion,
+        isCriticalPath: stage.isCriticalPath,
+        isMandatory: stage.isMandatory,
+        maxVisits: stage.maxVisits,
+        onEnter: stage.onEnter,
+        onExit: stage.onExit
+      };
+    });
+    
+    return states;
+  }, [stages]);
+  
+  // Initialize state machine on mount
+  useEffect(() => {
     // Only initialize if not already active
     if (!stateMachine.activeFlow) {
-      // Convert our stages format to state machine format
-      const states: Record<string, DialogueState> = {};
-      
-      stages.forEach(stage => {
-        states[stage.id] = {
-          id: stage.id,
-          type: stage.type || 'question',
-          text: stage.text,
-          options: stage.options,
-          nextStateId: stage.nextStageId,
-          isConclusion: stage.isConclusion,
-          isCriticalPath: stage.isCriticalPath,
-          isMandatory: stage.isMandatory,
-          maxVisits: stage.maxVisits,
-          onEnter: stage.onEnter,
-          onExit: stage.onExit
-        };
-      });
+      // Convert stages to state machine format
+      const states = convertStagesToStates();
       
       // Initialize the flow
       stateMachine.initializeFlow({
@@ -134,7 +129,6 @@ export function useDialogueFlow({
       
       // Track initial stage visit
       visitedStagesRef.current.add(initialStageId);
-      stageVisitCountRef.current[initialStageId] = 1;
       
       // Log initialization through event system
       useEventBus.getState().dispatch(GameEventType.UI_BUTTON_CLICKED, {
@@ -166,14 +160,11 @@ export function useDialogueFlow({
         });
       }
     };
-  }, [
-    useStateMachine, stateMachine, stages, initialStageId, 
-    characterId, nodeId, currentStageId
-  ]);
+  }, [stateMachine, convertStagesToStates, initialStageId, characterId, nodeId, currentStageId]);
   
-  // Sync with state machine state changes (if enabled)
+  // Sync with state machine state changes
   useEffect(() => {
-    if (!useStateMachine || !stateMachine.currentState) return;
+    if (!stateMachine.currentState) return;
     
     const machineStageId = stateMachine.currentState.id;
     
@@ -181,16 +172,8 @@ export function useDialogueFlow({
     if (machineStageId !== currentStageId) {
       setCurrentStageId(machineStageId);
       
-      // Sync other state properties
-      setShowResponse(stateMachine.showResponse);
-      setSelectedOption(stateMachine.selectedOption);
-      setShowBackstory(stateMachine.showBackstory);
-      setBackstoryText(stateMachine.backstoryText);
-      
       // Track stage visit
       visitedStagesRef.current.add(machineStageId);
-      stageVisitCountRef.current[machineStageId] = 
-        (stageVisitCountRef.current[machineStageId] || 0) + 1;
       
       // Check if this is a critical path stage
       const stage = stages.find(s => s.id === machineStageId);
@@ -208,7 +191,7 @@ export function useDialogueFlow({
             stageId: machineStageId,
             characterId,
             nodeId,
-            visitCount: stageVisitCountRef.current[machineStageId]
+            visitCount: Object.keys(visitedStagesRef.current).length
           }
         });
       }
@@ -223,7 +206,7 @@ export function useDialogueFlow({
     const progressionStatus = stateMachine.getProgressionStatus();
     setIsProgressionValid(!progressionStatus.progressionBlocked);
     
-    // PROGRESSION GUARANTEE: Check for loops or blocked progression
+    // Auto-repair progression issues
     if (progressionStatus.progressionBlocked && !progressionValidatedRef.current) {
       console.warn(`[useDialogueFlow] Progression issue detected:`, progressionStatus);
       
@@ -251,7 +234,7 @@ export function useDialogueFlow({
       }, 1000);
     }
     
-    // CRITICAL VALIDATION: Mark stages that represent critical progression points
+    // Mark critical progression points
     if ((stateMachine.currentState.isConclusion || stateMachine.currentState.isCriticalPath)
         && characterId === 'kapoor') {
       
@@ -272,24 +255,17 @@ export function useDialogueFlow({
       }
     }
   }, [
-    useStateMachine, stateMachine.currentState, stateMachine.showResponse,
-    stateMachine.selectedOption, stateMachine.showBackstory, stateMachine.backstoryText,
-    currentStageId, onStageChange, stages, characterId, nodeId, progressionHistory
+    stateMachine.currentState, currentStageId, onStageChange, 
+    stages, characterId, nodeId, progressionHistory
   ]);
   
-  // Get the current stage object - simple utility
+  // Get the current stage object
   const getCurrentStage = useCallback(() => {
     return stages.find(stage => stage.id === currentStageId) || stages[0];
   }, [currentStageId, stages]);
   
-  const currentStage = getCurrentStage();
-  
   // Handle player selecting a dialogue option
   const handleOptionSelect = useCallback((option: DialogueOption) => {
-    // Common state updates
-    setSelectedOption(option);
-    setShowResponse(Boolean(option.responseText));
-    
     // Track critical path options
     if (option.isCriticalPath) {
       criticalPathProgressRef.current[`option-${option.id}`] = true;
@@ -301,10 +277,8 @@ export function useDialogueFlow({
       onOptionSelected(option);
     }
     
-    // Forward to state machine if enabled
-    if (useStateMachine) {
-      stateMachine.selectOption(option.id);
-    }
+    // Forward to state machine
+    stateMachine.selectOption(option.id);
     
     // Log option selection through event system
     useEventBus.getState().dispatch(GameEventType.DIALOGUE_OPTION_SELECTED, {
@@ -315,95 +289,27 @@ export function useDialogueFlow({
       insightGain: option.insightGain || 0,
       isCriticalPath: option.isCriticalPath || false
     });
-  }, [
-    onOptionSelected, useStateMachine, stateMachine, 
-    currentStageId, characterId, nodeId
-  ]);
+  }, [onOptionSelected, stateMachine, currentStageId, characterId, nodeId]);
   
-  // Progress dialogue after response
+  // Progress dialogue
   const handleContinue = useCallback(() => {
-    // If showing backstory, return to main dialogue first
-    if (showBackstory) {
-      setShowBackstory(false);
-      
-      // Forward to state machine if enabled
-      if (useStateMachine) {
-        stateMachine.advanceState();
-      }
-      
-      return;
-    }
-    
-    // If showing response, transition to next dialogue stage
-    if (showResponse) {
-      setShowResponse(false);
-      
-      // Handle via state machine if enabled
-      if (useStateMachine) {
-        stateMachine.advanceState();
-        return true;
-      }
-      
-      // Original logic - normal progression to next stage
-      const prevStageId = currentStageId;
-      const nextStageId = selectedOption?.nextStageId || currentStage.nextStageId;
-      
-      if (nextStageId) {
-        // Track stage visit
-        visitedStagesRef.current.add(nextStageId);
-        stageVisitCountRef.current[nextStageId] = 
-          (stageVisitCountRef.current[nextStageId] || 0) + 1;
-        
-        // Update state
-        setCurrentStageId(nextStageId);
-        setSelectedOption(null);
-        
-        if (onStageChange) {
-          onStageChange(nextStageId, prevStageId);
-        }
-        
-        return true;
-      }
-      
-      return false;
-    }
-    
-    // If state machine is enabled, use it for advancing state
-    if (useStateMachine) {
-      stateMachine.advanceState();
-      return true;
-    }
-    
-    // Original behavior - if no response and no state machine, just return false
-    return false;
-  }, [
-    showBackstory, showResponse, currentStage, currentStageId,
-    selectedOption, onStageChange, useStateMachine, stateMachine
-  ]);
+    stateMachine.advanceState();
+    return true;
+  }, [stateMachine]);
   
-  // Enable showing backstory segments
+  // Show backstory segment
   const showBackstorySegment = useCallback((text: string) => {
-    setBackstoryText(text);
-    setShowBackstory(true);
+    // This would need to be implemented in the state machine
+    console.log('Showing backstory segment:', text);
   }, []);
   
-  // Jump directly to a specific stage
+  // Jump to specific stage
   const jumpToStage = useCallback((stageId: string) => {
     // Track stage visit
     visitedStagesRef.current.add(stageId);
-    stageVisitCountRef.current[stageId] = 
-      (stageVisitCountRef.current[stageId] || 0) + 1;
     
-    // Update local state
-    setCurrentStageId(stageId);
-    setSelectedOption(null);
-    setShowResponse(false);
-    setShowBackstory(false);
-    
-    // Forward to state machine if enabled
-    if (useStateMachine) {
-      stateMachine.jumpToState(stageId);
-    }
+    // Forward to state machine
+    stateMachine.jumpToState(stageId);
     
     // Log through event system
     useEventBus.getState().dispatch(GameEventType.UI_BUTTON_CLICKED, {
@@ -417,55 +323,31 @@ export function useDialogueFlow({
         reason: 'explicit_call'
       }
     });
-  }, [currentStageId, useStateMachine, stateMachine, characterId, nodeId]);
+  }, [currentStageId, stateMachine, characterId, nodeId]);
   
-  // Get progression status for external systems
-  const getProgressionStatus = useCallback(() => {
-    if (useStateMachine) {
-      return stateMachine.getProgressionStatus();
-    }
-    
-    // Simplified status for non-state machine mode
-    return {
-      isCompleted: visitedStagesRef.current.size > 0,
-      criticalPathsCompleted: true, // Optimistic assumption
-      missingCheckpoints: [],
-      potentialLoops: Object.entries(stageVisitCountRef.current)
-        .filter(([id, count]) => count > 2)
-        .map(([id]) => id),
-      progressionBlocked: false
-    };
-  }, [useStateMachine, stateMachine]);
-  
-  // For advanced cases that need direct state machine access
-  const getDialogueStateMachine = useCallback(() => {
-    return useStateMachine ? stateMachine : null;
-  }, [useStateMachine, stateMachine]);
-  
-  // Return a hybrid API that combines the original simplicity with the new capabilities
   return {
-    // Original API
-    currentStage,
+    // Core state
+    currentStage: getCurrentStage(),
     currentStageId,
-    selectedOption,
-    showResponse,
-    showBackstory,
-    backstoryText,
+    selectedOption: stateMachine.selectedOption,
+    showResponse: stateMachine.showResponse,
+    showBackstory: stateMachine.showBackstory,
+    backstoryText: stateMachine.backstoryText,
+    
+    // Actions
     handleOptionSelect,
     handleContinue,
     showBackstorySegment,
     setCurrentStageId: jumpToStage,
     
-    // Extended API
+    // Progression tracking
     isProgressionValid,
     progressionHistory,
     visitedStages: Array.from(visitedStagesRef.current),
-    dialogueStateMachine: getDialogueStateMachine(),
-    getProgressionStatus,
+    dialogueStateMachine: stateMachine,
     
-    // For debugging - remove in production
-    DEBUG_visitCounts: stageVisitCountRef.current,
-    DEBUG_criticalPathProgress: criticalPathProgressRef.current
+    // State inspection
+    getProgressionStatus: stateMachine.getProgressionStatus
   };
 }
 

@@ -18,6 +18,7 @@
 │   │   ├── PixelThemeProvider.tsx
 │   │   ├── PixelUIElements.tsx
 │   │   ├── PlayerStats.tsx
+│   │   ├── SeedDebugPanel.tsx
 │   │   ├── SimplifiedMap.tsx
 │   │   ├── SpriteFromSheet.tsx
 │   │   ├── StartScreen.tsx
@@ -54,11 +55,20 @@
 │   │       ├── KnowledgeUpdate.tsx
 │   │       └── NotificationManager.tsx
 │   ├── core
-│   │   └── events
-│   │       ├── EventEffectsIntegration.ts
-│   │       ├── baseHandlers.ts
-│   │       ├── journalEventHandlers.ts
-│   │       └── uiHandlers.ts
+│   │   ├── dialogue
+│   │   │   └── DialogueStateMachine.ts
+│   │   ├── events
+│   │   │   ├── CentralEventBus.ts
+│   │   │   ├── EventEffectsIntegration.ts
+│   │   │   ├── GameEvents.ts
+│   │   │   ├── baseHandlers.ts
+│   │   │   ├── journalEventHandlers.ts
+│   │   │   └── uiHandlers.ts
+│   │   ├── progression
+│   │   │   └── ProgressionGuarantee.ts
+│   │   └── statemachine
+│   │       ├── GameStateBridge.ts
+│   │       └── GameStateMachine.ts
 │   ├── data
 │   │   ├── clinicalChallenges.ts
 │   │   ├── items.ts
@@ -87,7 +97,8 @@
 │   └── utils
 │       ├── CharacterTeachingStyles.ts
 │       ├── knowledgeRequirements.ts
-│       └── mapGenerator.ts
+│       ├── mapGenerator.ts
+│       └── seedUtils.ts
 ├── eslint.config.mjs
 ├── filestructure.txt
 ├── next-env.d.ts
@@ -96,6 +107,10 @@
 ├── package.json
 ├── postcss.config.mjs
 ├── tailwind.config.js
+├── tests
+│   ├── DialogueStateMachine.test.ts
+│   ├── ProgressionTestSuite.ts
+│   └── runTests.ts
 └── tsconfig.json
 
-16 directories, 82 files
+20 directories, 93 files
