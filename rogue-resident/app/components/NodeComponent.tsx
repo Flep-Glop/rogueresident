@@ -1,7 +1,8 @@
 // app/components/NodeComponent.tsx
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { Node } from '../types/map';
 import Image from 'next/image';
+import { useGameEffects } from './GameEffects';
 
 interface NodeComponentProps {
   node: Node;
@@ -12,6 +13,7 @@ interface NodeComponentProps {
   onClick: () => void;
   onMouseEnter: () => void;
   onMouseLeave: () => void;
+  revealMode?: boolean; // New prop to toggle enhanced visibility
 }
 
 export default function NodeComponent({
@@ -23,33 +25,48 @@ export default function NodeComponent({
   onClick,
   onMouseEnter,
   onMouseLeave,
+  revealMode = false,
 }: NodeComponentProps) {
   // Add state for animation
   const [animating, setAnimating] = useState<boolean>(false);
+  const [hasGlowEffect, setHasGlowEffect] = useState<boolean>(false);
+  const nodeRef = useRef<HTMLDivElement>(null);
+  const { playSound } = useGameEffects();
   
-  // Sound effects enabled state
-  const [soundEnabled, setSoundEnabled] = useState<boolean>(true);
-  
-  // Load sound effects
+  // Initialize glow effect once component renders
   useEffect(() => {
-    // Check if we're in a browser environment with audio support
-    if (typeof window !== 'undefined' && 'Audio' in window) {
-      // Pre-load sounds for faster playback
-      const clickSound = new Audio('/sounds/node-select.mp3');
-      clickSound.preload = 'auto';
-      
-      // Make sure to clean up
-      return () => {
-        clickSound.pause();
-        clickSound.src = '';
-      };
-    }
+    // Add slight delay for better entrance effect
+    const timer = setTimeout(() => {
+      setHasGlowEffect(true);
+    }, Math.random() * 500);
+    
+    return () => clearTimeout(timer);
   }, []);
+  
+  // Apply visual enhancements when node becomes available or selected
+  useEffect(() => {
+    if (isAvailable || isSelected) {
+      const nodeElement = nodeRef.current;
+      if (nodeElement) {
+        nodeElement.animate(
+          [
+            { opacity: '0.7', transform: 'scale(0.95)' },
+            { opacity: '1', transform: 'scale(1)' }
+          ],
+          { 
+            duration: 600, 
+            easing: 'cubic-bezier(0.16, 1, 0.3, 1)',
+            fill: 'forwards'
+          }
+        );
+      }
+    }
+  }, [isAvailable, isSelected]);
   
   // Handle click with animation and sound
   const handleNodeClick = () => {
     // Skip if node isn't available or is already animating
-    if (!isAvailable || animating || isSelected) {
+    if ((!isAvailable && !revealMode) || animating || isSelected) {
       return;
     }
     
@@ -57,25 +74,24 @@ export default function NodeComponent({
     setAnimating(true);
     
     // Play sound effect
-    if (soundEnabled) {
-      try {
-        const clickSound = new Audio('/sounds/node-select.mp3');
-        clickSound.volume = 0.5;
-        clickSound.play().catch(err => {
-          console.log('Audio play failed:', err);
-          // If audio fails, disable to avoid console spam
-          setSoundEnabled(false);
-        });
-      } catch (error) {
-        console.log('Sound not supported or file not found');
-        setSoundEnabled(false);
-      }
+    if (playSound) {
+      playSound('node-select');
     }
     
     // Apply visual feedback
-    const nodeElement = document.getElementById(`node-${node.id}`);
+    const nodeElement = nodeRef.current;
     if (nodeElement) {
-      nodeElement.classList.add('node-pulse-animation');
+      nodeElement.animate(
+        [
+          { transform: 'scale(1)', filter: 'brightness(1)' },
+          { transform: 'scale(1.2)', filter: 'brightness(1.3)' },
+          { transform: 'scale(1)', filter: 'brightness(1)' }
+        ],
+        { 
+          duration: 400, 
+          easing: 'cubic-bezier(0.16, 1, 0.3, 1)'
+        }
+      );
     }
     
     // Small delay for animation to complete
@@ -88,9 +104,6 @@ export default function NodeComponent({
       
       // Reset animation states
       setAnimating(false);
-      if (nodeElement) {
-        nodeElement.classList.remove('node-pulse-animation');
-      }
     }, 300);
   };
   
@@ -108,7 +121,12 @@ export default function NodeComponent({
       case 'vendor':
         return '/node-icons/vendor-node.png';
       case 'boss':
+      case 'boss-ionix':
         return '/node-icons/boss-node.png';
+      case 'qualification':
+        return '/node-icons/qualification-node.png';
+      case 'kapoorCalibration':
+        return '/node-icons/calibration-node.png';
       default:
         return '/node-icons/default-node.png';
     }
@@ -131,10 +149,38 @@ export default function NodeComponent({
         return 'rgba(191, 179, 139, 0.7)'; // Tan
       case 'vendor':
         return 'rgba(50, 63, 79, 0.7)'; // Dark blue
+      case 'qualification':
+        return 'rgba(239, 164, 58, 0.7)'; // Orange
       case 'boss':
+      case 'boss-ionix':
         return 'rgba(204, 77, 77, 0.7)'; // Red
+      case 'kapoorCalibration':
+        return 'rgba(51, 163, 220, 0.7)'; // Bright blue
       default:
         return 'rgba(255, 255, 255, 0.7)'; // White
+    }
+  };
+  
+  // Get shadow color based on node type
+  const getShadowColor = () => {
+    switch(node.type) {
+      case 'clinical':
+        return 'rgba(78, 131, 189, 0.3)'; // Blue
+      case 'qa':
+        return 'rgba(90, 105, 120, 0.3)'; // Gray-blue
+      case 'educational':
+        return 'rgba(44, 146, 135, 0.3)'; // Teal
+      case 'storage':
+        return 'rgba(191, 179, 139, 0.3)'; // Tan
+      case 'boss':
+      case 'boss-ionix':
+        return 'rgba(204, 77, 77, 0.3)'; // Red
+      case 'qualification':
+        return 'rgba(239, 164, 58, 0.3)'; // Orange
+      case 'kapoorCalibration':
+        return 'rgba(51, 163, 220, 0.3)'; // Bright blue
+      default:
+        return 'rgba(255, 255, 255, 0.2)'; // White
     }
   };
   
@@ -146,7 +192,47 @@ export default function NodeComponent({
     storage: 'Storage Closet: Find useful items to aid your journey',
     vendor: 'Vendor Showcase: Purchase specialized equipment',
     boss: 'Critical Challenge: A major test of your medical physics knowledge',
+    'boss-ionix': 'IONIX: The experimental ion chamber has developed a quantum consciousness',
+    qualification: 'Qualification Challenge: Prove your readiness for the upcoming boss encounter',
+    kapoorCalibration: 'Calibration: Work with Dr. Kapoor to calibrate essential medical equipment',
+    experimental: 'Experimental: High-risk, high-reward challenges for the adventurous',
+    entrance: 'Starting Point: Begin your journey here',
   };
+  
+  // Dynamic styles based on node state
+  const getNodeStyles = () => {
+    // Adjust visibility based on available state and reveal mode
+    let opacity = isAvailable || isCompleted || isSelected ? 1 : 
+                 revealMode ? 0.7 : 0.4;
+    
+    let scale = isSelected ? 1.1 : 
+               isHovered ? 1.05 : 1;
+               
+    let filter = isAvailable || isCompleted || isSelected ? 'none' : 
+                revealMode ? 'grayscale(0.5)' : 'grayscale(1)';
+                
+    let brightness = isSelected ? 'brightness(1.2)' :
+                   isHovered ? 'brightness(1.1)' : 'brightness(1)';
+                   
+    // Combine filters
+    filter = `${filter} ${brightness}`;
+    
+    let cursor = (isAvailable || isSelected || revealMode) ? 'pointer' : 'default';
+    
+    // Particle effects for active nodes
+    let particles = (isSelected || isHovered) && (isAvailable || isCompleted);
+    
+    return {
+      opacity,
+      scale,
+      filter,
+      cursor,
+      particles
+    };
+  };
+  
+  // Generate node style
+  const nodeStyles = getNodeStyles();
   
   // Add data attributes for debug purposes
   const dataAttributes = {
@@ -154,55 +240,94 @@ export default function NodeComponent({
     'data-node-type': node.type,
     'data-completed': isCompleted ? 'true' : 'false',
     'data-available': isAvailable ? 'true' : 'false',
+    'data-selected': isSelected ? 'true' : 'false',
+    'data-reveal-mode': revealMode ? 'true' : 'false',
   };
   
   return (
     <>
-      {/* Node with glow effect */}
+      {/* Main node component */}
       <div
+        ref={nodeRef}
         id={`node-${node.id}`}
         {...dataAttributes}
         className={`
           relative
-          ${isAvailable ? 'cursor-pointer' : 'cursor-default'}
-          ${!isAvailable && !isCompleted ? 'opacity-50 grayscale' : ''}
+          transition-all duration-300
+          ${isAvailable || revealMode ? 'cursor-pointer' : 'cursor-default'}
           ${animating ? 'animate-node-pulse' : ''}
-          transition-all duration-200
         `}
-        onClick={() => isAvailable ? handleNodeClick() : undefined}
+        style={{
+          opacity: nodeStyles.opacity,
+          transform: `scale(${nodeStyles.scale})`,
+          filter: nodeStyles.filter,
+          cursor: nodeStyles.cursor,
+        }}
+        onClick={handleNodeClick}
         onMouseEnter={onMouseEnter}
         onMouseLeave={onMouseLeave}
       >
+        {/* Shadow effect under node */}
+        <div 
+          className="absolute inset-0 rounded-full -z-10 blur-md transition-opacity duration-500"
+          style={{ 
+            backgroundColor: getShadowColor(),
+            opacity: hasGlowEffect ? (isSelected || isHovered ? 0.8 : 0.4) : 0,
+            transform: 'scale(1.2) translateY(4px)',
+          }}
+        />
+      
         {/* Glow effect - positioned behind the node */}
         <div
           className={`
             absolute inset-0 rounded-full
-            ${isHovered || isSelected ? 'glow-strong' : 'glow'}
-            ${isAvailable || isSelected || isHovered ? 'opacity-100' : 'opacity-0'}
             transition-all duration-300
           `}
           style={{
             backgroundColor: getGlowColor(),
             filter: `blur(${isHovered || isSelected ? '8px' : '6px'})`,
+            opacity: hasGlowEffect ? (isSelected || isHovered ? 1 : 0.7) : 0,
             transform: 'scale(1.4)',
             zIndex: 0
           }}
         ></div>
         
+        {/* Orbital particle effect for selected/hovered nodes */}
+        {nodeStyles.particles && (
+          <div className="absolute inset-0 -z-10">
+            <div className="orbital-particle orbital-1"></div>
+            <div className="orbital-particle orbital-2"></div>
+          </div>
+        )}
+        
         {/* Node Icon */}
         <div className="relative w-12 h-12 z-10">
-        <Image
-          src={getNodeIconPath()}
-          alt={`${node.type} node`}
-          width={48}
-          height={48}
-          className={`
-            pixel-art
-            ${isCompleted ? 'brightness-110 contrast-125 saturate-150' : ''}
-            ${isSelected ? 'scale-110' : ''}
-            transition-transform duration-200
-          `}
-        />
+          <div 
+            className={`
+              w-12 h-12 rounded-full bg-gray-900 border-2 overflow-hidden
+              ${isSelected ? 'border-white' : isCompleted ? 'border-success' : `border-${node.type}`}
+              transition-colors duration-300 flex items-center justify-center
+            `}
+            style={{
+              borderColor: getGlowColor().replace('0.7', '0.9'),
+              boxShadow: isSelected || isHovered 
+                ? `0 0 10px ${getGlowColor()}`
+                : 'none'
+            }}
+          >
+            <Image
+              src={getNodeIconPath()}
+              alt={`${node.type} node`}
+              width={36}
+              height={36}
+              className={`
+                pixel-art
+                ${isCompleted ? 'brightness-110 contrast-125 saturate-150' : ''}
+                ${isSelected ? 'scale-110' : ''}
+                transition-transform duration-200
+              `}
+            />
+          </div>
           
           {/* Selection indicator */}
           {isSelected && (
@@ -216,6 +341,15 @@ export default function NodeComponent({
             ></div>
           )}
         </div>
+        
+        {/* Node type indicator - small colored dot */}
+        <div
+          className="absolute -top-1 -right-1 rounded-full w-3 h-3 border border-white z-20"
+          style={{ 
+            backgroundColor: getGlowColor().replace('0.7', '1'),
+            opacity: isCompleted ? 0 : 0.9,
+          }}
+        />
         
         {/* Completion checkmark - positioned as an overlay */}
         {isCompleted && (
@@ -237,11 +371,18 @@ export default function NodeComponent({
           }}
         >
           <div className="font-bold text-sm mb-1">
-            {node.type === 'boss' ? 'IONIX Encounter' : `${node.type.charAt(0).toUpperCase() + node.type.slice(1)} Node`}
+            {node.type === 'boss-ionix' ? 'IONIX Encounter' : 
+             node.type === 'boss' ? 'Boss Encounter' :
+             `${node.type.charAt(0).toUpperCase() + node.type.slice(1).replace(/([A-Z])/g, ' $1')} Node`}
           </div>
-          <p className="text-xs text-gray-300">{nodeDescriptions[node.type]}</p>
+          <p className="text-xs text-gray-300">
+            {nodeDescriptions[node.type] || `${node.type} node`}
+          </p>
+          {node.insightReward && (
+            <p className="text-xs text-blue-300 mt-1">Reward: +{node.insightReward} Insight</p>
+          )}
           {isCompleted && <p className="text-green-400 text-xs mt-1">✓ Completed</p>}
-          {!isAvailable && !isCompleted && <p className="text-red-400 text-xs mt-1">🔒 Locked</p>}
+          {!isAvailable && !isCompleted && !revealMode && <p className="text-red-400 text-xs mt-1">🔒 Locked</p>}
           
           {/* Tooltip arrow */}
           <div 
@@ -265,24 +406,33 @@ export default function NodeComponent({
           100% { transform: scale(1); }
         }
         
-        .animate-node-pulse {
-          animation: node-pulse 0.3s ease-in-out;
+        @keyframes orbital {
+          0% { transform: rotate(0deg) translateX(16px) rotate(0deg); }
+          100% { transform: rotate(360deg) translateX(16px) rotate(-360deg); }
         }
         
-        .glow {
-          opacity: 0.7;
-          transition: all 0.3s ease;
+        @keyframes orbital-reverse {
+          0% { transform: rotate(0deg) translateX(14px) rotate(0deg); }
+          100% { transform: rotate(-360deg) translateX(14px) rotate(360deg); }
         }
         
-        .glow-strong {
-          opacity: 1;
-          transition: all 0.3s ease;
+        .orbital-particle {
+          position: absolute;
+          width: 4px;
+          height: 4px;
+          border-radius: 50%;
+          background-color: rgba(255, 255, 255, 0.8);
+          top: 50%;
+          left: 50%;
+          box-shadow: 0 0 4px rgba(255, 255, 255, 0.8);
         }
         
-        @keyframes pulse {
-          0% { opacity: 0.7; }
-          50% { opacity: 1; }
-          100% { opacity: 0.7; }
+        .orbital-1 {
+          animation: orbital 3s linear infinite;
+        }
+        
+        .orbital-2 {
+          animation: orbital-reverse 4s linear infinite;
         }
       `}</style>
     </>

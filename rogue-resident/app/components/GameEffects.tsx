@@ -1,6 +1,6 @@
 // app/components/GameEffects.tsx
 'use client';
-import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
+import React, { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
 import { SoundEffect, getSoundFallback } from '../types/audio';
 
 interface GameEffectsContextType {
@@ -12,6 +12,10 @@ interface GameEffectsContextType {
   showRewardEffect: (count: number, x: number, y: number) => void;
   showDamageEffect: (count: number, x: number, y: number) => void;
   showHealEffect: (count: number, x: number, y: number) => void;
+  // New methods for enhanced effects
+  createStarburstEffect: (x: number, y: number, color?: string, particleCount?: number) => void;
+  createConnectionEffect: (startX: number, startY: number, endX: number, endY: number, color?: string) => void;
+  createFloatingParticles: (x: number, y: number, count?: number) => void;
 }
 
 // Create the context
@@ -40,6 +44,9 @@ export function GameEffectsProvider({ children }: { children: React.ReactNode })
   // State for effects
   const [flash, setFlash] = useState<{ color: string, active: boolean }>({ color: 'white', active: false });
   const [shake, setShake] = useState<{ intensity: string, active: boolean }>({ intensity: 'light', active: false });
+  
+  // Refs for effects containers
+  const particleContainerRef = useRef<HTMLDivElement>(null);
   
   // Sound cache
   const [soundCache, setSoundCache] = useState<Record<string, HTMLAudioElement>>({});
@@ -120,33 +127,194 @@ export function GameEffectsProvider({ children }: { children: React.ReactNode })
     }, 500);
   }, []);
   
+  // Helper function to create a single particle element
+  const createParticle = useCallback((
+    x: number, 
+    y: number, 
+    color: string = '#ffffff', 
+    size: number = 4, 
+    duration: number = 1000,
+    velocityX: number = 0,
+    velocityY: number = 0
+  ) => {
+    if (!particleContainerRef.current) return null;
+    
+    // Create particle element
+    const particle = document.createElement('div');
+    
+    // Set initial styles
+    particle.style.position = 'absolute';
+    particle.style.width = `${size}px`;
+    particle.style.height = `${size}px`;
+    particle.style.backgroundColor = color;
+    particle.style.borderRadius = '50%';
+    particle.style.opacity = '1';
+    particle.style.pointerEvents = 'none';
+    particle.style.zIndex = '9999';
+    particle.style.boxShadow = `0 0 ${size}px ${color}`;
+    
+    // Position at starting point
+    particle.style.left = `${x}px`;
+    particle.style.top = `${y}px`;
+    
+    // Add to container
+    particleContainerRef.current.appendChild(particle);
+    
+    // Animate using Web Animations API for better performance
+    const keyframes = [
+      { 
+        transform: 'scale(1) translate(0, 0)', 
+        opacity: 1 
+      },
+      { 
+        transform: `scale(0.2) translate(${velocityX}px, ${velocityY}px)`, 
+        opacity: 0 
+      }
+    ];
+    
+    const animation = particle.animate(keyframes, {
+      duration,
+      easing: 'cubic-bezier(0.1, 0.8, 0.2, 1)',
+      fill: 'forwards'
+    });
+    
+    // Remove particle when animation completes
+    animation.onfinish = () => {
+      if (particle.parentNode) {
+        particle.parentNode.removeChild(particle);
+      }
+    };
+    
+    return particle;
+  }, []);
+  
+  // Create starburst effect (particles radiating outward)
+  const createStarburstEffect = useCallback((
+    x: number, 
+    y: number, 
+    color: string = '#4bf1ff', 
+    particleCount: number = 20
+  ) => {
+    if (!particleContainerRef.current) return;
+    
+    // Play a sound
+    playSound('knowledge-connect');
+    
+    // Create particles
+    for (let i = 0; i < particleCount; i++) {
+      // Calculate random direction
+      const angle = Math.random() * Math.PI * 2;
+      const distance = 50 + Math.random() * 100;
+      
+      // Calculate end position
+      const velocityX = Math.cos(angle) * distance;
+      const velocityY = Math.sin(angle) * distance;
+      
+      // Create particle with random size and duration
+      const size = 2 + Math.random() * 4;
+      const duration = 800 + Math.random() * 1000;
+      
+      // Randomize color slightly
+      const particleColor = i % 3 === 0 ? '#ffffff' : color;
+      
+      createParticle(x, y, particleColor, size, duration, velocityX, velocityY);
+    }
+  }, [createParticle, playSound]);
+  
+  // Create a visual effect for connections between nodes
+  const createConnectionEffect = useCallback((
+    startX: number, 
+    startY: number, 
+    endX: number, 
+    endY: number, 
+    color: string = '#4bf1ff'
+  ) => {
+    if (!particleContainerRef.current) return;
+    
+    // Calculate direction
+    const dx = endX - startX;
+    const dy = endY - startY;
+    const distance = Math.sqrt(dx * dx + dy * dy);
+    const numParticles = Math.floor(distance / 10);
+    
+    // Create particles along the path
+    for (let i = 0; i < numParticles; i++) {
+      const ratio = i / numParticles;
+      const x = startX + dx * ratio;
+      const y = startY + dy * ratio;
+      
+      // Add some randomness to position
+      const randomOffset = 10;
+      const offsetX = (Math.random() - 0.5) * randomOffset;
+      const offsetY = (Math.random() - 0.5) * randomOffset;
+      
+      // Use small particles that fade quickly
+      const size = 2 + Math.random() * 2;
+      const duration = 500 + Math.random() * 1000;
+      
+      createParticle(x + offsetX, y + offsetY, color, size, duration);
+    }
+    
+    // Play a softer sound
+    playSound('knowledge-select');
+  }, [createParticle, playSound]);
+  
+  // Create floating particles that drift upward
+  const createFloatingParticles = useCallback((
+    x: number, 
+    y: number, 
+    count: number = 5
+  ) => {
+    if (!particleContainerRef.current) return;
+    
+    const colors = ['#4bf1ff', '#c1feff', '#ffffff', '#94ebff'];
+    
+    for (let i = 0; i < count; i++) {
+      // Random horizontal drift
+      const driftX = (Math.random() - 0.5) * 40;
+      // Always float upward, but with varying speeds
+      const driftY = -30 - Math.random() * 70;
+      
+      // Random particle properties
+      const size = 1 + Math.random() * 3;
+      const duration = 1000 + Math.random() * 2000;
+      const color = colors[Math.floor(Math.random() * colors.length)];
+      
+      // Small random offset from center
+      const offsetX = (Math.random() - 0.5) * 15;
+      const offsetY = (Math.random() - 0.5) * 15;
+      
+      createParticle(x + offsetX, y + offsetY, color, size, duration, driftX, driftY);
+    }
+  }, [createParticle]);
+  
   // Completion effect
   const showCompletionEffect = useCallback((x: number, y: number) => {
-    // Logic for completion particles
-    console.log(`Completion effect at ${x}, ${y}`);
+    // Create a starburst with green color
+    createStarburstEffect(x, y, '#34D399', 30);
     playSound('success');
-  }, [playSound]);
+  }, [createStarburstEffect, playSound]);
   
   // Reward effect with particle count
   const showRewardEffect = useCallback((count: number, x: number, y: number) => {
-    // Logic for reward particles
-    console.log(`Reward effect (${count} particles) at ${x}, ${y}`);
+    // Create a starburst with gold color
+    createStarburstEffect(x, y, '#FBBF24', count);
     playSound('success');
-  }, [playSound]);
+  }, [createStarburstEffect, playSound]);
   
   // Damage effect
   const showDamageEffect = useCallback((count: number, x: number, y: number) => {
-    // Logic for damage particles
-    console.log(`Damage effect (${count} particles) at ${x}, ${y}`);
+    // Create a starburst with red color
+    createStarburstEffect(x, y, '#EF4444', count);
     playSound('failure');
-  }, [playSound]);
+  }, [createStarburstEffect, playSound]);
   
   // Heal effect
   const showHealEffect = useCallback((count: number, x: number, y: number) => {
-    // Logic for heal particles
-    console.log(`Heal effect (${count} particles) at ${x}, ${y}`);
+    // Create a starburst with blue/green colors
+    createStarburstEffect(x, y, '#10B981', count);
     playSound('success');
-  }, [playSound]);
+  }, [createStarburstEffect, playSound]);
   
   // Context value
   const value = {
@@ -157,7 +325,11 @@ export function GameEffectsProvider({ children }: { children: React.ReactNode })
     showCompletionEffect,
     showRewardEffect,
     showDamageEffect,
-    showHealEffect
+    showHealEffect,
+    // New methods
+    createStarburstEffect,
+    createConnectionEffect,
+    createFloatingParticles
   };
   
   return (
@@ -182,6 +354,12 @@ export function GameEffectsProvider({ children }: { children: React.ReactNode })
       >
         {children}
       </div>
+      
+      {/* Particle container for visual effects */}
+      <div 
+        ref={particleContainerRef}
+        className="fixed inset-0 pointer-events-none z-40 overflow-hidden"
+      />
       
       <style jsx global>{`
         /* Screen shake animations */

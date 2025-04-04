@@ -1,101 +1,245 @@
-/* Emergency visibility fixes for map rendering */
+/* app/styles/map-visibility-fix.css */
 
 /* Enhanced starfield background to ensure visibility */
 .starfield-bg {
-    background-color: #0f111a;
-    background-image: 
-      radial-gradient(circle, rgba(255, 255, 255, 0.2) 1px, transparent 1px),
-      radial-gradient(circle, rgba(255, 255, 255, 0.15) 1px, transparent 1px),
-      radial-gradient(circle, rgba(255, 255, 255, 0.1) 1px, transparent 1px);
-    background-size: 30px 30px, 80px 80px, 150px 150px;
-    background-position: 0 0, 25px 25px, 50px 50px;
-    min-height: 100vh; /* Force minimum height */
-    position: relative; /* Ensure proper stacking */
-    z-index: 1; /* Establish stacking context */
+  background-color: #0c101f; /* Deeper blue for better contrast */
+  background-image: 
+    radial-gradient(circle, rgba(255, 255, 255, 0.4) 1px, transparent 1px),
+    radial-gradient(circle, rgba(255, 255, 255, 0.2) 1px, transparent 1px),
+    radial-gradient(circle, rgba(255, 255, 255, 0.1) 1px, transparent 1px);
+  background-size: 30px 30px, 80px 80px, 150px 150px;
+  background-position: 0 0, 25px 25px, 50px 50px;
+  min-height: 100vh; /* Force minimum height */
+  position: relative; /* Ensure proper stacking */
+  z-index: 1; /* Establish stacking context */
+}
+
+/* Add subtle nebula-like clouds to enhance the starfield */
+.starfield-bg::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-image: 
+    radial-gradient(circle at 30% 20%, rgba(67, 97, 238, 0.15) 0%, transparent 40%),
+    radial-gradient(circle at 70% 60%, rgba(76, 201, 240, 0.1) 0%, transparent 30%),
+    radial-gradient(circle at 20% 70%, rgba(114, 9, 183, 0.08) 0%, transparent 50%);
+  z-index: -1;
+  pointer-events: none;
+}
+
+/* Connection line enhancements */
+.connection-line {
+  position: absolute;
+  overflow: visible;
+  transition: opacity 0.5s ease;
+}
+
+/* Path particle effects for connection lines */
+.path-particles {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.path-particle {
+  position: absolute;
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background-color: rgba(255, 255, 255, 0.7);
+  filter: blur(1px);
+}
+
+/* Node glow effects */
+.node-glow {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(8px);
+  transition: all 0.3s ease;
+}
+
+/* Enhanced visual feedback for node interactions */
+.node-accessible {
+  transition: all 0.3s cubic-bezier(0.2, 0, 0.2, 1);
+  animation: node-pulse 4s infinite alternate;
+}
+
+@keyframes node-pulse {
+  0% {
+    filter: brightness(1) drop-shadow(0 0 5px rgba(255, 255, 255, 0.3));
   }
-  
-  /* Visibility debugging helper */
-  .debug-visible {
-    position: absolute !important;
-    top: 0 !important;
-    left: 0 !important;
-    width: 100vw !important;
-    height: 100vh !important;
-    background-color: rgba(255, 0, 255, 0.2) !important;
-    z-index: 9999 !important;
-    pointer-events: none !important;
+  100% {
+    filter: brightness(1.2) drop-shadow(0 0 8px rgba(255, 255, 255, 0.5));
   }
-  
-  /* Fixed map container */
-  .map-container-fixed {
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    overflow: hidden;
-    min-height: 100vh;
-    background-color: #0f1117;
-    z-index: 5;
+}
+
+/* Constellation connection effects */
+.constellation-connector {
+  position: absolute;
+  overflow: visible;
+  transform-origin: top left;
+  background-image: linear-gradient(to right, rgba(255, 255, 255, 0.1), rgba(156, 196, 255, 0.5), rgba(255, 255, 255, 0.1));
+  z-index: 5;
+}
+
+/* Animate connections when revealed */
+.map-revealed .constellation-connector {
+  animation: connector-reveal 1.5s ease-out forwards;
+}
+
+@keyframes connector-reveal {
+  0% {
+    opacity: 0;
+    filter: brightness(2) blur(4px);
   }
-  
-  /* Enforce proper dimensions for nodes */
-  .node-container-fixed {
-    width: auto !important;
-    height: auto !important;
-    min-width: 100px;
-    min-height: 50px;
-    position: relative;
-    z-index: 10;
+  100% {
+    opacity: 1;
+    filter: brightness(1) blur(0);
   }
-  
-  /* Emergency resets for edge cases */
-  .force-visible {
-    visibility: visible !important;
-    opacity: 1 !important;
-    display: block !important;
+}
+
+/* Node reveal animation */
+.node-reveal {
+  animation: node-reveal 0.8s cubic-bezier(0.2, 0, 0.2, 1) forwards;
+}
+
+@keyframes node-reveal {
+  0% {
+    opacity: 0;
+    transform: scale(0.5);
   }
-  
-  /* Fix for potential z-index stacking issues */
-  .reset-stacking-context {
-    isolation: isolate;
+  70% {
+    transform: scale(1.1);
   }
-  
-  /* Fix for high-contrast nodes to ensure they're always visible */
-  .node-always-visible {
-    background-color: rgba(79, 107, 187, 0.8);
-    box-shadow: 0 0 10px rgba(79, 107, 187, 0.5);
-    border: 1px solid white;
+  100% {
+    opacity: 1;
+    transform: scale(1);
   }
-  
-  /* Emergancy animation to help spot elements */
-  @keyframes emergency-pulse {
-    0%, 100% { outline: 2px solid rgba(255, 0, 0, 0.5); }
-    50% { outline: 2px solid rgba(255, 255, 0, 0.5); }
+}
+
+/* Better visibility for future nodes */
+.node-future {
+  filter: contrast(0.9) brightness(0.7) grayscale(0.5);
+  transition: all 0.5s ease;
+}
+
+.map-revealed .node-future {
+  filter: contrast(0.95) brightness(0.85) grayscale(0.3);
+}
+
+/* Highlight for active path */
+.active-path {
+  position: relative;
+}
+
+.active-path::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+  animation: path-highlight 2s infinite linear;
+}
+
+@keyframes path-highlight {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+
+/* Glowing orbital particles around nodes */
+.orbital-particle {
+  position: absolute;
+  border-radius: 50%;
+  width: 3px;
+  height: 3px;
+  top: 50%;
+  left: 50%;
+  transform-origin: top left;
+  filter: blur(1px);
+  z-index: 15;
+  pointer-events: none;
+}
+
+.orbital-1 {
+  background-color: rgba(126, 213, 255, 0.8);
+  box-shadow: 0 0 4px rgba(126, 213, 255, 0.8);
+  animation: orbit 3s linear infinite;
+}
+
+.orbital-2 {
+  background-color: rgba(255, 222, 126, 0.7);
+  box-shadow: 0 0 4px rgba(255, 222, 126, 0.7);
+  animation: orbit-reverse 5s linear infinite;
+}
+
+@keyframes orbit {
+  0% {
+    transform: rotate(0deg) translateX(16px) translateY(0) rotate(0deg);
   }
-  
-  .emergency-highlight {
-    animation: emergency-pulse 2s infinite;
+  100% {
+    transform: rotate(360deg) translateX(16px) translateY(0) rotate(-360deg);
   }
-  
-  /* State debugging outlines */
-  [data-renderstate="map-ready"] {
-    outline: 1px solid rgba(0, 255, 0, 0.2);
+}
+
+@keyframes orbit-reverse {
+  0% {
+    transform: rotate(0deg) translateX(20px) translateY(0) rotate(0deg);
   }
-  
-  [data-renderstate="map-initializing"] {
-    outline: 1px solid rgba(255, 255, 0, 0.2);
+  100% {
+    transform: rotate(-360deg) translateX(20px) translateY(0) rotate(360deg);
   }
-  
-  [data-renderstate="no-map-data"],
-  [data-renderstate="force-update"] {
-    outline: 1px solid rgba(255, 0, 0, 0.2);
-  }
-  
-  /* These rules force the map to be visible, no matter what */
-  body [class*="map-container"],
-  body [class*="starfield"] {
-    display: block !important;
-    visibility: visible !important;
-    opacity: 1 !important;
-  }
+}
+
+/* "Reveal Map" button effect */
+.reveal-map-button {
+  position: relative;
+  overflow: hidden;
+}
+
+.reveal-map-button::after {
+  content: '';
+  position: absolute;
+  top: -50%;
+  left: -50%;
+  width: 200%;
+  height: 200%;
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.2) 0%, transparent 60%);
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.reveal-map-button:hover::after {
+  opacity: 1;
+}
+
+/* Map reveal particle effect */
+.map-reveal-particle {
+  position: absolute;
+  pointer-events: none;
+  border-radius: 50%;
+  background-color: rgba(255, 255, 255, 0.7);
+  transform: translate(-50%, -50%);
+  filter: blur(2px);
+  z-index: 20;
+}
+
+/* Global light source effect for better dimension */
+.global-light {
+  pointer-events: none;
+  position: fixed;
+  width: 100vw;
+  height: 100vh;
+  background: radial-gradient(
+    circle at var(--mouse-x, 50%) var(--mouse-y, 50%),
+    rgba(255, 255, 255, 0.03) 0%,
+    transparent 40%
+  );
+  z-index: 2;
+  mix-blend-mode: screen;
+}

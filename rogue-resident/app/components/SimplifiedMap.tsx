@@ -29,8 +29,11 @@ export default function SimplifiedMap() {
   const [activeNode, setActiveNode] = useState<string | null>(null);
   const [hoveredNode, setHoveredNode] = useState<string | null>(null);
   const [isMapReady, setIsMapReady] = useState(false);
+  const [revealMap, setRevealMap] = useState(false);
+  const [showingParticles, setShowingParticles] = useState(false);
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const nodeSelectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const particleContainerRef = useRef<HTMLDivElement>(null);
   const [hasCancelledAnimations, setHasCancelledAnimations] = useState(false);
   
   // Stable map data reference to avoid unnecessary rerenders
@@ -55,6 +58,14 @@ export default function SimplifiedMap() {
       // Add a short delay to ensure map is ready for rendering
       setTimeout(() => {
         setIsMapReady(true);
+        
+        // Trigger a subtler version of the particle effect on initial load
+        if (!showingParticles) {
+          setTimeout(() => {
+            createMapRevealParticles(0.3); // Subtle version
+            setShowingParticles(true);
+          }, 800);
+        }
       }, 100);
     }
     
@@ -65,7 +76,7 @@ export default function SimplifiedMap() {
         nodeSelectTimeoutRef.current = null;
       }
     };
-  }, [map]);
+  }, [map, showingParticles]);
   
   // Cancel any existing animations to fix duplicate rendering
   useEffect(() => {
@@ -140,6 +151,88 @@ export default function SimplifiedMap() {
     };
   }, [currentNodeId, activeNode, map, isMapReady]);
   
+  // Create particles for map reveal effect
+  const createMapRevealParticles = (intensity = 1.0) => {
+    if (!particleContainerRef.current || !mapContainerRef.current) return;
+    
+    const container = particleContainerRef.current;
+    const bounds = mapContainerRef.current.getBoundingClientRect();
+    const particleCount = Math.floor(60 * intensity);
+    
+    // Clear existing particles
+    container.innerHTML = '';
+    
+    // Create particles
+    for (let i = 0; i < particleCount; i++) {
+      const particle = document.createElement('div');
+      
+      // Random starting positions across the container
+      const x = Math.random() * bounds.width;
+      const y = Math.random() * bounds.height;
+      const size = 1 + Math.random() * 3 * intensity;
+      const opacity = 0.2 + Math.random() * 0.7 * intensity;
+      const duration = 3000 + Math.random() * 7000;
+      const delay = Math.random() * 2000;
+      
+      // Configure particle
+      particle.className = 'absolute rounded-full pointer-events-none';
+      particle.style.width = `${size}px`;
+      particle.style.height = `${size}px`;
+      particle.style.left = `${x}px`;
+      particle.style.top = `${y}px`;
+      particle.style.backgroundColor = getRandomParticleColor();
+      particle.style.opacity = '0';
+      particle.style.transform = 'scale(0.5)';
+      particle.style.boxShadow = `0 0 ${Math.floor(size * 2)}px ${particle.style.backgroundColor}`;
+      
+      // Animate particle
+      setTimeout(() => {
+        particle.style.transition = `opacity ${duration}ms ease-out, transform ${duration}ms ease-out`;
+        particle.style.opacity = String(opacity);
+        particle.style.transform = `scale(${1 + Math.random() * 0.5})`;
+        
+        // Remove particle when animation completes
+        setTimeout(() => {
+          particle.remove();
+        }, duration);
+      }, delay);
+      
+      container.appendChild(particle);
+    }
+  };
+  
+  // Get random particle color
+  const getRandomParticleColor = () => {
+    const colors = [
+      'rgba(52, 211, 153, 0.8)', // Teal
+      'rgba(79, 107, 187, 0.8)', // Blue
+      'rgba(124, 58, 237, 0.8)', // Purple
+      'rgba(239, 68, 68, 0.8)',  // Red
+      'rgba(251, 191, 36, 0.8)', // Amber
+    ];
+    return colors[Math.floor(Math.random() * colors.length)];
+  };
+  
+  // Toggle map reveal mode
+  const toggleRevealMap = () => {
+    setRevealMap(!revealMap);
+    
+    // Play appropriate sound
+    if (playSound) {
+      playSound(revealMap ? 'back' : 'challenge-complete');
+    }
+    
+    // Flash screen when enabling
+    if (!revealMap && flashScreen) {
+      flashScreen('blue');
+    }
+    
+    // Trigger particle effect when revealing
+    if (!revealMap) {
+      createMapRevealParticles(1.0);
+    }
+  };
+  
   // Memoized node selection handler to prevent recreation on renders
   const handleNodeSelect = useCallback((nodeId: string) => {
     const isFirstNode = map && map.nodes.length === 1;
@@ -211,11 +304,12 @@ export default function SimplifiedMap() {
     }
   };
   
-  // Get node color based on character
+  // Get node color based on character and node type
   const getNodeColor = (node: Node): string => {
     if (node.type === 'kapoorCalibration') return 'var(--clinical-color)';
     if (node.type === 'boss' || node.type === 'boss-ionix') return 'var(--boss-color)';
     if (node.type === 'qualification') return 'var(--warning-color)';
+    if (node.type === 'storage') return 'rgba(191, 179, 139, 1)'; // Tan/gold for treasures
     
     switch (node.character) {
       case 'kapoor': return 'var(--clinical-color)';
@@ -233,40 +327,74 @@ export default function SimplifiedMap() {
     const sourceState = getNodeState(sourceId);
     const targetState = getNodeState(targetId);
     
+    // Get nodes for color determination
+    const sourceNode = map?.nodes.find(n => n.id === sourceId);
+    const targetNode = map?.nodes.find(n => n.id === targetId);
+    
+    // Base color from node type/character
+    let sourceColor = sourceNode ? getNodeColor(sourceNode) : 'rgba(75, 85, 99, 0.3)';
+    let targetColor = targetNode ? getNodeColor(targetNode) : 'rgba(75, 85, 99, 0.3)';
+    
+    // Default styles
     let pathColor = 'rgba(75, 85, 99, 0.3)'; // Dimmer default 
-    let pathWidth = 3.5; // Enhanced width for better visibility (was 2)
+    let pathWidth = 3.5; // Enhanced width for better visibility
     let pathOpacity = 0.3;
     let pathClass = '';
     let glowEffect = '';
     let arrowEnabled = false;
+    let gradient = false;
     
-    if (sourceCompleted && targetAccessible) {
-      // Highlight available path with pulsing glow
-      pathColor = 'rgba(52, 211, 153, 0.9)';
-      pathWidth = 4; // Thicker for emphasis
-      pathOpacity = 0.9;
-      pathClass = 'animate-pulse-path';
-      glowEffect = 'filter: drop-shadow(0 0 3px rgba(52, 211, 153, 0.5));';
-      arrowEnabled = true;
-    } else if (sourceCompleted) {
-      // Completed but next node isn't accessible yet
-      pathColor = 'rgba(52, 211, 153, 0.6)';
-      pathWidth = 3;
-      pathOpacity = 0.7;
-      arrowEnabled = true;
-    } else if (sourceState === 'active' && targetState === 'accessible') {
-      // Current possible route
-      pathColor = 'rgba(79, 107, 187, 0.8)';
-      pathWidth = 3.5;
-      pathOpacity = 0.8;
-      pathClass = 'animate-pulse-path-subtle';
-      arrowEnabled = true;
-    } else if (sourceState === 'future' || targetState === 'future') {
-      // Future connections are very dim
-      pathOpacity = 0.2;
-    } else if (sourceState === 'locked' || targetState === 'locked') {
-      // Almost invisible
-      pathOpacity = 0.05;
+    // Reveal map shows all connections with some visibility
+    if (revealMap) {
+      // Create color gradient between nodes
+      pathColor = `linear-gradient(to right, ${sourceColor}, ${targetColor})`;
+      gradient = true;
+      
+      // Adjust visibility based on completion/accessibility
+      if (sourceCompleted && targetAccessible) {
+        pathWidth = 4;
+        pathOpacity = 0.9;
+        pathClass = 'animate-pulse-path';
+        glowEffect = 'filter: drop-shadow(0 0 5px rgba(255, 255, 255, 0.3));';
+        arrowEnabled = true;
+      } else if (sourceCompleted || targetAccessible) {
+        pathWidth = 3.5;
+        pathOpacity = 0.6;
+        arrowEnabled = true;
+      } else {
+        // Future or locked paths are still somewhat visible
+        pathOpacity = 0.2;
+      }
+    } else {
+      // Regular visibility logic - progressive reveal
+      if (sourceCompleted && targetAccessible) {
+        // Highlight available path with pulsing glow
+        pathColor = 'rgba(52, 211, 153, 0.9)';
+        pathWidth = 4; // Thicker for emphasis
+        pathOpacity = 0.9;
+        pathClass = 'animate-pulse-path';
+        glowEffect = 'filter: drop-shadow(0 0 5px rgba(52, 211, 153, 0.5));';
+        arrowEnabled = true;
+      } else if (sourceCompleted) {
+        // Completed but next node isn't accessible yet
+        pathColor = 'rgba(52, 211, 153, 0.6)';
+        pathWidth = 3;
+        pathOpacity = 0.7;
+        arrowEnabled = true;
+      } else if (sourceState === 'active' && targetState === 'accessible') {
+        // Current possible route
+        pathColor = 'rgba(79, 107, 187, 0.8)';
+        pathWidth = 3.5;
+        pathOpacity = 0.8;
+        pathClass = 'animate-pulse-path-subtle';
+        arrowEnabled = true;
+      } else if (sourceState === 'future' || targetState === 'future') {
+        // Future connections are very dim
+        pathOpacity = 0.2;
+      } else if (sourceState === 'locked' || targetState === 'locked') {
+        // Almost invisible
+        pathOpacity = 0.05;
+      }
     }
     
     return {
@@ -275,7 +403,8 @@ export default function SimplifiedMap() {
       opacity: pathOpacity,
       className: pathClass,
       glowEffect,
-      arrowEnabled
+      arrowEnabled,
+      gradient
     };
   };
   
@@ -302,12 +431,20 @@ export default function SimplifiedMap() {
         if (isHovered) classes += ' brightness-110';
         break;
       case 'future':
-        // Future nodes are significantly muted but still visible
-        classes += ' opacity-40 grayscale z-0 blur-[1px]';
+        // Future nodes visibility based on reveal mode
+        if (revealMap) {
+          classes += ' opacity-60 z-0 filter blur-none';
+        } else {
+          classes += ' opacity-40 grayscale z-0 blur-[1px]';
+        }
         break;
       case 'locked':
-        // Locked nodes barely visible, creating progressive revealing effect
-        classes += ' opacity-15 grayscale z-0 blur-[2px]';
+        // Locked nodes visibility based on reveal mode
+        if (revealMap) {
+          classes += ' opacity-40 z-0 blur-[1px]';
+        } else {
+          classes += ' opacity-15 grayscale z-0 blur-[2px]';
+        }
         break;
     }
     
@@ -348,8 +485,9 @@ export default function SimplifiedMap() {
     const uniqueNodeId = `node-${nodeId}-${instanceIdRef.current}`;
     
     // Only show partial info for future nodes, and none for locked nodes
-    const showContent = !isNodeLocked;
-    const showFullContent = !isNodeFuture && !isNodeLocked;
+    // But when reveal map is enabled, show more info
+    const showContent = !isNodeLocked || revealMap;
+    const showFullContent = (!isNodeFuture && !isNodeLocked) || revealMap;
     
     // Adjust node size - make calibration node larger
     const nodeWidth = isCalibrationNode ? 'w-64' : 'w-56';
@@ -360,10 +498,17 @@ export default function SimplifiedMap() {
           id={uniqueNodeId}
           key={nodeId}
           className={`${nodeWidth} ${nodeHeight} relative ${getNodeClasses(nodeId, node)}`}
-          onClick={() => handleNodeSelect(nodeId)} // Allow clicks on all nodes for development
+          onClick={() => {
+            // Allow clicking on future nodes in reveal mode
+            if (revealMap || isAccessible || isActive) {
+              handleNodeSelect(nodeId);
+            }
+          }}
           onMouseEnter={() => {
             setHoveredNode(nodeId);
-            if (isInteractive && playSound) playSound('node-hover');
+            if ((isInteractive || revealMap) && playSound) {
+              playSound('node-hover');
+            }
           }}
           onMouseLeave={() => setHoveredNode(null)}
           data-node-id={nodeId}
@@ -402,13 +547,13 @@ export default function SimplifiedMap() {
                 boxShadow: isActive || isHovered ? `0 0 10px ${getNodeColor(node)}80` : 'none',
               }}
             >
-              {!isNodeLocked && (
+              {(showContent || revealMap) && (
                 <Image
                   src={getCharacterImage(node.character)}
                   alt={node.character || 'Character'}
                   width={80}
                   height={80}
-                  className="object-cover scale-110"
+                  className={`object-cover scale-110 ${(!showFullContent && !revealMap) ? 'opacity-70 grayscale' : ''}`}
                 />
               )}
             </div>
@@ -432,7 +577,7 @@ export default function SimplifiedMap() {
                 transition-colors duration-300
               `}
             >
-              {showContent ? node.title : '???'}
+              {showContent ? node.title : revealMap ? `[${node.type}]` : '???'}
             </PixelText>
             
             {/* Just the minimal type indicator - no badge */}
@@ -467,6 +612,14 @@ export default function SimplifiedMap() {
           {/* Special indicator for calibration nodes */}
           {isCalibrationNode && !isCompleted && (
             <div className="absolute -top-2 -right-2 w-4 h-4 rounded-full bg-clinical animate-pulse"></div>
+          )}
+          
+          {/* Node type indicator in reveal mode for locked nodes */}
+          {(isNodeLocked && revealMap) && (
+            <div 
+              className="absolute top-1 right-2 w-2 h-2 rounded-full"
+              style={{ backgroundColor: getNodeColor(node), opacity: 0.7 }}
+            ></div>
           )}
           
           {/* Completion indicator - more subtle and positioned differently */}
@@ -523,7 +676,8 @@ export default function SimplifiedMap() {
                 top: `${sourceY}%`,
                 width: '1px', // Will be scaled
                 height: `${length}%`,
-                backgroundColor: style.color,
+                background: style.gradient ? style.color : 'none',
+                backgroundColor: !style.gradient ? style.color : 'none',
                 opacity: style.opacity,
                 transform: `rotate(${angle}deg)`,
                 transformOrigin: 'top left',
@@ -533,6 +687,24 @@ export default function SimplifiedMap() {
                   'drop-shadow(0 0 5px rgba(255,255,255,0.3))' : 'none'
               }}
             />
+            
+            {/* Add particle effects to active paths */}
+            {(style.opacity > 0.6 && (style.className === 'animate-pulse-path' || style.className === 'animate-pulse-path-subtle')) && (
+              <div 
+                className="path-particles absolute"
+                style={{
+                  left: `${sourceX}%`,
+                  top: `${sourceY}%`,
+                  width: '1px',
+                  height: `${length}%`,
+                  transform: `rotate(${angle}deg)`,
+                  transformOrigin: 'top left',
+                  zIndex: 6,
+                }}
+              >
+                {/* Particles will be added dynamically via CSS */}
+              </div>
+            )}
             
             {/* Directional arrow - only show for active paths */}
             {style.arrowEnabled && (
@@ -545,8 +717,8 @@ export default function SimplifiedMap() {
                   width: '8px',
                   height: '8px',
                   backgroundColor: 'transparent',
-                  borderLeft: `4px solid ${style.color}`,
-                  borderBottom: `4px solid ${style.color}`,
+                  borderLeft: `4px solid ${!style.gradient ? style.color : 'rgba(255,255,255,0.9)'}`,
+                  borderBottom: `4px solid ${!style.gradient ? style.color : 'rgba(255,255,255,0.9)'}`,
                   opacity: style.opacity,
                   transform: `rotate(${angle + 45}deg)`,
                   zIndex: 6,
@@ -559,7 +731,7 @@ export default function SimplifiedMap() {
         );
       })
     ).filter(Boolean); // Filter out null connections
-  }, [map, activeNode, getConnectionStyle]);
+  }, [map, activeNode, getConnectionStyle, revealMap]);
   
   // Handle end day click with enhanced feedback
   const handleEndDay = useCallback(() => {
@@ -693,6 +865,22 @@ export default function SimplifiedMap() {
         </PixelText>
       </div>
       
+      {/* Reveal map toggle button */}
+      <div className="absolute top-4 right-4 z-40">
+        <button
+          className={`px-3 py-2 text-sm font-pixel ${revealMap ? 'bg-blue-600 text-white' : 'bg-surface text-gray-300'} rounded shadow-pixel transition-colors duration-300`}
+          onClick={toggleRevealMap}
+        >
+          {revealMap ? 'Hide Full Map' : 'Reveal Constellation'}
+        </button>
+      </div>
+      
+      {/* Particle container for map reveal effect */}
+      <div 
+        ref={particleContainerRef} 
+        className="absolute inset-0 pointer-events-none z-20 overflow-hidden"
+      ></div>
+      
       {/* Node map - show either single node or full map */}
       {isSingleNodeMode ? (
         // Single calibration node centered
@@ -816,7 +1004,7 @@ export default function SimplifiedMap() {
         </div>
       )}
       
-      {/* Add CSS for connection arrows */}
+      {/* Add CSS for connection animations */}
       <style jsx global>{`
         /* Add animation for path pulsing */
         @keyframes pathPulse {
@@ -847,6 +1035,53 @@ export default function SimplifiedMap() {
         /* Connection container - helps with arrow positioning */
         .connection-container {
           position: relative;
+        }
+        
+        /* Path particles - small animated particles along active paths */
+        .path-particles {
+          overflow: visible;
+          position: absolute;
+        }
+        
+        .path-particles::before,
+        .path-particles::after {
+          content: '';
+          position: absolute;
+          width: 4px;
+          height: 4px;
+          border-radius: 50%;
+          background-color: rgba(255, 255, 255, 0.8);
+          filter: blur(1px);
+          top: 0;
+          left: 0;
+          transform: translate(-50%, -50%);
+          animation: pathParticleFlow 5s infinite linear;
+          opacity: 0.7;
+        }
+        
+        .path-particles::after {
+          width: 3px;
+          height: 3px;
+          animation-duration: 7s;
+          animation-delay: -2.5s;
+          opacity: 0.6;
+        }
+        
+        @keyframes pathParticleFlow {
+          0% {
+            top: 0%;
+            opacity: 0;
+          }
+          10% {
+            opacity: 0.7;
+          }
+          90% {
+            opacity: 0.5;
+          }
+          100% {
+            top: 100%;
+            opacity: 0;
+          }
         }
       `}</style>
     </div>
