@@ -7,10 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "test:progression": "node tests/runTests.js",
-    "test:progression:specific": "node tests/runTests.js journalAcquisition",
-    "test:progression:debug": "node tests/runTests.js --debug",
-    "dev:test": "cross-env NODE_ENV=development ENABLE_TESTING=true next dev --turbopack"
+    "test": "node tests/simpleRunner.js"
   },
   "dependencies": {
     "immer": "^10.1.1",
