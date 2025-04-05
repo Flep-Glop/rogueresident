@@ -2,6 +2,8 @@
 ├── README.md
 ├── app
 │   ├── components
+│   │   ├── EnhancedMap.tsx
+│   │   ├── EnhancedNode.tsx
 │   │   ├── EquipmentDisplay.tsx
 │   │   ├── FontLoadingContainer.tsx
 │   │   ├── GameContainer.tsx
@@ -38,9 +40,6 @@
 │   │   │       ├── ConversationFormat.tsx
 │   │   │       ├── InteractiveFormat.tsx
 │   │   │       └── ProceduralFormat.tsx
-│   │   ├── debug
-│   │   │   ├── TestHarness.tsx
-│   │   │   └── TestResultsViewer.tsx
 │   │   ├── dialogue
 │   │   │   ├── DialogueSystem.tsx
 │   │   │   └── UnlockableDialogueOptions.tsx
@@ -58,8 +57,6 @@
 │   │       ├── KnowledgeUpdate.tsx
 │   │       └── NotificationManager.tsx
 │   ├── core
-│   │   ├── debug
-│   │   │   └── EventRecorder.ts
 │   │   ├── dialogue
 │   │   │   └── DialogueStateMachine.ts
 │   │   ├── events
@@ -84,7 +81,6 @@
 │   │   ├── useCharacterInteraction.ts
 │   │   ├── useDialogueFlow.ts
 │   │   └── useTypewriter.ts
-│   ├── layout-debug.tsx
 │   ├── layout.tsx
 │   ├── page.tsx
 │   ├── store
@@ -102,6 +98,7 @@
 │   │   └── map.ts
 │   └── utils
 │       ├── CharacterTeachingStyles.ts
+│       ├── improvedMapGenerator.ts
 │       ├── knowledgeRequirements.ts
 │       ├── mapGenerator.ts
 │       └── seedUtils.ts
@@ -115,10 +112,17 @@
 ├── postcss.config.mjs
 ├── tailwind.config.js
 ├── tests
-│   ├── gameInterface.js
-│   ├── progressionValidators.js
-│   ├── runTests.js
-│   └── testDefinitions.js
+│   ├── assert.js
+│   ├── eventRecorder.js
+│   ├── progressionTests.js
+│   ├── simpleRunner.js
+│   ├── testCharacterTeachingStyles.js
+│   ├── testDayNightCycle.js
+│   ├── testGameStateMachine.js
+│   ├── testItemEffectSystem.js
+│   ├── testKnowledgeAcquisition.js
+│   ├── testKnowledgeDecay.js
+│   └── testNodeAccessibility.js
 └── tsconfig.json
 
-22 directories, 99 files
+20 directories, 105 files
