@@ -4,6 +4,7 @@ import { useEffect, useState, useRef } from 'react';
 import { useGameStore } from '../store/gameStore';
 import { useChallengeStore } from '../store/challengeStore';
 import SimplifiedMap from './SimplifiedMap';
+import EnhancedMap from './EnhancedMap';
 import { useGameEffects } from './GameEffects';
 import ChallengeRouter from './challenges/ChallengeRouter';
 import HillHomeScene from './HillHomeScene';
@@ -298,12 +299,11 @@ export default function GameContainer() {
           className="h-full w-full" 
           data-rerender-key={forceRerender}
         >
-          <SimplifiedMap key={`map-${gamePhase}-${forceRerender}`} />
-          {process.env.NODE_ENV !== 'production' && (
-            <div className="absolute top-2 right-2 bg-black/70 text-white text-xs p-1 z-50">
-              Map render key: {`${gamePhase}-${forceRerender}`}
-            </div>
-          )}
+          {!currentNodeId && (
+          <div className="h-full w-full">
+            <EnhancedMap />
+          </div>
+        )}
         </div>
       );
     }

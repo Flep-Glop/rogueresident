@@ -10,6 +10,8 @@ import VictoryScreen from './components/VictoryScreen';
 import PhaseTransition from './components/PhaseTransition';
 import { setupGameStateMachine } from './core/statemachine/GameStateMachine';
 import { setupStateBridge } from './core/statemachine/GameStateBridge';
+import { generateImprovedMap } from './utils/improvedMapGenerator';
+
 
 export default function Home() {
   const { gameState, gamePhase, player } = useGameStore();

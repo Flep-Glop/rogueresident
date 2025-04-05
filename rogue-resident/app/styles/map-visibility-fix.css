@@ -1,245 +1,1131 @@
-/* app/styles/map-visibility-fix.css */
+/* Enhanced Map Visualization CSS
+ * 
+ * This stylesheet implements improved visual hierarchy for the roguelike map,
+ * creating clear progression paths, state differentiation, and ambient effects
+ * that communicate game state through visual language.
+ */
 
-/* Enhanced starfield background to ensure visibility */
-.starfield-bg {
-  background-color: #0c101f; /* Deeper blue for better contrast */
-  background-image: 
-    radial-gradient(circle, rgba(255, 255, 255, 0.4) 1px, transparent 1px),
-    radial-gradient(circle, rgba(255, 255, 255, 0.2) 1px, transparent 1px),
-    radial-gradient(circle, rgba(255, 255, 255, 0.1) 1px, transparent 1px);
-  background-size: 30px 30px, 80px 80px, 150px 150px;
-  background-position: 0 0, 25px 25px, 50px 50px;
-  min-height: 100vh; /* Force minimum height */
-  position: relative; /* Ensure proper stacking */
-  z-index: 1; /* Establish stacking context */
+/* Map Container - Cosmic Environment */
+.map-container {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background-color: #0a0d1c;
 }
 
-/* Add subtle nebula-like clouds to enhance the starfield */
-.starfield-bg::before {
-  content: '';
+/* Enhanced Starfield Background with Depth */
+.starfield-bg {
+  background-color: #0a0d1c;
+  background-image: 
+    radial-gradient(1px 1px at 25% 25%, rgba(255, 255, 255, 0.2) 1px, transparent 0),
+    radial-gradient(1px 1px at 50% 50%, rgba(255, 255, 255, 0.15) 1px, transparent 0),
+    radial-gradient(1px 1px at 75% 75%, rgba(255, 255, 255, 0.1) 1px, transparent 0),
+    radial-gradient(2px 2px at 10% 80%, rgba(100, 155, 255, 0.12) 1px, transparent 0),
+    radial-gradient(2px 2px at 60% 10%, rgba(100, 155, 255, 0.12) 1px, transparent 0);
+  background-size: 50px 50px, 100px 100px, 150px 150px, 200px 200px, 250px 250px;
+  animation: subtle-drift 240s linear infinite;
+  min-height: 100%;
+  position: relative;
+}
+
+/* Add depth haze layers */
+.depth-layer {
   position: absolute;
   top: 0;
   left: 0;
-  right: 0;
-  bottom: 0;
-  background-image: 
-    radial-gradient(circle at 30% 20%, rgba(67, 97, 238, 0.15) 0%, transparent 40%),
-    radial-gradient(circle at 70% 60%, rgba(76, 201, 240, 0.1) 0%, transparent 30%),
-    radial-gradient(circle at 20% 70%, rgba(114, 9, 183, 0.08) 0%, transparent 50%);
-  z-index: -1;
+  width: 100%;
+  height: 100%;
   pointer-events: none;
 }
 
-/* Connection line enhancements */
-.connection-line {
-  position: absolute;
-  overflow: visible;
-  transition: opacity 0.5s ease;
+.depth-layer-1 {
+  background: radial-gradient(ellipse at center, 
+    rgba(45, 75, 155, 0.1) 0%, 
+    rgba(10, 13, 28, 0) 70%);
+  opacity: 0.6;
 }
 
-/* Path particle effects for connection lines */
-.path-particles {
+.depth-layer-2 {
+  background: radial-gradient(ellipse at 30% 40%, 
+    rgba(125, 35, 175, 0.07) 0%, 
+    rgba(10, 13, 28, 0) 60%);
+  opacity: 0.7;
+}
+
+/* ===== Node Styling ===== */
+
+/* Base Node Styling - Common to All States */
+.map-node {
   position: absolute;
+  transform: translate(-50%, -50%);
+  transition: all 0.4s cubic-bezier(0.2, 0, 0.2, 1);
+  cursor: pointer;
+  width: 80px; /* Increased from previous size */
+  height: 80px;
+  z-index: 10;
+}
+
+/* Node Container with Glow Effects */
+.node-container {
+  position: relative;
   width: 100%;
   height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
   overflow: visible;
-}
-
-.path-particle {
-  position: absolute;
-  width: 3px;
-  height: 3px;
-  border-radius: 50%;
-  background-color: rgba(255, 255, 255, 0.7);
-  filter: blur(1px);
-}
-
-/* Node glow effects */
-.node-glow {
-  position: absolute;
-  border-radius: 50%;
-  filter: blur(8px);
   transition: all 0.3s ease;
 }
 
-/* Enhanced visual feedback for node interactions */
-.node-accessible {
-  transition: all 0.3s cubic-bezier(0.2, 0, 0.2, 1);
-  animation: node-pulse 4s infinite alternate;
+/* Node States - Visual Differentiation */
+
+/* Active Node - Currently Selected */
+.node-active .node-container {
+  transform: scale(1.15);
+  z-index: 20;
+  filter: brightness(1.3) drop-shadow(0 0 12px rgba(255, 255, 255, 0.4));
 }
 
-@keyframes node-pulse {
-  0% {
-    filter: brightness(1) drop-shadow(0 0 5px rgba(255, 255, 255, 0.3));
-  }
-  100% {
-    filter: brightness(1.2) drop-shadow(0 0 8px rgba(255, 255, 255, 0.5));
-  }
-}
-
-/* Constellation connection effects */
-.constellation-connector {
+.node-active::after {
+  content: '';
   position: absolute;
-  overflow: visible;
-  transform-origin: top left;
-  background-image: linear-gradient(to right, rgba(255, 255, 255, 0.1), rgba(156, 196, 255, 0.5), rgba(255, 255, 255, 0.1));
+  top: 50%;
+  left: 50%;
+  width: 90px;
+  height: 90px;
+  border-radius: 50%;
+  background: transparent;
+  border: 2px solid rgba(255, 255, 255, 0.7);
+  transform: translate(-50%, -50%);
+  animation: pulse-ring 2s cubic-bezier(0.25, 0.46, 0.45, 0.94) infinite;
+  z-index: -1;
+}
+
+/* Completed Node - Visited */
+.node-completed .node-container {
+  filter: brightness(0.8) contrast(0.9) saturate(0.7);
+  opacity: 0.8;
+  transform: scale(0.85);
+}
+
+.node-completed::after {
+  content: '✓';
+  position: absolute;
+  top: -10px;
+  right: -5px;
+  width: 20px;
+  height: 20px;
+  background: rgba(52, 211, 153, 0.9);
+  border-radius: 50%;
+  color: white;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: bold;
+  box-shadow: 0 0 8px rgba(52, 211, 153, 0.5);
+}
+
+/* Accessible Node - Can be visited */
+.node-accessible .node-container {
+  animation: pulse-accessible 3s infinite alternate;
+}
+
+.node-accessible::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 95px;
+  height: 95px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255,255,255,0.1) 0%, transparent 70%);
+  transform: translate(-50%, -50%);
+  z-index: -1;
+  animation: pulse-glow 3s infinite alternate;
+}
+
+/* Future Node - Visible but not yet accessible */
+.node-future .node-container {
+  filter: brightness(0.5) contrast(0.7) grayscale(0.7) blur(1px);
+  opacity: 0.6;
+  transform: scale(0.8);
+}
+
+.node-future::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: rgba(10, 13, 28, 0.5);
+  border-radius: 50%;
+  z-index: 1;
+}
+
+/* Locked Node - Not yet visible */
+.node-locked .node-container {
+  filter: brightness(0.3) blur(2px);
+  opacity: 0.3;
+  transform: scale(0.6);
+}
+
+.node-locked::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: rgba(10, 13, 28, 0.7);
+  border-radius: 50%;
+  z-index: 1;
+}
+
+/* Node Type Styling - Visual Differentiation */
+
+/* QA Node */
+.node-qa {
+  --node-color: var(--qa-color, #5a6978);
+  --node-color-light: var(--qa-color-light, #6d7c8a);
+  --node-color-dark: var(--qa-color-dark, #464e59);
+  --node-glow: rgba(90, 105, 120, 0.5);
+}
+
+/* Clinical Node */
+.node-clinical {
+  --node-color: var(--clinical-color, #4e83bd);
+  --node-color-light: var(--clinical-color-light, #63a0db);
+  --node-color-dark: var(--clinical-color-dark, #3a6590);
+  --node-glow: rgba(78, 131, 189, 0.5);
+}
+
+/* Educational Node */
+.node-educational {
+  --node-color: var(--educational-color, #2c9287);
+  --node-color-light: var(--educational-color-light, #3db3a6);
+  --node-color-dark: var(--educational-color-dark, #1f6e66);
+  --node-glow: rgba(44, 146, 135, 0.5);
+}
+
+/* Storage Node */
+.node-storage {
+  --node-color: var(--storage-color, #bfb38b);
+  --node-color-light: var(--storage-color-light, #d8cca3);
+  --node-color-dark: var(--storage-color-dark, #a59970);
+  --node-glow: rgba(191, 179, 139, 0.5);
+}
+
+/* Boss Node */
+.node-boss {
+  --node-color: var(--boss-color, #cc4d4d);
+  --node-color-light: var(--boss-color-light, #e05e5e);
+  --node-color-dark: var(--boss-color-dark, #a33c3c);
+  --node-glow: rgba(204, 77, 77, 0.5);
+  transform: scale(1.2);
+}
+
+.node-boss::after {
+  content: '!';
+  position: absolute;
+  top: -10px;
+  right: -5px;
+  width: 20px;
+  height: 20px;
+  background: rgba(204, 77, 77, 0.9);
+  border-radius: 50%;
+  color: white;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: bold;
+  box-shadow: 0 0 8px rgba(204, 77, 77, 0.5);
+}
+
+/* Node Inner Elements */
+
+.node-border {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 3px solid var(--node-color);
+  box-shadow: 
+    inset 0 0 15px var(--node-color-dark),
+    0 0 20px var(--node-glow);
+  opacity: 0.9;
+}
+
+.node-background {
+  position: absolute;
+  inset: 3px;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle at 30% 30%,
+    var(--node-color-light) 0%,
+    var(--node-color) 40%,
+    var(--node-color-dark) 100%
+  );
+  z-index: -1;
+}
+
+.node-icon {
+  position: relative;
+  width: 48px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   z-index: 5;
 }
 
-/* Animate connections when revealed */
-.map-revealed .constellation-connector {
-  animation: connector-reveal 1.5s ease-out forwards;
+.node-icon img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.3));
 }
 
-@keyframes connector-reveal {
-  0% {
-    opacity: 0;
-    filter: brightness(2) blur(4px);
-  }
-  100% {
-    opacity: 1;
-    filter: brightness(1) blur(0);
-  }
+.node-title {
+  position: absolute;
+  bottom: -28px;
+  left: 50%;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 500;
+  color: #fff;
+  text-shadow: 0 0 8px rgba(0, 0, 0, 0.8);
+  opacity: 0;
+  transition: opacity 0.2s ease;
+  pointer-events: none;
 }
 
-/* Node reveal animation */
-.node-reveal {
-  animation: node-reveal 0.8s cubic-bezier(0.2, 0, 0.2, 1) forwards;
+.map-node:hover .node-title {
+  opacity: 1;
 }
 
-@keyframes node-reveal {
-  0% {
-    opacity: 0;
-    transform: scale(0.5);
-  }
-  70% {
-    transform: scale(1.1);
-  }
-  100% {
-    opacity: 1;
-    transform: scale(1);
-  }
+.node-reward {
+  position: absolute;
+  bottom: -8px;
+  right: -8px;
+  background: rgba(0, 0, 0, 0.7);
+  color: #fbbf24;
+  font-size: 10px;
+  padding: 2px 4px;
+  border-radius: 4px;
+  z-index: 10;
 }
 
-/* Better visibility for future nodes */
-.node-future {
-  filter: contrast(0.9) brightness(0.7) grayscale(0.5);
-  transition: all 0.5s ease;
+/* ===== Connection Lines ===== */
+
+.connection-line {
+  position: absolute;
+  pointer-events: none;
+  transform-origin: 0 0;
+  overflow: visible;
+  z-index: 5;
 }
 
-.map-revealed .node-future {
-  filter: contrast(0.95) brightness(0.85) grayscale(0.3);
-}
-
-/* Highlight for active path */
-.active-path {
-  position: relative;
-}
-
-.active-path::after {
-  content: '';
+.connection-line-bg {
   position: absolute;
   top: 0;
   left: 0;
   width: 100%;
   height: 100%;
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
-  animation: path-highlight 2s infinite linear;
+  background-color: rgba(140, 160, 180, 0.15);
+  transform-origin: 0 0;
+  border-radius: 2px;
 }
 
-@keyframes path-highlight {
-  0% { transform: translateX(-100%); }
-  100% { transform: translateX(100%); }
-}
-
-/* Glowing orbital particles around nodes */
-.orbital-particle {
+.connection-line-glow {
   position: absolute;
-  border-radius: 50%;
-  width: 3px;
-  height: 3px;
-  top: 50%;
-  left: 50%;
-  transform-origin: top left;
-  filter: blur(1px);
-  z-index: 15;
-  pointer-events: none;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(140, 160, 180, 0.05);
+  filter: blur(2px);
+  transform-origin: 0 0;
+  border-radius: 2px;
 }
 
-.orbital-1 {
-  background-color: rgba(126, 213, 255, 0.8);
-  box-shadow: 0 0 4px rgba(126, 213, 255, 0.8);
-  animation: orbit 3s linear infinite;
+/* Connection States */
+
+.connection-completed {
+  opacity: 0.75;
 }
 
-.orbital-2 {
-  background-color: rgba(255, 222, 126, 0.7);
-  box-shadow: 0 0 4px rgba(255, 222, 126, 0.7);
-  animation: orbit-reverse 5s linear infinite;
+.connection-completed .connection-line-bg {
+  background-color: rgba(52, 211, 153, 0.3);
 }
 
-@keyframes orbit {
-  0% {
-    transform: rotate(0deg) translateX(16px) translateY(0) rotate(0deg);
-  }
-  100% {
-    transform: rotate(360deg) translateX(16px) translateY(0) rotate(-360deg);
-  }
+.connection-completed .connection-line-glow {
+  background-color: rgba(52, 211, 153, 0.2);
 }
 
-@keyframes orbit-reverse {
-  0% {
-    transform: rotate(0deg) translateX(20px) translateY(0) rotate(0deg);
-  }
-  100% {
-    transform: rotate(-360deg) translateX(20px) translateY(0) rotate(360deg);
-  }
-}
-
-/* "Reveal Map" button effect */
-.reveal-map-button {
-  position: relative;
-  overflow: hidden;
-}
-
-.reveal-map-button::after {
-  content: '';
-  position: absolute;
-  top: -50%;
-  left: -50%;
-  width: 200%;
-  height: 200%;
-  background: radial-gradient(circle, rgba(255, 255, 255, 0.2) 0%, transparent 60%);
-  opacity: 0;
-  transition: opacity 0.3s ease;
-}
-
-.reveal-map-button:hover::after {
+.connection-active {
   opacity: 1;
 }
 
-/* Map reveal particle effect */
-.map-reveal-particle {
+.connection-active .connection-line-bg {
+  background-color: rgba(255, 255, 255, 0.4);
+  animation: line-pulse 2s infinite;
+}
+
+.connection-active .connection-line-glow {
+  background-color: rgba(255, 255, 255, 0.2);
+  animation: line-glow-pulse 2s infinite;
+}
+
+.connection-accessible {
+  opacity: 0.9;
+}
+
+.connection-future {
+  opacity: 0.5;
+}
+
+.connection-locked {
+  opacity: 0.2;
+}
+
+/* Directional Flow Effect */
+.flow-particles {
   position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
   pointer-events: none;
+}
+
+.flow-particle {
+  position: absolute;
+  width: 3px;
+  height: 3px;
   border-radius: 50%;
-  background-color: rgba(255, 255, 255, 0.7);
-  transform: translate(-50%, -50%);
-  filter: blur(2px);
+  background-color: rgba(255, 255, 255, 0.6);
+  top: 50%;
+  transform: translateY(-50%);
+  animation: flow-right 3s linear infinite;
+  opacity: 0;
+}
+
+.flow-particle.particle-1 { animation-delay: 0s; }
+.flow-particle.particle-2 { animation-delay: 0.6s; }
+.flow-particle.particle-3 { animation-delay: 1.2s; }
+.flow-particle.particle-4 { animation-delay: 1.8s; }
+.flow-particle.particle-5 { animation-delay: 2.4s; }
+
+.connection-completed .flow-particle {
+  background-color: rgba(52, 211, 153, 0.8);
+}
+
+.connection-active .flow-particle {
+  background-color: rgba(255, 255, 255, 0.8);
+}
+
+/* ===== Map Progress Visualization ===== */
+
+.map-progress {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  background: rgba(10, 13, 28, 0.8);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  padding: 12px;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
   z-index: 20;
 }
 
-/* Global light source effect for better dimension */
-.global-light {
+.progress-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #fff;
+  margin-bottom: 8px;
+}
+
+.progress-indicators {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.progress-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.progress-marker {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+}
+
+.marker-completed {
+  background: var(--success, #4e9e6a);
+}
+
+.marker-available {
+  background: var(--accent-primary, #53a8d4);
+  animation: pulse-marker 2s infinite;
+}
+
+.marker-future {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+.marker-locked {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.progress-text {
+  font-size: 12px;
+  color: #fff;
+}
+
+/* ===== Animations ===== */
+
+@keyframes subtle-drift {
+  0% { background-position: 0px 0px, 25px 25px, 50px 50px, 75px, 75px, 100px 100px; }
+  100% { background-position: 100px 100px, 125px 125px, 150px 150px, 175px 175px, 200px 200px; }
+}
+
+@keyframes pulse-accessible {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.05); }
+  100% { transform: scale(1); }
+}
+
+@keyframes pulse-glow {
+  0% { opacity: 0.3; }
+  50% { opacity: 0.6; }
+  100% { opacity: 0.3; }
+}
+
+@keyframes pulse-ring {
+  0% { width: 90px; height: 90px; opacity: 0.6; }
+  50% { width: 100px; height: 100px; opacity: 0.3; }
+  100% { width: 90px; height: 90px; opacity: 0.6; }
+}
+
+@keyframes line-pulse {
+  0% { opacity: 0.4; }
+  50% { opacity: 0.8; }
+  100% { opacity: 0.4; }
+}
+
+@keyframes line-glow-pulse {
+  0% { opacity: 0.2; filter: blur(2px); }
+  50% { opacity: 0.4; filter: blur(3px); }
+  100% { opacity: 0.2; filter: blur(2px); }
+}
+
+@keyframes flow-right {
+  0% { left: -5px; opacity: 0; }
+  10% { opacity: 1; }
+  90% { opacity: 1; }
+  100% { left: 100%; opacity: 0; }
+}
+
+@keyframes pulse-marker {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.2); }
+  100% { transform: scale(1); }
+}
+
+/* ===== Helper utilities ===== */
+
+.depth-1 { z-index: 1; }
+.depth-2 { z-index: 2; }
+.depth-3 { z-index: 3; }
+.depth-4 { z-index: 4; }
+.depth-5 { z-index: 5; }
+
+.hover-scale {
+  transition: transform 0.3s ease;
+}
+
+.hover-scale:hover {
+  transform: scale(1.1);
+}
+
+/* Progressive focus - makes distant elements slightly blurred */
+.focus-zone-1 { filter: blur(0px); transition: filter 0.5s ease; }
+.focus-zone-2 { filter: blur(0.5px); transition: filter 0.5s ease; }
+.focus-zone-3 { filter: blur(1px); transition: filter 0.5s ease; }
+
+/* When a zone is active, it becomes focused */
+.focus-zone-1.active, 
+.focus-zone-2.active, 
+.focus-zone-3.active {
+  filter: blur(0px);
+}
+
+/* Enhanced Map Visualization CSS
+ * 
+ * This stylesheet implements improved visual hierarchy for the roguelike map,
+ * creating clear progression paths, state differentiation, and ambient effects
+ * that communicate game state through visual language.
+ */
+
+/* Map Container - Cosmic Environment */
+.map-container {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background-color: #0a0d1c;
+}
+
+/* Enhanced Starfield Background with Depth */
+.starfield-bg {
+  background-color: #0a0d1c;
+  background-image: 
+    radial-gradient(1px 1px at 25% 25%, rgba(255, 255, 255, 0.2) 1px, transparent 0),
+    radial-gradient(1px 1px at 50% 50%, rgba(255, 255, 255, 0.15) 1px, transparent 0),
+    radial-gradient(1px 1px at 75% 75%, rgba(255, 255, 255, 0.1) 1px, transparent 0),
+    radial-gradient(2px 2px at 10% 80%, rgba(100, 155, 255, 0.12) 1px, transparent 0),
+    radial-gradient(2px 2px at 60% 10%, rgba(100, 155, 255, 0.12) 1px, transparent 0);
+  background-size: 50px 50px, 100px 100px, 150px 150px, 200px 200px, 250px 250px;
+  animation: subtle-drift 240s linear infinite;
+  min-height: 100%;
+  position: relative;
+}
+
+/* Add depth haze layers */
+.depth-layer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
   pointer-events: none;
-  position: fixed;
-  width: 100vw;
-  height: 100vh;
+}
+
+.depth-layer-1 {
+  background: radial-gradient(ellipse at center, 
+    rgba(45, 75, 155, 0.1) 0%, 
+    rgba(10, 13, 28, 0) 70%);
+  opacity: 0.6;
+}
+
+.depth-layer-2 {
+  background: radial-gradient(ellipse at 30% 40%, 
+    rgba(125, 35, 175, 0.07) 0%, 
+    rgba(10, 13, 28, 0) 60%);
+  opacity: 0.7;
+}
+
+/* ===== Node Styling ===== */
+
+/* Base Node Styling - Common to All States */
+.map-node {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  transition: all 0.4s cubic-bezier(0.2, 0, 0.2, 1);
+  cursor: pointer;
+  width: 80px; /* Increased from previous size */
+  height: 80px;
+  z-index: 10;
+}
+
+/* Node Container with Glow Effects */
+.node-container {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  overflow: visible;
+  transition: all 0.3s ease;
+}
+
+/* Node States - Visual Differentiation */
+
+/* Active Node - Currently Selected */
+.node-active .node-container {
+  transform: scale(1.15);
+  z-index: 20;
+  filter: brightness(1.3) drop-shadow(0 0 12px rgba(255, 255, 255, 0.4));
+}
+
+.node-active::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 90px;
+  height: 90px;
+  border-radius: 50%;
+  background: transparent;
+  border: 2px solid rgba(255, 255, 255, 0.7);
+  transform: translate(-50%, -50%);
+  animation: pulse-ring 2s cubic-bezier(0.25, 0.46, 0.45, 0.94) infinite;
+  z-index: -1;
+}
+
+/* Completed Node - Visited */
+.node-completed .node-container {
+  filter: brightness(0.8) contrast(0.9) saturate(0.7);
+  opacity: 0.8;
+  transform: scale(0.85);
+}
+
+.node-completed::after {
+  content: '✓';
+  position: absolute;
+  top: -10px;
+  right: -5px;
+  width: 20px;
+  height: 20px;
+  background: rgba(52, 211, 153, 0.9);
+  border-radius: 50%;
+  color: white;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: bold;
+  box-shadow: 0 0 8px rgba(52, 211, 153, 0.5);
+}
+
+/* Accessible Node - Can be visited */
+.node-accessible .node-container {
+  animation: pulse-accessible 3s infinite alternate;
+}
+
+.node-accessible::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 95px;
+  height: 95px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255,255,255,0.1) 0%, transparent 70%);
+  transform: translate(-50%, -50%);
+  z-index: -1;
+  animation: pulse-glow 3s infinite alternate;
+}
+
+/* Future Node - Visible but not yet accessible */
+.node-future .node-container {
+  filter: brightness(0.5) contrast(0.7) grayscale(0.7) blur(1px);
+  opacity: 0.6;
+  transform: scale(0.8);
+}
+
+.node-future::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: rgba(10, 13, 28, 0.5);
+  border-radius: 50%;
+  z-index: 1;
+}
+
+/* Locked Node - Not yet visible */
+.node-locked .node-container {
+  filter: brightness(0.3) blur(2px);
+  opacity: 0.3;
+  transform: scale(0.6);
+}
+
+.node-locked::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: rgba(10, 13, 28, 0.7);
+  border-radius: 50%;
+  z-index: 1;
+}
+
+/* Node Type Styling - Visual Differentiation */
+
+/* QA Node */
+.node-qa {
+  --node-color: var(--qa-color, #5a6978);
+  --node-color-light: var(--qa-color-light, #6d7c8a);
+  --node-color-dark: var(--qa-color-dark, #464e59);
+  --node-glow: rgba(90, 105, 120, 0.5);
+}
+
+/* Clinical Node */
+.node-clinical {
+  --node-color: var(--clinical-color, #4e83bd);
+  --node-color-light: var(--clinical-color-light, #63a0db);
+  --node-color-dark: var(--clinical-color-dark, #3a6590);
+  --node-glow: rgba(78, 131, 189, 0.5);
+}
+
+/* Educational Node */
+.node-educational {
+  --node-color: var(--educational-color, #2c9287);
+  --node-color-light: var(--educational-color-light, #3db3a6);
+  --node-color-dark: var(--educational-color-dark, #1f6e66);
+  --node-glow: rgba(44, 146, 135, 0.5);
+}
+
+/* Storage Node */
+.node-storage {
+  --node-color: var(--storage-color, #bfb38b);
+  --node-color-light: var(--storage-color-light, #d8cca3);
+  --node-color-dark: var(--storage-color-dark, #a59970);
+  --node-glow: rgba(191, 179, 139, 0.5);
+}
+
+/* Boss Node */
+.node-boss {
+  --node-color: var(--boss-color, #cc4d4d);
+  --node-color-light: var(--boss-color-light, #e05e5e);
+  --node-color-dark: var(--boss-color-dark, #a33c3c);
+  --node-glow: rgba(204, 77, 77, 0.5);
+  transform: scale(1.2);
+}
+
+.node-boss::after {
+  content: '!';
+  position: absolute;
+  top: -10px;
+  right: -5px;
+  width: 20px;
+  height: 20px;
+  background: rgba(204, 77, 77, 0.9);
+  border-radius: 50%;
+  color: white;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: bold;
+  box-shadow: 0 0 8px rgba(204, 77, 77, 0.5);
+}
+
+/* Node Inner Elements */
+
+.node-border {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 3px solid var(--node-color);
+  box-shadow: 
+    inset 0 0 15px var(--node-color-dark),
+    0 0 20px var(--node-glow);
+  opacity: 0.9;
+}
+
+.node-background {
+  position: absolute;
+  inset: 3px;
+  border-radius: 50%;
   background: radial-gradient(
-    circle at var(--mouse-x, 50%) var(--mouse-y, 50%),
-    rgba(255, 255, 255, 0.03) 0%,
-    transparent 40%
+    circle at 30% 30%,
+    var(--node-color-light) 0%,
+    var(--node-color) 40%,
+    var(--node-color-dark) 100%
   );
-  z-index: 2;
-  mix-blend-mode: screen;
+  z-index: -1;
+}
+
+.node-icon {
+  position: relative;
+  width: 48px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 5;
+}
+
+.node-icon img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.3));
+}
+
+.node-title {
+  position: absolute;
+  bottom: -28px;
+  left: 50%;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 500;
+  color: #fff;
+  text-shadow: 0 0 8px rgba(0, 0, 0, 0.8);
+  opacity: 0;
+  transition: opacity 0.2s ease;
+  pointer-events: none;
+}
+
+.map-node:hover .node-title {
+  opacity: 1;
+}
+
+.node-reward {
+  position: absolute;
+  bottom: -8px;
+  right: -8px;
+  background: rgba(0, 0, 0, 0.7);
+  color: #fbbf24;
+  font-size: 10px;
+  padding: 2px 4px;
+  border-radius: 4px;
+  z-index: 10;
+}
+
+/* ===== Connection Lines ===== */
+
+.connection-line {
+  position: absolute;
+  pointer-events: none;
+  transform-origin: 0 0;
+  overflow: visible;
+  z-index: 5;
+}
+
+.connection-line-bg {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(140, 160, 180, 0.15);
+  transform-origin: 0 0;
+  border-radius: 2px;
+}
+
+.connection-line-glow {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(140, 160, 180, 0.05);
+  filter: blur(2px);
+  transform-origin: 0 0;
+  border-radius: 2px;
+}
+
+/* Connection States */
+
+.connection-completed {
+  opacity: 0.75;
+}
+
+.connection-completed .connection-line-bg {
+  background-color: rgba(52, 211, 153, 0.3);
+}
+
+.connection-completed .connection-line-glow {
+  background-color: rgba(52, 211, 153, 0.2);
+}
+
+.connection-active {
+  opacity: 1;
+}
+
+.connection-active .connection-line-bg {
+  background-color: rgba(255, 255, 255, 0.4);
+  animation: line-pulse 2s infinite;
+}
+
+.connection-active .connection-line-glow {
+  background-color: rgba(255, 255, 255, 0.2);
+  animation: line-glow-pulse 2s infinite;
+}
+
+.connection-accessible {
+  opacity: 0.9;
+}
+
+.connection-future {
+  opacity: 0.5;
+}
+
+.connection-locked {
+  opacity: 0.2;
+}
+
+/* Directional Flow Effect */
+.flow-particles {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.flow-particle {
+  position: absolute;
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background-color: rgba(255, 255, 255, 0.6);
+  top: 50%;
+  transform: translateY(-50%);
+  animation: flow-right 3s linear infinite;
+  opacity: 0;
+}
+
+.flow-particle.particle-1 { animation-delay: 0s; }
+.flow-particle.particle-2 { animation-delay: 0.6s; }
+.flow-particle.particle-3 { animation-delay: 1.2s; }
+.flow-particle.particle-4 { animation-delay: 1.8s; }
+.flow-particle.particle-5 { animation-delay: 2.4s; }
+
+.connection-completed .flow-particle {
+  background-color: rgba(52, 211, 153, 0.8);
+}
+
+.connection-active .flow-particle {
+  background-color: rgba(255, 255, 255, 0.8);
+}
+
+/* ===== Map Progress Visualization ===== */
+
+.map-progress {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  background: rgba(10, 13, 28, 0.8);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  padding: 12px;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+  z-index: 20;
+}
+
+.progress-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #fff;
+  margin-bottom: 8px;
+}
+
+.progress-indicators {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.progress-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.progress-marker {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+}
+
+.marker-completed {
+  background: var(--success, #4e9e6a);
+}
+
+.marker-available {
+  background: var(--accent-primary, #53a8d4);
+  animation: pulse-marker 2s infinite;
+}
+
+.marker-future {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+.marker-locked {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.progress-text {
+  font-size: 12px;
+  color: #fff;
+}
+
+/* ===== Animations ===== */
+
+@keyframes subtle-drift {
+  0% { background-position: 0px 0px, 25px 25px, 50px 50px, 75px, 75px, 100px 100px; }
+  100% { background-position: 100px 100px, 125px 125px, 150px 150px, 175px 175px, 200px 200px; }
+}
+
+@keyframes pulse-accessible {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.05); }
+  100% { transform: scale(1); }
+}
+
+@keyframes pulse-glow {
+  0% { opacity: 0.3; }
+  50% { opacity: 0.6; }
+  100% { opacity: 0.3; }
+}
+
+@keyframes pulse-ring {
+  0% { width: 90px; height: 90px; opacity: 0.6; }
+  50% { width: 100px; height: 100px; opacity: 0.3; }
+  100% { width: 90px; height: 90px; opacity: 0.6; }
+}
+
+@keyframes line-pulse {
+  0% { opacity: 0.4; }
+  50% { opacity: 0.8; }
+  100% { opacity: 0.4; }
+}
+
+@keyframes line-glow-pulse {
+  0% { opacity: 0.2; filter: blur(2px); }
+  50% { opacity: 0.4; filter: blur(3px); }
+  100% { opacity: 0.2; filter: blur(2px); }
+}
+
+@keyframes flow-right {
+  0% { left: -5px; opacity: 0; }
+  10% { opacity: 1; }
+  90% { opacity: 1; }
+  100% { left: 100%; opacity: 0; }
+}
+
+@keyframes pulse-marker {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.2); }
+  100% { transform: scale(1); }
+}
+
+/* ===== Helper utilities ===== */
+
+.depth-1 { z-index: 1; }
+.depth-2 { z-index: 2; }
+.depth-3 { z-index: 3; }
+.depth-4 { z-index: 4; }
+.depth-5 { z-index: 5; }
+
+.hover-scale {
+  transition: transform 0.3s ease;
+}
+
+.hover-scale:hover {
+  transform: scale(1.1);
+}
+
+/* Progressive focus - makes distant elements slightly blurred */
+.focus-zone-1 { filter: blur(0px); transition: filter 0.5s ease; }
+.focus-zone-2 { filter: blur(0.5px); transition: filter 0.5s ease; }
+.focus-zone-3 { filter: blur(1px); transition: filter 0.5s ease; }
+
+/* When a zone is active, it becomes focused */
+.focus-zone-1.active, 
+.focus-zone-2.active, 
+.focus-zone-3.active {
+  filter: blur(0px);
 }
