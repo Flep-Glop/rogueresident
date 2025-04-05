@@ -13,7 +13,7 @@ import {
   getDialogueById, 
   getCriticalPathStages,
   DialogueRegistry
-} from '../content/dialogues';
+} from '../data/dialogues';
 
 /**
  * Loading state for dialogue content
