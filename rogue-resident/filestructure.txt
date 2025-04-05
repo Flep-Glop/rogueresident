@@ -58,7 +58,9 @@
 │   │       └── NotificationManager.tsx
 │   ├── core
 │   │   ├── dialogue
-│   │   │   └── DialogueStateMachine.ts
+│   │   │   ├── DialogueProgressionHelpers.ts
+│   │   │   ├── DialogueStateMachine.ts
+│   │   │   └── NarrativeTransaction.ts
 │   │   ├── events
 │   │   │   ├── CentralEventBus.ts
 │   │   │   ├── EventEffectsIntegration.ts
@@ -125,4 +127,4 @@
 │   └── testNodeAccessibility.js
 └── tsconfig.json
 
-20 directories, 105 files
+20 directories, 107 files
