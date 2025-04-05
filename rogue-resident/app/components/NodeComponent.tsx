@@ -2,6 +2,12 @@
 import { useEffect, useState, useRef } from 'react';
 import { Node } from '../types/map';
 import Image from 'next/image';
+import { 
+  dispatchUIEvent, 
+  playSoundEffect,
+  flashScreen 
+} from '../core/events/CentralEventBus';
+import { GameEventType } from '../core/events/EventTypes';
 import { useGameEffects } from './GameEffects';
 
 interface NodeComponentProps {
@@ -13,7 +19,7 @@ interface NodeComponentProps {
   onClick: () => void;
   onMouseEnter: () => void;
   onMouseLeave: () => void;
-  revealMode?: boolean; // New prop to toggle enhanced visibility
+  revealMode?: boolean; // Prop to toggle enhanced visibility
 }
 
 export default function NodeComponent({
@@ -73,10 +79,8 @@ export default function NodeComponent({
     // Start animation
     setAnimating(true);
     
-    // Play sound effect
-    if (playSound) {
-      playSound('node-select');
-    }
+    // Play sound effect through centralized system
+    playSoundEffect('node_select');
     
     // Apply visual feedback
     const nodeElement = nodeRef.current;
@@ -96,8 +100,12 @@ export default function NodeComponent({
     
     // Small delay for animation to complete
     setTimeout(() => {
-      // Log node selection
-      console.log(`Selecting node: ${node.id} (type: ${node.type})`);
+      // Dispatch node selection event through central event bus
+      dispatchUIEvent('mapNode', 'node-click', {
+        nodeId: node.id,
+        nodeType: node.type,
+        position: nodeElement?.getBoundingClientRect() || null
+      });
       
       // Call the parent's onClick handler
       onClick();
@@ -105,6 +113,30 @@ export default function NodeComponent({
       // Reset animation states
       setAnimating(false);
     }, 300);
+  };
+  
+  // Handle mouse enter with event emission
+  const handleMouseEnter = () => {
+    // Emit node hover event
+    dispatchUIEvent('mapNode', 'node-hover', {
+      nodeId: node.id,
+      nodeType: node.type,
+      state: isCompleted ? 'completed' : isAvailable ? 'available' : 'locked'
+    });
+    
+    // Call the parent's onMouseEnter handler
+    onMouseEnter();
+  };
+  
+  // Handle mouse leave with event emission
+  const handleMouseLeave = () => {
+    // Emit node hover end event
+    dispatchUIEvent('mapNode', 'node-hover-end', {
+      nodeId: node.id
+    });
+    
+    // Call the parent's onMouseLeave handler
+    onMouseLeave();
   };
   
   // Get node icon path based on type
@@ -264,8 +296,8 @@ export default function NodeComponent({
           cursor: nodeStyles.cursor,
         }}
         onClick={handleNodeClick}
-        onMouseEnter={onMouseEnter}
-        onMouseLeave={onMouseLeave}
+        onMouseEnter={handleMouseEnter}
+        onMouseLeave={handleMouseLeave}
       >
         {/* Shadow effect under node */}
         <div 

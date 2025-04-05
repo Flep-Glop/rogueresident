@@ -87,16 +87,10 @@ export default function RootLayout({
         <PixelThemeProvider>
           {/* Wrap with GameEffectsProvider to make effects available throughout the app */}
           <GameEffectsProvider>
-            {/* In development, wrap with DebugWrapper to enable testing tools */}
-            {isDevelopment ? (
-                <FontLoadingContainer>
-                  {children}
-                </FontLoadingContainer>
-            ) : (
-              <FontLoadingContainer>
-                {children}
-              </FontLoadingContainer>
-            )}
+            {/* Note: Systems initialization happens in the page component */}
+            <FontLoadingContainer>
+              {children}
+            </FontLoadingContainer>
           </GameEffectsProvider>
         </PixelThemeProvider>
       </body>

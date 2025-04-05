@@ -1,4 +1,4 @@
-// app/core/stateMachine/GameStateMachine.ts
+// app/core/statemachine/GameStateMachine.ts
 /**
  * Game State Machine - Formalized state transitions for Rogue Resident
  * 
@@ -16,8 +16,13 @@
 
 import { create } from 'zustand';
 import { 
-  useEventBus, 
   GameEventType, 
+  NodeCompletionPayload,
+  UIEventPayload,
+  StateChangePayload
+} from '../events/EventTypes';
+import { 
+  useEventBus, 
   changeGameState, 
   changeGamePhase 
 } from '../events/CentralEventBus';
@@ -128,7 +133,7 @@ export const useGameStateMachine = create<GameStateMachineState>((set, get) => (
       set({ gamePhase: 'day' });
     }
     
-    // Dispatch event before state change
+    // Dispatch event before state change to allow systems to prepare
     changeGameState(currentState, newState, reason);
     
     // Update state
@@ -175,7 +180,7 @@ export const useGameStateMachine = create<GameStateMachineState>((set, get) => (
       });
     }
     
-    // Dispatch event before phase change
+    // Dispatch event before phase change to allow systems to prepare
     changeGamePhase(currentPhase, newPhase, reason);
     
     // Update phase
@@ -213,10 +218,13 @@ export const useGameStateMachine = create<GameStateMachineState>((set, get) => (
       transitionToPhase('transition_to_night', 'day_complete');
       
       // Notify listening systems
-      useEventBus.getState().dispatch(GameEventType.DAY_STARTED, {
-        day: get().currentDay,
-        completedNodeCount: get().completedNodeIds.length
-      });
+      useEventBus.getState().dispatch(
+        GameEventType.DAY_STARTED, 
+        {
+          day: get().currentDay,
+          completedNodeCount: get().completedNodeIds.length
+        }
+      );
       
       return true;
     } else {
@@ -245,10 +253,13 @@ export const useGameStateMachine = create<GameStateMachineState>((set, get) => (
     transitionToPhase('transition_to_day', 'night_complete');
     
     // Notify listening systems
-    useEventBus.getState().dispatch(GameEventType.NIGHT_STARTED, {
-      day: get().currentDay,
-      previousCompletedNodeCount: get().completedNodeIds.length
-    });
+    useEventBus.getState().dispatch(
+      GameEventType.NIGHT_STARTED, 
+      {
+        day: get().currentDay,
+        previousCompletedNodeCount: get().completedNodeIds.length
+      }
+    );
     
     // Reset completed nodes for new day
     set({ completedNodeIds: [] });
@@ -265,9 +276,12 @@ export const useGameStateMachine = create<GameStateMachineState>((set, get) => (
     set({ bossDefeated: true });
     
     // Notify systems
-    useEventBus.getState().dispatch(GameEventType.BOSS_DEFEATED, {
-      day: get().currentDay
-    });
+    useEventBus.getState().dispatch(
+      GameEventType.BOSS_DEFEATED, 
+      {
+        day: get().currentDay
+      }
+    );
     
     return true;
   },
@@ -324,10 +338,10 @@ export const useGameStateMachine = create<GameStateMachineState>((set, get) => (
   getCurrentDay: () => get().currentDay
 }));
 
-// ======== Integration Helpers ========
+// ======== Integration with Event System ========
 
 /**
- * Hook up state machine to event bus to handle specific events
+ * Connect state machine to event bus to handle specific events
  * This creates the connections between UI actions and state transitions
  */
 export function initializeStateMachine() {
@@ -335,13 +349,13 @@ export function initializeStateMachine() {
   const stateMachine = useGameStateMachine.getState();
   
   // Listen for node completions
-  subscribe(GameEventType.NODE_COMPLETED, (event) => {
+  subscribe<NodeCompletionPayload>(GameEventType.NODE_COMPLETED, (event) => {
     const { nodeId } = event.payload;
     stateMachine.markNodeCompleted(nodeId);
   });
   
   // Listen for animation completions
-  subscribe(GameEventType.UI_BUTTON_CLICKED, (event) => {
+  subscribe<UIEventPayload>(GameEventType.UI_BUTTON_CLICKED, (event) => {
     const { action, componentId } = event.payload;
     
     // Handle phase transition completion
@@ -361,7 +375,7 @@ export function initializeStateMachine() {
   });
   
   // Listen for completion requests
-  subscribe(GameEventType.UI_BUTTON_CLICKED, (event) => {
+  subscribe<UIEventPayload>(GameEventType.UI_BUTTON_CLICKED, (event) => {
     const { action, componentId } = event.payload;
     
     // Handle day completion request

@@ -8,31 +8,28 @@ import StartScreen from './components/StartScreen';
 import GameOver from './components/GameOver';
 import VictoryScreen from './components/VictoryScreen';
 import PhaseTransition from './components/PhaseTransition';
-import { setupGameStateMachine } from './core/statemachine/GameStateMachine';
-import { setupStateBridge } from './core/statemachine/GameStateBridge';
-import { generateImprovedMap } from './utils/improvedMapGenerator';
-
+import { useGameState } from './core/statemachine/GameStateMachine';
+import { initializeSystems } from './core/init';
 
 export default function Home() {
   const { gameState, gamePhase, player } = useGameStore();
+  const { isTransitioning, transitionData } = useGameState();
   const [showTransition, setShowTransition] = useState(false);
   const [transitionFrom, setTransitionFrom] = useState<'day' | 'night'>('day');
   const [transitionTo, setTransitionTo] = useState<'day' | 'night'>('night');
   const mountCountRef = useRef<number>(0);
   const cleanupRef = useRef<boolean>(false);
-  const stateMachineRef = useRef<{ teardown: () => void } | null>(null);
-  const stateBridgeRef = useRef<(() => void) | null>(null);
+  const systemsCleanupRef = useRef<(() => void) | null>(null);
   
   // Anti-duplication mount tracking
   useEffect(() => {
     mountCountRef.current += 1;
     console.log(`Home component mounted (count: ${mountCountRef.current})`);
     
-    // Set up state management & synchronization
-    if (!stateMachineRef.current) {
-      console.log("🔄 Setting up game state machine & bridge");
-      stateMachineRef.current = setupGameStateMachine();
-      stateBridgeRef.current = setupStateBridge();
+    // Set up core systems on mount
+    if (!systemsCleanupRef.current) {
+      console.log("🚀 Initializing core systems");
+      systemsCleanupRef.current = initializeSystems();
     }
     
     // Detect and clean up duplicate mounts after a short delay
@@ -52,20 +49,15 @@ export default function Home() {
       cleanupRef.current = true;
       console.log("Home component unmounting");
       
-      // Clean up state machine and bridge
-      if (stateMachineRef.current) {
-        stateMachineRef.current.teardown();
-        stateMachineRef.current = null;
-      }
-      
-      if (stateBridgeRef.current) {
-        stateBridgeRef.current();
-        stateBridgeRef.current = null;
+      // Clean up core systems
+      if (systemsCleanupRef.current) {
+        systemsCleanupRef.current();
+        systemsCleanupRef.current = null;
       }
     };
   }, []);
   
-  // Store initialization protection
+  // Store initialization if needed
   useEffect(() => {
     // Skip if we're already cleaning up
     if (cleanupRef.current) return;
@@ -78,14 +70,6 @@ export default function Home() {
       console.log("🔰 Initializing game from page component");
       // Use the store action directly to avoid potential hooks issues
       store.startGame();
-      
-      // Log the result after a short delay to ensure state updates
-      setTimeout(() => {
-        console.log("🗺️ Map initialization result:", {
-          mapExists: !!useGameStore.getState().map,
-          nodeCount: useGameStore.getState().map?.nodes?.length || 0
-        });
-      }, 100);
     }
   }, []);
   
@@ -115,23 +99,28 @@ export default function Home() {
     }
   }, []);
   
-  // Handle phase transitions
+  // Handle phase transitions based on state machine
   useEffect(() => {
-    // We need to track previous phase to know transition direction
-    const prevPhase = transitionTo;
-    
-    if (gamePhase === 'day' && prevPhase === 'night') {
-      // If we're transitioning from night to day
+    // If we have transition data from the state machine, use it
+    if (isTransitioning && transitionData) {
+      const { from, to } = transitionData;
+      
+      // Set transition direction based on state machine data
+      setTransitionFrom(from as 'day' | 'night');
+      setTransitionTo(to as 'day' | 'night');
+      setShowTransition(true);
+    } else if (gamePhase === 'day' && transitionTo === 'night') {
+      // If we're transitioning from night to day (legacy support)
       setTransitionFrom('night');
       setTransitionTo('day');
       setShowTransition(true);
-    } else if (gamePhase === 'night' && prevPhase === 'day') {
-      // If we're transitioning from day to night
+    } else if (gamePhase === 'night' && transitionTo === 'day') {
+      // If we're transitioning from day to night (legacy support)
       setTransitionFrom('day');
       setTransitionTo('night');
       setShowTransition(true);
     }
-  }, [gamePhase, transitionTo]);
+  }, [gamePhase, transitionTo, isTransitioning, transitionData]);
   
   // Handle transition completion
   const handleTransitionComplete = () => {

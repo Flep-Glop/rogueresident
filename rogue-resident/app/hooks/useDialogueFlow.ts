@@ -5,19 +5,18 @@
  * A declarative API for dialogue management that shields components
  * from the complexity of the underlying state machine.
  * 
- * Drawing inspiration from Pyre's dialogue system, this approach
- * separates state management from presentation concerns and
- * provides a clear, predictable interface for dialogue components.
+ * This revised implementation follows the one-way data flow pattern to
+ * prevent circular dependencies and race conditions. Now it acts as a 
+ * connector between UI components and the state management layer rather
+ * than trying to own both responsibilities.
+ * 
+ * Pattern inspired by how Supergiant's Pyre and Hades handle conversation systems,
+ * where content definition is cleanly separated from progression management.
  */
 
 import { useState, useCallback, useRef, useEffect } from 'react';
-import { 
-  useDialogueStateMachine, 
-  DialogueState, 
-  createDialogueFlow
-} from '../core/dialogue/DialogueStateMachine';
-import { useNarrativeTransaction } from '../core/dialogue/NarrativeTransaction';
 import { useEventBus, GameEventType } from '../core/events/CentralEventBus';
+import { useDialogueStateMachine } from '../core/dialogue/DialogueStateMachine';
 
 // Dialogue option for game UI
 export interface DialogueOption {
@@ -79,30 +78,30 @@ export function useDialogueFlow({
   characterId = 'unknown',
   nodeId = 'unknown',
 }: DialogueFlowOptions) {
+  // Event bus for dispatching events
+  const eventBus = useEventBus();
+  
   // Local tracking to avoid unnecessary renders
   const [currentStageId, setCurrentStageId] = useState(initialStageId);
   const [isProgressionValid, setIsProgressionValid] = useState(true);
   const [progressionHistory, setProgressionHistory] = useState<string[]>([]);
+  const [flowId, setFlowId] = useState<string>(`dialogue-${nodeId}-${characterId}`);
   
-  // Track initialization status
-  const isInitializedRef = useRef(false);
-  
-  // Access the dialogue state machine
+  // Access the dialogue state machine for state observation only
   const stateMachine = useDialogueStateMachine();
   
-  // Convert stages for state machine consumption - only done once at init
-  const convertAndInitialize = useCallback(() => {
-    // Skip if already initialized
-    if (isInitializedRef.current) return;
-    
+  // Track subscription cleanup references
+  const unsubscribeRefs = useRef<(() => void)[]>([]);
+  
+  // Initialize dialogue flow
+  const initializeFlow = useCallback(() => {
     console.log(`[DialogueFlow] Initializing flow for ${characterId}, node ${nodeId}`);
     
-    // Convert stages to state machine format
-    const states: Record<string, DialogueState> = {};
-    
-    // Transform stages to states
-    stages.forEach(stage => {
-      states[stage.id] = {
+    // Dispatch initialization event to start the dialogue flow
+    eventBus.dispatch(GameEventType.DIALOGUE_STARTED, {
+      flowId,
+      initialStageId,
+      stages: stages.map(stage => ({
         id: stage.id,
         type: stage.type || 'question',
         text: stage.text,
@@ -125,32 +124,13 @@ export function useDialogueFlow({
         maxVisits: stage.maxVisits,
         onEnter: stage.onEnter,
         onExit: stage.onExit
-      };
+      })),
+      characterId,
+      nodeId
     });
     
-    // Create the flow
-    const flow = createDialogueFlow(
-      `dialogue-${nodeId}-${characterId}`,
-      states,
-      initialStageId,
-      {
-        characterId,
-        nodeId,
-        playerScore: 0,
-        selectedOptionIds: [],
-        knowledgeGained: {},
-        visitedStateIds: [initialStageId],
-        criticalPathProgress: {},
-        transactionIds: {}
-      }
-    );
-    
-    // Initialize the flow in the state machine
-    stateMachine.initializeFlow(flow);
-    isInitializedRef.current = true;
-    
     // Log initialization
-    useEventBus.getState().dispatch(GameEventType.UI_BUTTON_CLICKED, {
+    eventBus.dispatch(GameEventType.UI_BUTTON_CLICKED, {
       componentId: 'dialogueFlow',
       action: 'initialized',
       metadata: {
@@ -160,88 +140,126 @@ export function useDialogueFlow({
         stageCount: stages.length
       }
     });
-  }, [stages, initialStageId, characterId, nodeId, stateMachine]);
+  }, [eventBus, flowId, initialStageId, stages, characterId, nodeId]);
   
-  // Initialize on mount
-  useEffect(() => {
-    convertAndInitialize();
+  // Set up subscriptions for state sync
+  const setupSubscriptions = useCallback(() => {
+    // Clear any existing subscriptions
+    unsubscribeRefs.current.forEach(unsub => unsub());
+    unsubscribeRefs.current = [];
     
-    // Cleanup on unmount - dispatch tracking event if not completed
-    return () => {
-      if (isInitializedRef.current && stateMachine.activeFlow) {
-        useEventBus.getState().dispatch(GameEventType.UI_BUTTON_CLICKED, {
-          componentId: 'dialogueFlow',
-          action: 'unmountedWithoutCompletion',
-          metadata: {
-            characterId,
-            nodeId,
-            currentStageId
-          }
-        });
-      }
-    };
-  }, [convertAndInitialize, characterId, nodeId, currentStageId, stateMachine]);
-  
-  // Sync with state machine state changes
-  useEffect(() => {
-    if (!stateMachine.currentState || !isInitializedRef.current) return;
-    
-    const machineStageId = stateMachine.currentState.id;
-    
-    // Only update if changed
-    if (machineStageId !== currentStageId) {
-      console.log(`[DialogueFlow] Syncing from state machine: ${currentStageId} -> ${machineStageId}`);
-      
-      // Update current stage ID
-      setCurrentStageId(machineStageId);
-      
-      // Track critical path stages for analytics
-      const stage = stages.find(s => s.id === machineStageId);
-      if (stage?.isCriticalPath) {
-        setProgressionHistory(prev => {
-          if (prev.includes(`stage-${machineStageId}`)) return prev;
-          return [...prev, `stage-${machineStageId}`];
-        });
+    // Subscribe to state machine state changes
+    const unsubState = useDialogueStateMachine.subscribe(
+      state => state.currentState?.id,
+      (stateId) => {
+        if (!stateId) return;
         
-        // Log critical path progress
-        useEventBus.getState().dispatch(GameEventType.UI_BUTTON_CLICKED, {
-          componentId: 'dialogueFlow',
-          action: 'criticalPathStageReached',
-          metadata: {
-            stageId: machineStageId,
-            characterId,
-            nodeId
+        // Only update if changed
+        if (stateId !== currentStageId) {
+          console.log(`[DialogueFlow] Syncing from state machine: ${currentStageId} -> ${stateId}`);
+          
+          // Update current stage ID
+          setCurrentStageId(stateId);
+          
+          // Track critical path stages for analytics
+          const stage = stages.find(s => s.id === stateId);
+          if (stage?.isCriticalPath) {
+            setProgressionHistory(prev => {
+              if (prev.includes(`stage-${stateId}`)) return prev;
+              return [...prev, `stage-${stateId}`];
+            });
+            
+            // Log critical path progress
+            eventBus.dispatch(GameEventType.UI_BUTTON_CLICKED, {
+              componentId: 'dialogueFlow',
+              action: 'criticalPathStageReached',
+              metadata: {
+                stageId,
+                characterId,
+                nodeId
+              }
+            });
           }
-        });
-      }
-      
-      // Call the onStageChange callback
-      if (onStageChange) {
-        onStageChange(machineStageId, currentStageId);
-      }
-    }
-    
-    // Update progression validity status
-    const progressionStatus = stateMachine.getProgressionStatus();
-    const newIsValid = progressionStatus.criticalPathsCompleted && !progressionStatus.loopDetected;
-    
-    if (isProgressionValid !== newIsValid) {
-      setIsProgressionValid(newIsValid);
-      
-      // Log progression status change
-      if (!newIsValid) {
-        useEventBus.getState().dispatch(GameEventType.UI_BUTTON_CLICKED, {
-          componentId: 'dialogueFlow',
-          action: 'progressionIssueDetected',
-          metadata: {
-            characterId,
-            nodeId,
-            progressionStatus
+          
+          // Call the onStageChange callback
+          if (onStageChange) {
+            onStageChange(stateId, currentStageId);
           }
-        });
+        }
       }
-    }
-  }, [stateMachine.currentState, currentStageId, onStageChange, stages, characterId, nodeId, isProgressionValid]);
+    );
+    unsubscribeRefs.current.push(unsubState);
+    
+    // Subscribe to progression status changes
+    const unsubProgression = useDialogueStateMachine.subscribe(
+      state => {
+        // Only run if there's an active flow
+        if (!state.activeFlow) return null;
+        
+        const status = state.getProgressionStatus();
+        return {
+          criticalPathsCompleted: status.criticalPathsCompleted,
+          loopDetected: status.loopDetected
+        };
+      },
+      (status) => {
+        if (!status) return;
+        
+        const newIsValid = status.criticalPathsCompleted && !status.loopDetected;
+        
+        if (isProgressionValid !== newIsValid) {
+          setIsProgressionValid(newIsValid);
+          
+          // Log progression status change
+          if (!newIsValid) {
+            eventBus.dispatch(GameEventType.UI_BUTTON_CLICKED, {
+              componentId: 'dialogueFlow',
+              action: 'progressionIssueDetected',
+              metadata: {
+                characterId,
+                nodeId,
+                progressionStatus: status
+              }
+            });
+          }
+        }
+      }
+    );
+    unsubscribeRefs.current.push(unsubProgression);
+    
+    return () => {
+      unsubscribeRefs.current.forEach(unsub => unsub());
+      unsubscribeRefs.current = [];
+    };
+  }, [eventBus, currentStageId, onStageChange, stages, characterId, nodeId, isProgressionValid]);
+  
+  // Initialize on mount and clean up on unmount
+  useEffect(() => {
+    // Generate a stable flowId
+    const newFlowId = `dialogue-${nodeId}-${characterId}-${Date.now()}`;
+    setFlowId(newFlowId);
+    
+    // Initialize flow
+    initializeFlow();
+    
+    // Set up subscriptions
+    const cleanupSubscriptions = setupSubscriptions();
+    
+    // Cleanup on unmount
+    return () => {
+      // Clean up subscriptions
+      cleanupSubscriptions();
+      
+      // Dispatch completion event
+      eventBus.dispatch(GameEventType.DIALOGUE_COMPLETED, {
+        flowId: newFlowId,
+        completed: false, // Not a normal completion
+        reason: 'component_unmounted',
+        character: characterId,
+        nodeId
+      });
+    };
+  }, [eventBus, initializeFlow, setupSubscriptions, characterId, nodeId]);
   
   // Get the current stage object
   const getCurrentStage = useCallback(() => {
@@ -250,12 +268,6 @@ export function useDialogueFlow({
   
   // Handle player selecting a dialogue option
   const handleOptionSelect = useCallback((option: DialogueOption) => {
-    // Skip if no state machine is active
-    if (!stateMachine.activeFlow) {
-      console.warn('[DialogueFlow] Cannot select option without active flow');
-      return;
-    }
-    
     // Track critical path options
     if (option.isCriticalPath) {
       setProgressionHistory(prev => {
@@ -264,72 +276,77 @@ export function useDialogueFlow({
       });
     }
     
-    // Call the onOptionSelected callback
+    // Call the onOptionSelected callback if provided
     if (onOptionSelected) {
       onOptionSelected(option);
     }
     
-    // Forward to state machine
-    stateMachine.selectOption(option.id);
+    // Dispatch option selection event
+    eventBus.dispatch(GameEventType.UI_DIALOGUE_ADVANCED, {
+      componentId: 'dialogueFlow',
+      action: 'option-selected',
+      metadata: {
+        optionId: option.id,
+        stageId: currentStageId,
+        flowId
+      }
+    });
     
-    // Log option selection
-    useEventBus.getState().dispatch(GameEventType.DIALOGUE_OPTION_SELECTED, {
+    // Also dispatch the main option selection event for broader system handling
+    eventBus.dispatch(GameEventType.DIALOGUE_OPTION_SELECTED, {
       optionId: option.id,
       stageId: currentStageId,
       character: characterId,
-      flowId: `dialogue-${nodeId}`,
+      flowId,
       insightGain: option.insightGain || 0,
-      isCriticalPath: option.isCriticalPath || false
+      relationshipChange: option.relationshipChange || 0,
+      isCriticalPath: option.isCriticalPath || false,
+      knowledgeGain: option.knowledgeGain
     });
-  }, [onOptionSelected, stateMachine, currentStageId, characterId, nodeId]);
+  }, [eventBus, onOptionSelected, currentStageId, characterId, flowId]);
   
   // Progress dialogue to next state
   const handleContinue = useCallback(() => {
-    // Skip if no state machine is active
-    if (!stateMachine.activeFlow) {
-      console.warn('[DialogueFlow] Cannot continue without active flow');
-      return false;
-    }
-    
-    // Log continue action
-    console.log(`[DialogueFlow] Continuing from stage: ${currentStageId}`);
-    
-    // If actively typing, skip to the end
-    if (stateMachine.showBackstory) {
-      stateMachine.dispatch({ type: 'SET_BACKSTORY_VISIBILITY', visible: false });
-      return true;
-    } else if (stateMachine.showResponse) {
-      stateMachine.dispatch({ type: 'SET_RESPONSE_VISIBILITY', visible: false });
-      return true;
-    }
-    
-    // Continue to next state
-    stateMachine.advanceState();
-    return true;
-  }, [stateMachine, currentStageId]);
-  
-  // Show backstory segment from outside the state machine 
-  const showBackstorySegment = useCallback((text: string) => {
-    stateMachine.dispatch({ 
-      type: 'SET_BACKSTORY_VISIBILITY', 
-      visible: true,
-      text
+    // Dispatch continue event
+    eventBus.dispatch(GameEventType.UI_DIALOGUE_ADVANCED, {
+      componentId: 'dialogueFlow',
+      action: 'continue',
+      metadata: {
+        stageId: currentStageId,
+        flowId
+      }
     });
-  }, [stateMachine]);
+    
+    return true;
+  }, [eventBus, currentStageId, flowId]);
+  
+  // Show backstory segment
+  const showBackstorySegment = useCallback((text: string) => {
+    eventBus.dispatch(GameEventType.UI_DIALOGUE_ADVANCED, {
+      componentId: 'dialogueFlow',
+      action: 'show-backstory',
+      metadata: {
+        text,
+        stageId: currentStageId,
+        flowId
+      }
+    });
+  }, [eventBus, currentStageId, flowId]);
   
   // Jump to specific stage
   const jumpToStage = useCallback((stageId: string) => {
-    // Skip if no state machine is active
-    if (!stateMachine.activeFlow) {
-      console.warn('[DialogueFlow] Cannot jump to stage without active flow');
-      return;
-    }
-    
-    // Jump to the specified state
-    stateMachine.jumpToState(stageId);
+    eventBus.dispatch(GameEventType.UI_DIALOGUE_ADVANCED, {
+      componentId: 'dialogueFlow',
+      action: 'jump-to-stage',
+      metadata: {
+        fromStageId: currentStageId,
+        toStageId: stageId,
+        flowId
+      }
+    });
     
     // Log stage jump
-    useEventBus.getState().dispatch(GameEventType.UI_BUTTON_CLICKED, {
+    eventBus.dispatch(GameEventType.UI_BUTTON_CLICKED, {
       componentId: 'dialogueFlow',
       action: 'jumpToStage',
       metadata: {
@@ -339,30 +356,48 @@ export function useDialogueFlow({
         nodeId
       }
     });
-  }, [stateMachine, currentStageId, characterId, nodeId]);
+  }, [eventBus, currentStageId, characterId, nodeId, flowId]);
   
   // Start a narrative transaction
   const startTransaction = useCallback((
     type: 'journal_acquisition' | 'knowledge_revelation' | 'character_introduction' | 'boss_encounter',
     metadata: Record<string, any>
   ) => {
-    const transactionId = useNarrativeTransaction.getState().startTransaction(
-      type,
-      metadata,
-      characterId,
-      nodeId
-    );
+    // Dispatch transaction event instead of directly calling
+    const transactionId = `${type}-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
+    
+    eventBus.dispatch(GameEventType.UI_BUTTON_CLICKED, {
+      componentId: 'dialogueFlow',
+      action: 'startTransaction',
+      metadata: {
+        transactionId,
+        transactionType: type,
+        characterId,
+        nodeId,
+        additionalData: metadata
+      }
+    });
     
     return transactionId;
-  }, [characterId, nodeId]);
+  }, [eventBus, characterId, nodeId]);
   
   // Complete a transaction
   const completeTransaction = useCallback((transactionId: string) => {
-    return useNarrativeTransaction.getState().completeTransaction(transactionId);
-  }, []);
+    eventBus.dispatch(GameEventType.UI_BUTTON_CLICKED, {
+      componentId: 'dialogueFlow',
+      action: 'completeTransaction',
+      metadata: {
+        transactionId,
+        characterId,
+        nodeId
+      }
+    });
+    
+    return true;
+  }, [eventBus, characterId, nodeId]);
   
   return {
-    // Core state
+    // Core state - read from state machine
     currentStage: getCurrentStage(),
     currentStageId,
     selectedOption: stateMachine.selectedOption,
@@ -370,7 +405,7 @@ export function useDialogueFlow({
     showBackstory: stateMachine.showBackstory,
     backstoryText: stateMachine.backstoryText,
     
-    // Actions
+    // Actions - dispatch events instead of mutating state
     handleOptionSelect,
     handleContinue,
     showBackstorySegment,
@@ -379,11 +414,13 @@ export function useDialogueFlow({
     // Progression tracking
     isProgressionValid,
     progressionHistory,
-    dialogueStateMachine: stateMachine, // For advanced use cases
     
     // Transaction management
     startTransaction,
-    completeTransaction
+    completeTransaction,
+    
+    // For debugging only
+    flowId
   };
 }
 

@@ -1,14 +1,13 @@
 // app/components/dialogue/DialogueSystem.tsx
 'use client';
 import { useState, useEffect, createContext, useContext, ReactNode, useRef } from 'react';
-import { useGameStore } from '../../store/gameStore';
-import { useKnowledgeStore } from '../../store/knowledgeStore';
 import { PixelText, PixelButton } from '../PixelThemeProvider';
 import { useGameEffects } from '../GameEffects';
 import { useTypewriter } from '../../hooks/useTypewriter';
 import { meetsRequirement, getMissingKnowledgeInfo } from '../../utils/knowledgeRequirements';
 import { KnowledgeRequirement } from '../../utils/knowledgeRequirements';
 import { KNOWLEDGE_DOMAINS } from '../knowledge/ConstellationView';
+import { useEventBus, GameEventType } from '../../core/events/CentralEventBus';
 
 // Prototype character types - limited to 3 key characters
 export type Character = 'kapoor' | 'jesse' | 'quinn' | 'player';
@@ -129,9 +128,8 @@ const CharacterReaction = ({ type, isActive, character }: { type: ReactionType, 
 
 // Provider component
 export function DialogueProvider({ children }: { children: ReactNode }) {
-  const { updateInsight } = useGameStore();
-  const { updateMastery } = useKnowledgeStore();
   const { playSound, flashScreen } = useGameEffects();
+  const eventBus = useEventBus();
   
   const [dialogueNodes, setDialogueNodes] = useState<DialogueNode[]>([]);
   const [currentNodeId, setCurrentNodeId] = useState<string | null>(null);
@@ -141,6 +139,7 @@ export function DialogueProvider({ children }: { children: ReactNode }) {
   const [currentReaction, setCurrentReaction] = useState<ReactionType | null>(null);
   const [isShaking, setIsShaking] = useState(false);
   const [isReady, setIsReady] = useState(false);
+  const [dialogueId, setDialogueId] = useState<string>(''); // Track dialogue flow ID
   
   // Ref to track if component is mounted
   const isMounted = useRef(true);
@@ -179,11 +178,25 @@ export function DialogueProvider({ children }: { children: ReactNode }) {
     return () => {
       isMounted.current = false;
       clearTimeout(timer);
+      
+      // Only dispatch completion on unmount if active
+      if (isActive && dialogueId) {
+        eventBus.dispatch(GameEventType.DIALOGUE_COMPLETED, {
+          flowId: dialogueId,
+          completed: false,
+          reason: 'component_unmounted',
+          character: currentNode?.character || 'unknown'
+        });
+      }
     };
-  }, []);
+  }, [eventBus, isActive, dialogueId, currentNode]);
   
   // Start dialogue
   const startDialogue = (nodes: DialogueNode[], startNodeId: string, onComplete?: () => void) => {
+    // Generate a unique ID for this dialogue flow
+    const newDialogueId = `dialogue-${Date.now()}-${startNodeId}`;
+    setDialogueId(newDialogueId);
+    
     setDialogueNodes(nodes);
     setCurrentNodeId(startNodeId);
     setIsActive(true);
@@ -196,15 +209,41 @@ export function DialogueProvider({ children }: { children: ReactNode }) {
     
     // Play dialogue start sound
     if (playSound) playSound('ui-click');
+    
+    // Dispatch dialogue start event
+    eventBus.dispatch(GameEventType.DIALOGUE_STARTED, {
+      flowId: newDialogueId,
+      initialStageId: startNodeId, 
+      stages: nodes.map(node => ({
+        id: node.id,
+        text: node.text,
+        options: node.options,
+        nextStageId: node.nextNodeId,
+        type: 'question' // Default type
+      })),
+      characterId: nodes[0]?.character || 'unknown',
+      nodeId: startNodeId
+    });
   };
   
   // End dialogue
   const endDialogue = () => {
+    // Dispatch dialogue completion event before clearing state
+    if (isActive && dialogueId) {
+      eventBus.dispatch(GameEventType.DIALOGUE_COMPLETED, {
+        flowId: dialogueId,
+        completed: true,
+        reason: 'normal_completion',
+        character: currentNode?.character || 'unknown'
+      });
+    }
+    
     setIsActive(false);
     setDialogueNodes([]);
     setCurrentNodeId(null);
     setSelectedOption(null);
     setCurrentReaction(null);
+    setDialogueId('');
     
     // Call completion callback if exists
     if (onDialogueComplete) {
@@ -217,18 +256,18 @@ export function DialogueProvider({ children }: { children: ReactNode }) {
   const selectOption = (option: DialogueOption) => {
     setSelectedOption(option);
     
-    // Process knowledge and insight gains
-    if (option.insightGain && option.insightGain > 0) {
-      updateInsight(option.insightGain);
-      
-      // Update knowledge constellation
-      if (option.knowledgeGain && option.knowledgeGain.conceptId) {
-        updateMastery(option.knowledgeGain.conceptId, option.knowledgeGain.amount);
-        
-        // Log knowledge gain for debugging
-        console.log(`Knowledge gained: ${option.knowledgeGain.amount}% in ${option.knowledgeGain.domain} domain, concept: ${option.knowledgeGain.conceptId}`);
+    // Dispatch option selection event
+    eventBus.dispatch(GameEventType.UI_DIALOGUE_ADVANCED, {
+      componentId: 'dialogueSystem',
+      action: 'option-selected',
+      metadata: {
+        optionId: option.id,
+        insightGain: option.insightGain,
+        knowledgeGain: option.knowledgeGain,
+        character: currentNode?.character,
+        reaction: option.reaction
       }
-    }
+    });
     
     // Set reaction if any
     if (option.reaction) {
@@ -269,8 +308,29 @@ export function DialogueProvider({ children }: { children: ReactNode }) {
     // If still typing, skip to the end instead of advancing
     if (isTyping) {
       skipTyping();
+      
+      // Dispatch skip event
+      eventBus.dispatch(GameEventType.UI_DIALOGUE_ADVANCED, {
+        componentId: 'dialogueSystem',
+        action: selectedOption ? 'skip-response' : 'skip-text',
+        metadata: {
+          nodeId: currentNodeId,
+          character: currentNode.character
+        }
+      });
       return;
     }
+    
+    // Dispatch continue event
+    eventBus.dispatch(GameEventType.UI_DIALOGUE_ADVANCED, {
+      componentId: 'dialogueSystem',
+      action: 'continue',
+      metadata: {
+        nodeId: currentNodeId,
+        selectedOptionId: selectedOption?.id,
+        character: currentNode.character
+      }
+    });
     
     // Clear reaction when moving to next node
     setCurrentReaction(null);
@@ -427,28 +487,11 @@ export function DialogueProvider({ children }: { children: ReactNode }) {
                 </div>
                 
                 {/* Character reaction */}
-                {currentReaction && (
-                  <div 
-                    className={`
-                      absolute top-0 right-0 z-50 px-2 py-1 text-xl font-pixel
-                      ${currentNode.character === 'kapoor' ? 'text-clinical-light' : 
-                        currentNode.character === 'jesse' ? 'text-qa-light' : 
-                        currentNode.character === 'quinn' ? 'text-educational-light' : 
-                        'text-white'}
-                      bg-black/70 rounded-bl-md animate-pulse
-                    `}
-                    style={{
-                      textShadow: '1px 1px 2px black'
-                    }}
-                  >
-                    {currentReaction === 'positive' && '!'}
-                    {currentReaction === 'negative' && '...'}
-                    {currentReaction === 'surprise' && '?!'}
-                    {currentReaction === 'confusion' && '?'}
-                    {currentReaction === 'approval' && '✓'}
-                    {currentReaction === 'annoyance' && '#@$!'}
-                  </div>
-                )}
+                <CharacterReaction 
+                  type={currentReaction || 'positive'} 
+                  isActive={currentReaction !== null}
+                  character={currentNode.character}
+                />
               </div>
             </div>
             
@@ -466,6 +509,16 @@ export function DialogueProvider({ children }: { children: ReactNode }) {
                 if (isTyping) {
                   // Skip typing and show full text immediately
                   skipTyping();
+                  
+                  // Dispatch skip event
+                  eventBus.dispatch(GameEventType.UI_DIALOGUE_ADVANCED, {
+                    componentId: 'dialogueSystem',
+                    action: 'skip-text',
+                    metadata: {
+                      nodeId: currentNodeId,
+                      character: currentNode.character
+                    }
+                  });
                 }
               }}
             >
