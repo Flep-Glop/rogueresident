@@ -1,6 +1,6 @@
 // app/components/challenges/formats/ConversationFormat.tsx
 'use client';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useGameStore } from '../../../store/gameStore';
 import { useDialogueFlow, DialogueStage, DialogueOption } from '../../../hooks/useDialogueFlow';
 import { useTypewriter } from '../../../hooks/useTypewriter';
@@ -15,6 +15,7 @@ import {
 } from '../../../core/events/CentralEventBus';
 import { useJournalStore } from '../../../store/journalStore';
 import { checkTransactionIntegrity } from '../../../core/dialogue/NarrativeTransaction';
+import telemetryService from '../../../utils/telemetryService';
 import Image from 'next/image';
 
 // Results interface for challenge completion
@@ -38,7 +39,10 @@ interface CharacterData {
 interface ConversationFormatProps {
   character: string;
   dialogueStages: DialogueStage[];
+  dialogueId?: string;
   onComplete: (results: InteractionResults) => void;
+  onOptionSelected?: (option: DialogueOption, stageId: string) => void;
+  onStageChange?: (newStageId: string, prevStageId: string) => void;
 }
 
 /**
@@ -46,15 +50,25 @@ interface ConversationFormatProps {
  * 
  * A streamlined implementation that separates UI concerns from dialogue flow logic,
  * making it easier to maintain and extend. Based on Hades' character dialogue patterns.
+ * 
+ * Now enhanced with telemetry tracking for better dialogue analytics.
  */
 export default function ConversationFormat({
   character,
   dialogueStages,
-  onComplete
+  dialogueId = `${character}-dialogue`,
+  onComplete,
+  onOptionSelected,
+  onStageChange
 }: ConversationFormatProps) {
   const { currentNodeId } = useGameStore();
   const { hasJournal } = useJournalStore();
   const { playSound, flashScreen, showRewardEffect } = useGameEffects();
+  
+  // Timing refs for telemetry
+  const stageStartTime = useRef<number>(Date.now());
+  const responseStartTime = useRef<number>(Date.now());
+  const backstoryStartTime = useRef<number>(Date.now());
   
   // State for knowledge visualization
   const [showKnowledgeGain, setShowKnowledgeGain] = useState(false);
@@ -114,9 +128,17 @@ export default function ConversationFormat({
     }
   };
   
+  // Track approach usage for telemetry
+  const [approachCounts, setApproachCounts] = useState({
+    humble: 0,
+    precision: 0,
+    confidence: 0
+  });
+  
   // Initialize the dialogue flow hook
   const {
     currentStage,
+    currentStageId,
     selectedOption,
     showResponse,
     showBackstory,
@@ -128,6 +150,9 @@ export default function ConversationFormat({
   } = useDialogueFlow({
     stages: dialogueStages,
     onOptionSelected: (option) => {
+      // Set the stage start time for telemetry
+      stageStartTime.current = Date.now();
+      
       // Play sound for selection
       if (playSound) playSound('click');
       
@@ -147,6 +172,14 @@ export default function ConversationFormat({
         if (gain >= 10 && showRewardEffect) {
           showRewardEffect(gain, window.innerWidth / 2, window.innerHeight / 2);
         }
+      }
+      
+      // Track approach usage for telemetry
+      if (option.approach) {
+        setApproachCounts(prev => ({
+          ...prev,
+          [option.approach!]: prev[option.approach!] + 1
+        }));
       }
       
       // Handle knowledge gain
@@ -178,8 +211,40 @@ export default function ConversationFormat({
           character
         });
       }
+      
+      // Call the onOptionSelected callback prop if provided
+      if (onOptionSelected) {
+        onOptionSelected(option, currentStageId);
+      }
+      
+      // Track option selection in telemetry
+      if (currentNodeId) {
+        telemetryService.trackDialogueOptionSelected(
+          dialogueId,
+          currentStageId,
+          option,
+          currentStage?.options || [],
+          playerScore,
+          character as any,
+          currentNodeId
+        );
+      }
+      
+      // Track response start time for telemetry
+      if (option.responseText) {
+        responseStartTime.current = Date.now();
+      }
+      
+      // Track backstory start time for telemetry
+      if (option.triggersBackstory) {
+        backstoryStartTime.current = Date.now();
+      }
     },
     onStageChange: (newStageId, prevStageId) => {
+      // Calculate time spent on previous stage
+      const timeSpent = Date.now() - stageStartTime.current;
+      stageStartTime.current = Date.now(); // Reset for new stage
+      
       // Handle critical stage transitions
       if (newStageId === 'journal-presentation' && character === 'kapoor') {
         console.log(`[CRITICAL PATH] Journal presentation stage reached`);
@@ -203,10 +268,76 @@ export default function ConversationFormat({
       if (dialogueStages.find(s => s.id === newStageId)?.isConclusion) {
         checkTransactionIntegrity();
       }
+      
+      // Call the onStageChange callback prop if provided
+      if (onStageChange) {
+        onStageChange(newStageId, prevStageId);
+      }
+      
+      // Track stage change in telemetry if nodeId is available
+      if (currentNodeId) {
+        telemetryService.trackDialogueStageChange(
+          dialogueId,
+          prevStageId,
+          newStageId,
+          timeSpent,
+          character as any,
+          currentNodeId
+        );
+      }
     },
-    characterId: character,
+    characterId: character as any,
     nodeId: currentNodeId || undefined
   });
+  
+  // Track time spent reading dialogue for telemetry
+  useEffect(() => {
+    // Reset stage timer when stage changes
+    stageStartTime.current = Date.now();
+    
+    // Set up interval to track reading time
+    const intervalId = setInterval(() => {
+      const currentTime = Date.now();
+      const timeSpent = currentTime - stageStartTime.current;
+      
+      // Track reading time at regular intervals if significant time has passed
+      if (timeSpent > 5000 && currentNodeId) {
+        telemetryService.trackDialogueReadingTime(
+          dialogueId,
+          currentStageId,
+          timeSpent,
+          character as any,
+          showResponse
+        );
+      }
+    }, 10000); // Check every 10 seconds
+    
+    return () => clearInterval(intervalId);
+  }, [currentStageId, character, dialogueId, currentNodeId, showResponse]);
+  
+  // Track backstory engagement
+  useEffect(() => {
+    if (showBackstory) {
+      // Reset backstory timer when backstory is shown
+      backstoryStartTime.current = Date.now();
+    } else if (backstoryStartTime.current > 0) {
+      // Calculate time spent on backstory when it's closed
+      const timeSpent = Date.now() - backstoryStartTime.current;
+      
+      // Only track significant engagement (>2 seconds)
+      if (timeSpent > 2000 && currentNodeId) {
+        telemetryService.trackBackstoryEngagement(
+          dialogueId,
+          `backstory-${currentStageId}`,
+          character as any,
+          timeSpent
+        );
+      }
+      
+      // Reset timer
+      backstoryStartTime.current = 0;
+    }
+  }, [showBackstory, currentStageId, character, dialogueId, currentNodeId]);
   
   // Initialize typewriter effect for main dialogue
   const textToShow = showResponse && selectedOption?.responseText 
@@ -254,6 +385,20 @@ export default function ConversationFormat({
   
   // Handle continue button click with streamlined flow
   const onContinue = () => {
+    // Track response time for telemetry
+    if (showResponse) {
+      const timeSpent = Date.now() - responseStartTime.current;
+      if (timeSpent > 2000 && currentNodeId) {
+        telemetryService.trackDialogueReadingTime(
+          dialogueId,
+          currentStageId,
+          timeSpent,
+          character as any,
+          true
+        );
+      }
+    }
+    
     // If actively typing, skip to the end
     if (showBackstory && isTypingBackstory) {
       skipBackstoryTyping();
@@ -442,6 +587,8 @@ export default function ConversationFormat({
                     className={`w-full text-left p-3 ${option.isCriticalPath ? 'bg-surface border-l-2 border-educational' : 'bg-surface'} hover:bg-surface-dark pixel-borders-thin`}
                     onClick={() => handleOptionSelect(option)}
                     disabled={isTyping}
+                    data-approach={option.approach || 'none'}
+                    data-critical-path={option.isCriticalPath ? 'true' : 'false'}
                   >
                     <div className="flex justify-between">
                       <PixelText>{option.text}</PixelText>
@@ -478,6 +625,8 @@ function getConceptName(conceptId: string): string {
     case 'ptp_correction_understood': return 'PTP Correction';
     case 'output_calibration_tolerance': return 'Output Calibration Tolerance';
     case 'clinical_dose_significance': return 'Clinical Dose Significance';
+    case 'equipment_safety_protocol': return 'Equipment Safety Protocol';
+    case 'quantum_dosimetry_principles': return 'Quantum Dosimetry Principles';
     default: return conceptId.split('_').map(word => 
       word.charAt(0).toUpperCase() + word.slice(1)
     ).join(' ');
@@ -491,6 +640,7 @@ function getDomainName(domainId: string): string {
     case 'patient-care': return 'Patient Care';
     case 'equipment': return 'Equipment Knowledge';
     case 'regulatory': return 'Regulatory Compliance';
+    case 'theoretical': return 'Theoretical Foundations';
     default: return domainId.split('-').map(word => 
       word.charAt(0).toUpperCase() + word.slice(1)
     ).join(' ');
@@ -504,6 +654,7 @@ function getDomainColor(domainId: string): string {
     case 'patient-care': return 'var(--clinical-alt-color)';
     case 'equipment': return 'var(--qa-color)';
     case 'regulatory': return 'var(--educational-color)';
+    case 'theoretical': return 'var(--educational-color)';
     default: return 'var(--clinical-color)';
   }
 }
