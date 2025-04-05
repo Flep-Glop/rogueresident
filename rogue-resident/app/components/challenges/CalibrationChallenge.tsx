@@ -30,6 +30,8 @@ export default function CalibrationChallenge({ character }: CalibrationChallenge
   const { completeChallenge } = useChallengeStore();
   const { hasJournal } = useJournalStore();
   const [initializationComplete, setInitializationComplete] = useState(false);
+  const prevNodeIdRef = useRef(currentNodeId);
+
   
   // Track session start time for telemetry
   const sessionStartTime = useRef(Date.now());
@@ -46,6 +48,12 @@ export default function CalibrationChallenge({ character }: CalibrationChallenge
   
   // Load dialogue content from centralized repository
   useEffect(() => {
+    if (prevNodeIdRef.current === currentNodeId && dialogueStages.length > 0) {
+      setLoading(false);
+      return;
+    }
+    
+    prevNodeIdRef.current = currentNodeId;
     // Get dialogue type based on character
     const dialogueType = 'calibration';
     

@@ -341,13 +341,22 @@ export const useDialogueStateMachine = create<DialogueStateMachineState>()(
         return;
       }
       
-      // If showing response or backstory, clear it first
+      // If showing response or backstory, clear it first but persist the selectedOption
       if (showResponse || showBackstory) {
         set(state => {
           state.showResponse = false;
           state.showBackstory = false;
+          // Don't reset selectedOption here - keep it for the next transition
           return state;
         });
+        
+        // Add small delay before next state transition
+        setTimeout(() => {
+          if (get().activeFlow) {  // Verify flow still exists
+            get().advanceState();  // Continue the advance after UI update cycle
+          }
+        }, 50);
+        
         return;
       }
       
