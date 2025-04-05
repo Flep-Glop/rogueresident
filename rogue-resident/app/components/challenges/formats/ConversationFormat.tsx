@@ -3,7 +3,6 @@
 import { useState, useEffect } from 'react';
 import { useGameStore } from '../../../store/gameStore';
 import { useDialogueFlow, DialogueStage, DialogueOption } from '../../../hooks/useDialogueFlow';
-import { useCharacterInteraction } from '../../../hooks/useCharacterInteraction';
 import { useTypewriter } from '../../../hooks/useTypewriter';
 import { PixelButton, PixelText } from '../../PixelThemeProvider';
 import { useGameEffects } from '../../GameEffects';
@@ -11,14 +10,11 @@ import KnowledgeUpdate from '../../knowledge/KnowledgeUpdate';
 import { EquipmentDisplay } from '../../ItemSprite';
 import { 
   useEventBus, 
-  GameEventType 
+  GameEventType,
+  journalAcquired
 } from '../../../core/events/CentralEventBus';
 import { useJournalStore } from '../../../store/journalStore';
-import { 
-  validateDialogueProgression,
-  repairDialogueProgression
-} from '../../../core/dialogue/DialogueProgressionHelpers';
-import { useNarrativeTransaction } from '../../../core/dialogue/NarrativeTransaction';
+import { checkTransactionIntegrity } from '../../../core/dialogue/NarrativeTransaction';
 import Image from 'next/image';
 
 // Results interface for challenge completion
@@ -29,46 +25,61 @@ export interface InteractionResults {
   journalTier?: 'base' | 'technical' | 'annotated';
 }
 
+// Character portrait data structure
+interface CharacterData {
+  name: string;
+  title: string;
+  sprite: string;
+  primaryColor: string;
+  textClass: string;
+  bgClass: string;
+}
+
 interface ConversationFormatProps {
   character: string;
   dialogueStages: DialogueStage[];
   onComplete: (results: InteractionResults) => void;
 }
 
+/**
+ * Conversation Format - Dialogue-based challenge implementation
+ * 
+ * A streamlined implementation that separates UI concerns from dialogue flow logic,
+ * making it easier to maintain and extend. Based on Hades' character dialogue patterns.
+ */
 export default function ConversationFormat({
   character,
   dialogueStages,
   onComplete
 }: ConversationFormatProps) {
-  const { currentNodeId, completeNode } = useGameStore();
-  // Add direct access to navigation method
-  const setCurrentNode = useGameStore(state => state.setCurrentNode);
-  
+  const { currentNodeId } = useGameStore();
+  const { hasJournal } = useJournalStore();
   const { playSound, flashScreen, showRewardEffect } = useGameEffects();
   
-  // Add journal store access for journal acquisition
-  const { initializeJournal, hasJournal } = useJournalStore();
+  // State for knowledge visualization
+  const [showKnowledgeGain, setShowKnowledgeGain] = useState(false);
+  const [currentKnowledgeGain, setCurrentKnowledgeGain] = useState<{
+    conceptName: string;
+    domainName: string;
+    domainColor: string;
+    amount: number;
+    conceptId?: string;
+  } | null>(null);
+  const [knowledgeQueue, setKnowledgeQueue] = useState<Array<{
+    conceptName: string;
+    domainName: string;
+    domainColor: string;
+    amount: number;
+    conceptId?: string;
+  }>>([]);
   
-  // Core state
-  const [encounterComplete, setEncounterComplete] = useState(false);
-  const [masteryConcepts, setMasteryConcepts] = useState<Record<string, boolean>>({
-    'electron_equilibrium_understood': false,
-    'ptp_correction_understood': false,
-    'output_calibration_tolerance': false,
-    'clinical_dose_significance': false
-  });
+  // Core challenge metrics
+  const [playerScore, setPlayerScore] = useState(0);
+  const [totalInsightGained, setTotalInsightGained] = useState(0);
+  const [conceptsMastered, setConceptsMastered] = useState<Record<string, boolean>>({});
   
-  // Flag to track progression validation
-  const [progressionValidated, setProgressionValidated] = useState(false);
-  
-  // Track critical progression states for analytics
-  const [progressionHistory, setProgressionHistory] = useState<string[]>([]);
-  
-  // Track narrative transactions
-  const [activeTransactions, setActiveTransactions] = useState<Record<string, string>>({});
-  
-  // Character data mapping
-  const characterData = {
+  // Character data mapping - simplified from original
+  const characterData: Record<string, CharacterData> = {
     'kapoor': {
       name: "Dr. Kapoor",
       title: "Chief Medical Physicist",
@@ -103,188 +114,101 @@ export default function ConversationFormat({
     }
   };
   
-  // Initialize the character interaction hook
-  const {
-    characterRespect,
-    showKnowledgeGain,
-    currentKnowledgeGain,
-    totalInsightGained,
-    processKnowledgeQueue,
-    handleCharacterOptionSelected,
-    completeKnowledgeGain
-  } = useCharacterInteraction({
-    onInsightGain: (amount) => {
-      useGameStore.getState().updateInsight(amount);
-      if (amount >= 10 && showRewardEffect) {
-        showRewardEffect(amount, window.innerWidth / 2, window.innerHeight / 2);
-      }
-    }
-  });
-  
-  // Initialize the dialogue flow hook with enhanced progression tracking
+  // Initialize the dialogue flow hook
   const {
     currentStage,
-    currentStageId,
     selectedOption,
     showResponse,
     showBackstory,
     backstoryText,
     handleOptionSelect,
-    handleContinue: progressDialogue,
-    showBackstorySegment,
-    setCurrentStageId,
+    handleContinue,
     isProgressionValid,
-    dialogueStateMachine,
-    startTransaction,
-    completeTransaction
+    dialogueStateMachine
   } = useDialogueFlow({
     stages: dialogueStages,
     onOptionSelected: (option) => {
       // Play sound for selection
       if (playSound) playSound('click');
       
-      // Process option with character interaction hook
-      handleCharacterOptionSelected(option);
+      // Update player metrics
+      if (option.relationshipChange) {
+        setPlayerScore(prev => prev + option.relationshipChange);
+      }
       
-      // Track concept mastery
-      if (option.knowledgeGain?.conceptId) {
-        const { conceptId } = option.knowledgeGain;
+      if (option.insightGain) {
+        const gain = option.insightGain;
+        setTotalInsightGained(prev => prev + gain);
         
-        // Update mastery tracking for this concept
-        if (masteryConcepts[conceptId] !== undefined) {
-          setMasteryConcepts(prev => ({
+        // Update global insight
+        useGameStore.getState().updateInsight(gain);
+        
+        // Visual effect for significant insight
+        if (gain >= 10 && showRewardEffect) {
+          showRewardEffect(gain, window.innerWidth / 2, window.innerHeight / 2);
+        }
+      }
+      
+      // Handle knowledge gain
+      if (option.knowledgeGain) {
+        const { conceptId, domainId, amount } = option.knowledgeGain;
+        
+        // Record mastered concept
+        if (conceptId) {
+          setConceptsMastered(prev => ({
             ...prev,
             [conceptId]: true
           }));
         }
         
-        // Emit knowledge gained event
-        useEventBus.getState().dispatch(GameEventType.KNOWLEDGE_GAINED, {
-          conceptId: option.knowledgeGain.conceptId,
-          amount: option.knowledgeGain.amount,
-          domainId: option.knowledgeGain.domainId,
-          character
+        // Queue knowledge visualization
+        queueKnowledgeGain({
+          conceptId,
+          conceptName: getConceptName(conceptId),
+          domainName: getDomainName(domainId),
+          domainColor: getDomainColor(domainId),
+          amount
         });
-      }
-      
-      // Track critical path steps for detailed analytics
-      if (option.isCriticalPath) {
-        setProgressionHistory(prev => [...prev, `option-${option.id}`]);
         
-        // Log through event system
-        useEventBus.getState().dispatch(GameEventType.UI_BUTTON_CLICKED, {
-          componentId: 'conversationFormat',
-          action: 'criticalPathOptionSelected',
-          metadata: {
-            optionId: option.id,
-            stageId: currentStageId,
-            character
-          }
+        // Emit knowledge gain event
+        useEventBus.getState().dispatch(GameEventType.KNOWLEDGE_GAINED, {
+          conceptId,
+          amount,
+          domainId,
+          character
         });
       }
     },
     onStageChange: (newStageId, prevStageId) => {
-      console.log(`[DIALOGUE] Stage transition: ${prevStageId} → ${newStageId}`);
-      
-      // Track critical stages
-      const newStage = dialogueStages.find(s => s.id === newStageId);
-      if (newStage?.isCriticalPath) {
-        setProgressionHistory(prev => [...prev, `stage-${newStageId}`]);
+      // Handle critical stage transitions
+      if (newStageId === 'journal-presentation' && character === 'kapoor') {
+        console.log(`[CRITICAL PATH] Journal presentation stage reached`);
         
-        // Log through event system
-        useEventBus.getState().dispatch(GameEventType.UI_BUTTON_CLICKED, {
-          componentId: 'conversationFormat',
-          action: 'criticalPathStageReached',
-          metadata: {
-            stageId: newStageId,
-            previousStageId: prevStageId,
-            character
-          }
-        });
-      }
-      
-      // Check if we need to trigger backstory
-      if (selectedOption?.triggersBackstory && characterRespect >= 2) {
-        const backstoryId = selectedOption.id === 'correct-ptp' 
-          ? 'backstory-ptp'
-          : 'backstory-calibration';
-          
-        const backstoryStage = dialogueStages.find(s => s.id === backstoryId);
+        // Determine journal tier based on performance
+        const journalTier = playerScore >= 3 ? 'annotated' : 
+                           playerScore >= 0 ? 'technical' : 'base';
         
-        if (backstoryStage) {
-          showBackstorySegment(backstoryStage.text);
-          
-          // Additional insight for witnessing backstory
-          useGameStore.getState().updateInsight(5);
-        }
-      }
-      
-      // Critical state change detection for journal acquisition
-      if (newStageId === 'journal-presentation') {
-        console.log(`[CRITICAL PATH] Journal presentation state reached`);
-        
-        // Mark journey step for analytics
-        setProgressionHistory(prev => [...prev, 'journal-presentation-reached']);
-        
-        // Start journal acquisition transaction if not already started
-        if (!activeTransactions.journal_acquisition) {
-          // Determine journal tier based on performance
-          const journalTier = characterRespect >= 3 ? 'annotated' : 
-                            characterRespect >= 0 ? 'technical' : 'base';
-          
-          // Start transaction
-          const transactionId = startTransaction('journal_acquisition', {
+        // Ensure journal is acquired
+        if (!hasJournal) {
+          // Use the centralized journal acquisition system
+          journalAcquired(
             journalTier,
-            relationshipScore: characterRespect,
-            nodeId: currentNodeId
-          });
-          
-          // Track transaction
-          setActiveTransactions(prev => ({
-            ...prev,
-            journal_acquisition: transactionId
-          }));
-          
-          // Immediately attempt to create journal to avoid progression breaks
-          // Only create if doesn't exist yet
-          if (!hasJournal) {
-            initializeJournal(journalTier);
-          }
-        }
-        
-        // Log key progression event with detailed metadata
-        useEventBus.getState().dispatch(GameEventType.UI_BUTTON_CLICKED, {
-          componentId: 'conversationFormat',
-          action: 'journalStageReached',
-          metadata: {
             character,
-            characterRespect,
-            journalTier: characterRespect >= 3 ? 'annotated' : 
-                        characterRespect >= 0 ? 'technical' : 'base',
-            progressionSteps: progressionHistory.length,
-            currentProgressionState: isProgressionValid ? 'valid' : 'repair-needed',
-            nodeId: currentNodeId
-          }
-        });
+            'stage_transition'
+          );
+        }
+      }
+      
+      // If reaching conclusion, validate progression - this is the last safety check
+      if (dialogueStages.find(s => s.id === newStageId)?.isConclusion) {
+        checkTransactionIntegrity();
       }
     },
     characterId: character,
     nodeId: currentNodeId || undefined
   });
   
-  // Set conclusion text based on performance when reaching conclusion stage
-  useEffect(() => {
-    if (currentStage.isConclusion && currentStageId === 'conclusion') {
-      // Determine performance tier
-      if (characterRespect >= 3) {
-        setCurrentStageId('conclusion-excellence');
-      } else if (characterRespect < 0) {
-        setCurrentStageId('conclusion-needs-improvement');
-      }
-    }
-  }, [currentStage, characterRespect, currentStageId, setCurrentStageId]);
-  
-  // Initialize typewriter hook for main dialogue
+  // Initialize typewriter effect for main dialogue
   const textToShow = showResponse && selectedOption?.responseText 
     ? selectedOption.responseText
     : currentStage.text;
@@ -295,105 +219,41 @@ export default function ConversationFormat({
     complete: skipTyping 
   } = useTypewriter(textToShow);
   
-  // Initialize typewriter hook for backstory
+  // Initialize typewriter for backstory
   const { 
     displayText: displayedBackstoryText,
     isTyping: isTypingBackstory,
     complete: skipBackstoryTyping
   } = useTypewriter(backstoryText);
   
-  // Process knowledge queue when needed
+  // Process knowledge queue
   useEffect(() => {
-    processKnowledgeQueue();
-  }, [showKnowledgeGain, processKnowledgeQueue]);
-  
-  // Critical progression check
-  useEffect(() => {
-    // If this is Kapoor and we reached the conclusion, validate progression
-    if (character === 'kapoor' && 
-        (currentStage.isConclusion || currentStageId === 'journal-presentation')) {
-      
-      // Only need to do this once
-      if (!progressionValidated) {
-        // Run formal progression validation
-        const progressionStatus = validateDialogueProgression(character, currentNodeId || '');
-        
-        // Log progression state
-        console.log(`[DIALOGUE] Validating progression at ${currentStageId}:`, progressionStatus);
-        
-        setProgressionValidated(true);
-        
-        // If we detect a progression issue, try to repair
-        if (progressionStatus.requiresRepair) {
-          console.warn(`[DIALOGUE] Progression validation failed - repair required`);
-          
-          // Log the issue
-          useEventBus.getState().dispatch(GameEventType.UI_BUTTON_CLICKED, {
-            componentId: 'conversationFormat',
-            action: 'progressionRepairNeeded',
-            metadata: {
-              character,
-              currentStageId,
-              progressionStatus,
-              progressionHistory
-            }
-          });
-          
-          // After short delay, force progression repair
-          setTimeout(() => {
-            repairDialogueProgression(character, currentNodeId || '');
-            
-            // Complete any pending transactions
-            Object.values(activeTransactions).forEach(txId => {
-              if (txId) {
-                completeTransaction(txId);
-              }
-            });
-          }, 300);
-        } else {
-          // Log successful validation
-          useEventBus.getState().dispatch(GameEventType.UI_BUTTON_CLICKED, {
-            componentId: 'conversationFormat',
-            action: 'progressionValidated',
-            metadata: {
-              character,
-              currentStageId,
-              progressionStatus,
-              progressionHistory
-            }
-          });
-          
-          // Complete any pending transactions
-          Object.values(activeTransactions).forEach(txId => {
-            if (txId) {
-              completeTransaction(txId);
-            }
-          });
-        }
-      }
+    if (knowledgeQueue.length > 0 && !showKnowledgeGain) {
+      const nextKnowledge = knowledgeQueue[0];
+      setCurrentKnowledgeGain(nextKnowledge);
+      setShowKnowledgeGain(true);
+      setKnowledgeQueue(prev => prev.slice(1));
     }
-  }, [
-    character, 
-    currentStage.isConclusion, 
-    currentStageId, 
-    progressionValidated, 
-    dialogueStateMachine,
-    progressionHistory,
-    currentNodeId,
-    activeTransactions,
-    completeTransaction
-  ]);
+  }, [knowledgeQueue, showKnowledgeGain]);
   
-  // Handle continue button click
-  const handleContinue = () => {
-    // Debug logging for state transition checks
-    console.log(`[DIALOGUE] Transition check:
-      - currentStageId: ${currentStageId}
-      - character: ${character}
-      - isConclusion: ${currentStage.isConclusion}
-      - showResponse: ${showResponse}
-    `);
-    
+  // Helper to queue knowledge visualizations
+  const queueKnowledgeGain = (gain: {
+    conceptName: string;
+    domainName: string;
+    domainColor: string;
+    amount: number;
+    conceptId?: string;
+  }) => {
+    setKnowledgeQueue(prev => [...prev, gain]);
+  };
+  
+  // Complete knowledge visualization
+  const completeKnowledgeGain = () => {
+    setShowKnowledgeGain(false);
+  };
+  
+  // Handle continue button click with streamlined flow
+  const onContinue = () => {
     // If actively typing, skip to the end
     if (showBackstory && isTypingBackstory) {
       skipBackstoryTyping();
@@ -403,98 +263,42 @@ export default function ConversationFormat({
       return;
     }
     
-    // If at journal presentation or conclusion, finalize the encounter
-    if (currentStageId === 'journal-presentation' || 
-        (currentStage.isConclusion && !showResponse)) {
+    // If at conclusion or journal presentation, finalize the challenge
+    if ((currentStage.isConclusion && !showResponse) || 
+        currentStage.id === 'journal-presentation') {
+      
       finalizeChallenge();
       return;
     }
     
-    // Special case for Kapoor - force journal transition from any conclusion
-    if (character === 'kapoor' && currentStage.isConclusion) {
-      console.log(`[DIALOGUE] Forcing Kapoor journal transition`);
-      setCurrentStageId('journal-presentation');
-      return;
-    }
-    
-    // If at conclusion stage and showing response, proceed to journal presentation
-    if (currentStage.isConclusion && showResponse) {
-      console.log(`[DIALOGUE] Attempting journal transition`);
-      setCurrentStageId('journal-presentation');
-      // This won't show new value yet due to React's state update timing
-      console.log(`[DIALOGUE] Stage set to: ${currentStageId}`); 
-      return;
-    }
-    
     // Normal dialogue progression
-    progressDialogue();
+    handleContinue();
   };
   
-  // Handle player choice selection
-  const handleChoiceSelect = (option: DialogueOption) => {
-    handleOptionSelect(option);
-  };
-  
-  // Handle completion of the challenge node
+  // Handle completion of the challenge
   const finalizeChallenge = () => {
-    // Debug logging
-    console.log(`[DIALOGUE] Finalizing challenge:
-      - character: ${character}
-      - currentStageId: ${currentStageId}
-      - currentNodeId: ${currentNodeId}
-    `);
+    // Determine journal tier based on performance
+    const journalTier = playerScore >= 3 ? 'annotated' : 
+                        playerScore >= 0 ? 'technical' : 'base';
     
-    // Mark node as completed in game state
-    if (currentNodeId) {
-      completeNode(currentNodeId);
-      
-      // Apply completion effect
-      if (playSound) playSound('challenge-complete');
-      if (flashScreen) flashScreen('green');
-    }
-    
-    // Set encounter completed flag
-    setEncounterComplete(true);
-    
-    // Special case for journal acquisition
-    const isJournalAcquisition = 
-      character === 'kapoor' && 
-      currentStageId === 'journal-presentation';
-    
-    // Calculate journal tier based on performance
-    const journalTier = characterRespect >= 3 ? 'annotated' : 
-                      characterRespect >= 0 ? 'technical' : 'base';
-    
-    console.log(`[DIALOGUE] Journal acquisition check:
-      - isJournalAcquisition: ${isJournalAcquisition}
-      - journalTier: ${journalTier}
-    `);
-    
-    // Complete all active transactions
-    Object.entries(activeTransactions).forEach(([type, id]) => {
-      if (id) {
-        completeTransaction(id);
-      }
-    });
-    
-    // Final event for node completion that's picked up by progression guarantor
-    if (currentNodeId) {
-      useEventBus.getState().dispatch(GameEventType.NODE_COMPLETED, {
-        nodeId: currentNodeId,
+    // For Kapoor, ensure journal acquisition happened
+    if (character === 'kapoor' && !hasJournal) {
+      journalAcquired(
+        journalTier,
         character,
-        result: {
-          relationshipChange: characterRespect,
-          journalTier,
-          isJournalAcquisition
-        }
-      });
+        'challenge_completion'
+      );
     }
+    
+    // Apply completion effects
+    if (playSound) playSound('challenge-complete');
+    if (flashScreen) flashScreen('green');
     
     // Call onComplete with results
     onComplete({
       insightGained: totalInsightGained,
-      relationshipChange: characterRespect,
-      knowledgeGained: Object.entries(masteryConcepts)
+      relationshipChange: playerScore,
+      knowledgeGained: Object.entries(conceptsMastered)
         .filter(([_, mastered]) => mastered)
         .reduce((acc, [conceptId]) => {
           acc[conceptId] = 1;
@@ -503,29 +307,21 @@ export default function ConversationFormat({
       journalTier
     });
     
-    // Final progression validation
-    validateDialogueProgression(character, currentNodeId || '');
-    
-    // Narrative timing - give journal acquisition a more dramatic pause
-    setTimeout(() => {
-      // Log final completion analytics
-      useEventBus.getState().dispatch(GameEventType.UI_BUTTON_CLICKED, {
-        componentId: 'conversationFormat',
-        action: 'challengeCompleted',
-        metadata: {
-          character,
-          nodeId: currentNodeId,
-          relationshipScore: characterRespect,
+    // Mark node as completed if available
+    if (currentNodeId) {
+      useGameStore.getState().completeNode(currentNodeId);
+      
+      // Notify node completion event
+      useEventBus.getState().dispatch(GameEventType.NODE_COMPLETED, {
+        nodeId: currentNodeId,
+        character,
+        result: {
+          relationshipChange: playerScore,
           journalTier,
-          isJournalAcquisition,
-          progressionHistory,
-          progressionValid: isProgressionValid,
-          insightGained: totalInsightGained
+          isJournalAcquisition: character === 'kapoor'
         }
       });
-      
-      setCurrentNode(currentNodeId); // Return to map view
-    }, isJournalAcquisition ? 800 : 300);
+    }
   };
   
   // If knowledge gain is showing, render that UI
@@ -542,9 +338,9 @@ export default function ConversationFormat({
   }
   
   // The current character data
-  const charData = characterData[character as keyof typeof characterData] || characterData.kapoor;
+  const charData = characterData[character] || characterData.kapoor;
   
-  // Main encounter rendering
+  // Main conversation UI
   return (
     <div className="p-6 max-w-4xl mx-auto bg-surface pixel-borders">
       {/* Character header */}
@@ -588,11 +384,6 @@ export default function ConversationFormat({
             {/* Debug indicator for progression status */}
             {process.env.NODE_ENV !== 'production' && (
               <div className={`absolute top-0 right-0 w-3 h-3 rounded-full ${isProgressionValid ? 'bg-green-500' : 'bg-red-500'}`}></div>
-            )}
-            
-            {/* Transaction indicator */}
-            {process.env.NODE_ENV !== 'production' && Object.keys(activeTransactions).length > 0 && (
-              <div className="absolute bottom-0 right-0 w-3 h-3 rounded-full bg-blue-500 animate-pulse"></div>
             )}
           </div>
           
@@ -638,7 +429,7 @@ export default function ConversationFormat({
           {showResponse || showBackstory ? (
             <PixelButton
               className={`float-right ${charData.bgClass} text-white hover:opacity-90`}
-              onClick={handleContinue}
+              onClick={onContinue}
             >
               {(isTyping || isTypingBackstory) ? "Skip" : "Continue"}
             </PixelButton>
@@ -649,7 +440,7 @@ export default function ConversationFormat({
                   <button
                     key={option.id}
                     className={`w-full text-left p-3 ${option.isCriticalPath ? 'bg-surface border-l-2 border-educational' : 'bg-surface'} hover:bg-surface-dark pixel-borders-thin`}
-                    onClick={() => handleChoiceSelect(option)}
+                    onClick={() => handleOptionSelect(option)}
                     disabled={isTyping}
                   >
                     <div className="flex justify-between">
@@ -668,7 +459,7 @@ export default function ConversationFormat({
             ) : (
               <PixelButton
                 className={`float-right ${charData.bgClass} text-white hover:opacity-90`}
-                onClick={handleContinue}
+                onClick={onContinue}
               >
                 {isTyping ? "Skip" : "Continue"}
               </PixelButton>
@@ -676,17 +467,43 @@ export default function ConversationFormat({
           )}
         </div>
       </div>
-      
-      {/* Debug info - only shown in development */}
-      {process.env.NODE_ENV !== 'production' && (
-        <div className="mt-4 border-t border-border pt-2 text-xs text-gray-500">
-          <div>Stage: {currentStageId} | Respect: {characterRespect} | Progression Valid: {isProgressionValid ? '✓' : '✗'}</div>
-          <div>Critical Path: {progressionHistory.slice(-3).join(' → ')}{progressionHistory.length > 3 ? '...' : ''}</div>
-          {Object.keys(activeTransactions).length > 0 && (
-            <div>Active Transactions: {Object.keys(activeTransactions).join(', ')}</div>
-          )}
-        </div>
-      )}
     </div>
   );
+}
+
+// Helper functions for concept display
+function getConceptName(conceptId: string): string {
+  switch(conceptId) {
+    case 'electron_equilibrium_understood': return 'Electron Equilibrium';
+    case 'ptp_correction_understood': return 'PTP Correction';
+    case 'output_calibration_tolerance': return 'Output Calibration Tolerance';
+    case 'clinical_dose_significance': return 'Clinical Dose Significance';
+    default: return conceptId.split('_').map(word => 
+      word.charAt(0).toUpperCase() + word.slice(1)
+    ).join(' ');
+  }
+}
+
+function getDomainName(domainId: string): string {
+  switch(domainId) {
+    case 'radiation-physics': return 'Radiation Physics';
+    case 'quality-assurance': return 'Quality Assurance';
+    case 'patient-care': return 'Patient Care';
+    case 'equipment': return 'Equipment Knowledge';
+    case 'regulatory': return 'Regulatory Compliance';
+    default: return domainId.split('-').map(word => 
+      word.charAt(0).toUpperCase() + word.slice(1)
+    ).join(' ');
+  }
+}
+
+function getDomainColor(domainId: string): string {
+  switch(domainId) {
+    case 'radiation-physics': return 'var(--clinical-color)';
+    case 'quality-assurance': return 'var(--qa-color)';
+    case 'patient-care': return 'var(--clinical-alt-color)';
+    case 'equipment': return 'var(--qa-color)';
+    case 'regulatory': return 'var(--educational-color)';
+    default: return 'var(--clinical-color)';
+  }
 }

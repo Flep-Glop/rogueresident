@@ -1,24 +1,23 @@
 // app/core/dialogue/NarrativeTransaction.ts
 /**
- * Narrative Transaction Pattern
+ * Streamlined Narrative Transaction System
  * 
- * This pattern ensures that critical narrative moments (like journal acquisition)
- * are treated as atomic transactions with explicit states to prevent progression issues.
+ * A lightweight approach to ensuring critical narrative moments complete reliably.
+ * Inspired by Supergiant's transaction system for progression-critical moments in Hades,
+ * but simplified to focus on core reliability without excess complexity.
  * 
- * Inspired by transaction patterns in roguelikes where critical progression items
- * must be consistently and reliably delivered to the player regardless of state disruption.
+ * The key insight: Critical progression moments need only three states
+ * (pending → active → completed) with repair logic separated from the core flow.
  */
 
 import { useEventBus, GameEventType } from '../events/CentralEventBus';
 import { create } from 'zustand';
 
-// Transaction states for finite state tracking
+// Simplified transaction states - reduced from 5 to 3 for clarity
 export type TransactionState = 
-  | 'pending'       // Transaction has not started
-  | 'in_progress'   // Transaction has started but not completed
-  | 'validating'    // Verifying that the transaction completed correctly
-  | 'completed'     // Transaction completed successfully
-  | 'failed';       // Transaction failed and needs repair
+  | 'pending'  // Transaction has not started
+  | 'active'   // Transaction is in progress
+  | 'completed'; // Transaction has completed successfully
 
 // Transaction types for different critical progression points
 export type NarrativeTransactionType = 
@@ -35,7 +34,6 @@ export interface NarrativeTransaction {
   metadata: Record<string, any>;
   startTime: number;
   completionTime?: number;
-  retryCount: number;
   character?: string;
   nodeId?: string;
 }
@@ -44,19 +42,22 @@ export interface NarrativeTransaction {
 interface TransactionStoreState {
   // Active transactions
   transactions: NarrativeTransaction[];
-
-  // Transaction methods
+  
+  // Transaction lifecycle methods
   startTransaction: (type: NarrativeTransactionType, metadata: Record<string, any>, character?: string, nodeId?: string) => string;
   completeTransaction: (transactionId: string) => boolean;
-  failTransaction: (transactionId: string, reason: string) => void;
-  retryTransaction: (transactionId: string) => boolean;
+  cancelTransaction: (transactionId: string) => void;
   
   // Transaction retrieval
   getActiveTransaction: (type: NarrativeTransactionType) => NarrativeTransaction | null;
   getTransactionById: (id: string) => NarrativeTransaction | null;
+  getAllTransactions: () => NarrativeTransaction[];
+  
+  // Integrity checks - separated from core logic
+  validateTransactionIntegrity: () => { isValid: boolean; issues: string[] };
+  repairStuckTransactions: () => number;
   
   // Debug methods
-  getAllTransactions: () => NarrativeTransaction[];
   clearAllTransactions: () => void;
 }
 
@@ -66,16 +67,15 @@ export const useNarrativeTransaction = create<TransactionStoreState>((set, get) 
   
   startTransaction: (type, metadata, character, nodeId) => {
     // Generate unique ID
-    const id = `${type}-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+    const id = `${type.split('_')[0]}-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
     
     // Create new transaction
     const transaction: NarrativeTransaction = {
       id,
       type,
-      state: 'in_progress',
+      state: 'active',
       metadata,
       startTime: Date.now(),
-      retryCount: 0,
       character,
       nodeId
     };
@@ -86,7 +86,7 @@ export const useNarrativeTransaction = create<TransactionStoreState>((set, get) 
     }));
     
     // Log transaction start
-    console.log(`[NarrativeTransaction] Started: ${type}`, metadata);
+    console.log(`[Transaction] Started: ${type}`, metadata);
     
     // Emit event for tracking
     useEventBus.getState().dispatch(GameEventType.UI_BUTTON_CLICKED, {
@@ -108,8 +108,14 @@ export const useNarrativeTransaction = create<TransactionStoreState>((set, get) 
     const transaction = get().getTransactionById(transactionId);
     
     if (!transaction) {
-      console.warn(`[NarrativeTransaction] Cannot complete unknown transaction: ${transactionId}`);
+      console.warn(`[Transaction] Cannot complete unknown transaction: ${transactionId}`);
       return false;
+    }
+    
+    // Skip if already completed
+    if (transaction.state === 'completed') {
+      console.log(`[Transaction] Transaction already completed: ${transactionId}`);
+      return true;
     }
     
     // Update transaction state
@@ -126,7 +132,11 @@ export const useNarrativeTransaction = create<TransactionStoreState>((set, get) 
     }));
     
     // Log completion
-    console.log(`[NarrativeTransaction] Completed: ${transaction.type}`, transaction.metadata);
+    console.log(`[Transaction] Completed: ${transaction.type}`, {
+      duration: Date.now() - transaction.startTime,
+      character: transaction.character,
+      nodeId: transaction.nodeId
+    });
     
     // Emit completion event
     useEventBus.getState().dispatch(GameEventType.UI_BUTTON_CLICKED, {
@@ -144,98 +154,20 @@ export const useNarrativeTransaction = create<TransactionStoreState>((set, get) 
     return true;
   },
   
-  failTransaction: (transactionId, reason) => {
-    // Find transaction
-    const transaction = get().getTransactionById(transactionId);
-    
-    if (!transaction) {
-      console.warn(`[NarrativeTransaction] Cannot fail unknown transaction: ${transactionId}`);
-      return;
-    }
-    
-    // Update transaction state
+  cancelTransaction: (transactionId) => {
+    // Find and remove transaction
     set(state => ({
-      transactions: state.transactions.map(t => 
-        t.id === transactionId 
-          ? { 
-              ...t, 
-              state: 'failed',
-              metadata: {
-                ...t.metadata,
-                failureReason: reason
-              }
-            } 
-          : t
-      )
+      transactions: state.transactions.filter(t => t.id !== transactionId)
     }));
     
-    // Log failure
-    console.error(`[NarrativeTransaction] Failed: ${transaction.type}`, reason, transaction.metadata);
-    
-    // Emit failure event
-    useEventBus.getState().dispatch(GameEventType.UI_BUTTON_CLICKED, {
-      componentId: 'narrativeTransaction',
-      action: 'transactionFailed',
-      metadata: {
-        transactionId,
-        reason,
-        type: transaction.type,
-        character: transaction.character,
-        nodeId: transaction.nodeId
-      }
-    });
-  },
-  
-  retryTransaction: (transactionId) => {
-    // Find transaction
-    const transaction = get().getTransactionById(transactionId);
-    
-    if (!transaction) {
-      console.warn(`[NarrativeTransaction] Cannot retry unknown transaction: ${transactionId}`);
-      return false;
-    }
-    
-    if (transaction.state !== 'failed') {
-      console.warn(`[NarrativeTransaction] Cannot retry transaction in state: ${transaction.state}`);
-      return false;
-    }
-    
-    // Update transaction state to retry
-    set(state => ({
-      transactions: state.transactions.map(t => 
-        t.id === transactionId 
-          ? { 
-              ...t, 
-              state: 'in_progress',
-              retryCount: t.retryCount + 1
-            } 
-          : t
-      )
-    }));
-    
-    // Log retry
-    console.log(`[NarrativeTransaction] Retrying: ${transaction.type} (attempt ${transaction.retryCount + 1})`, transaction.metadata);
-    
-    // Emit retry event
-    useEventBus.getState().dispatch(GameEventType.UI_BUTTON_CLICKED, {
-      componentId: 'narrativeTransaction',
-      action: 'transactionRetry',
-      metadata: {
-        transactionId,
-        type: transaction.type,
-        attemptNumber: transaction.retryCount + 1,
-        character: transaction.character,
-        nodeId: transaction.nodeId
-      }
-    });
-    
-    return true;
+    // Log cancellation
+    console.log(`[Transaction] Cancelled: ${transactionId}`);
   },
   
   getActiveTransaction: (type) => {
     return get().transactions.find(t => 
       t.type === type && 
-      (t.state === 'in_progress' || t.state === 'validating')
+      t.state === 'active'
     ) || null;
   },
   
@@ -247,13 +179,69 @@ export const useNarrativeTransaction = create<TransactionStoreState>((set, get) 
     return get().transactions;
   },
   
+  validateTransactionIntegrity: () => {
+    const transactions = get().transactions;
+    const issues: string[] = [];
+    
+    // Identify stuck active transactions
+    const stuckTransactions = transactions.filter(t => 
+      t.state === 'active' && 
+      (Date.now() - t.startTime > 30000) // Stuck for over 30 seconds
+    );
+    
+    stuckTransactions.forEach(t => {
+      issues.push(`Transaction ${t.id} (${t.type}) stuck in active state for ${Math.round((Date.now() - t.startTime) / 1000)}s`);
+    });
+    
+    return {
+      isValid: issues.length === 0,
+      issues
+    };
+  },
+  
+  // Repair any stuck transactions
+  repairStuckTransactions: () => {
+    const transactions = get().transactions;
+    let repairCount = 0;
+    
+    // Find stuck transactions
+    const stuckTransactions = transactions.filter(t => 
+      t.state === 'active' && 
+      (Date.now() - t.startTime > 30000) // Stuck for over 30 seconds
+    );
+    
+    // Auto-complete them
+    stuckTransactions.forEach(t => {
+      console.warn(`[Transaction] Repairing stuck transaction: ${t.id} (${t.type})`);
+      
+      // Complete the transaction
+      get().completeTransaction(t.id);
+      repairCount++;
+      
+      // Log the repair
+      useEventBus.getState().dispatch(GameEventType.UI_BUTTON_CLICKED, {
+        componentId: 'narrativeTransaction',
+        action: 'transactionRepaired',
+        metadata: {
+          transactionId: t.id,
+          type: t.type,
+          stuckDuration: Date.now() - t.startTime,
+          character: t.character,
+          nodeId: t.nodeId
+        }
+      });
+    });
+    
+    return repairCount;
+  },
+  
   clearAllTransactions: () => {
     set({ transactions: [] });
   }
 }));
 
 /**
- * Specialized helper for journal acquisition transactions
+ * Helper function for journal acquisition with minimal overhead
  */
 export function startJournalAcquisition(
   character: string, 
@@ -264,8 +252,7 @@ export function startJournalAcquisition(
     'journal_acquisition',
     {
       journalTier,
-      relationshipLevel: journalTier === 'annotated' ? 'high' : 
-                        journalTier === 'technical' ? 'medium' : 'low'
+      timestamp: Date.now()
     },
     character,
     nodeId
@@ -273,30 +260,35 @@ export function startJournalAcquisition(
 }
 
 /**
- * Validate that all required narrative transactions have completed
+ * Simplified progression integrity check - focused on transaction health only
  */
-export function validateCriticalTransactions(): { valid: boolean; issues: string[] } {
-  const transactions = useNarrativeTransaction.getState().getAllTransactions();
-  const issues: string[] = [];
+export function checkTransactionIntegrity(): boolean {
+  const { validateTransactionIntegrity, repairStuckTransactions } = useNarrativeTransaction.getState();
   
-  // Check for failed or stuck transactions
-  transactions.forEach(transaction => {
-    if (transaction.state === 'failed') {
-      issues.push(`Transaction ${transaction.id} (${transaction.type}) failed: ${transaction.metadata.failureReason || 'unknown reason'}`);
-    } else if (transaction.state === 'in_progress' && Date.now() - transaction.startTime > 30000) {
-      // Transaction has been in_progress for more than 30 seconds
-      issues.push(`Transaction ${transaction.id} (${transaction.type}) appears to be stuck in progress`);
-    }
-  });
+  // Validate transactions
+  const validation = validateTransactionIntegrity();
   
-  return {
-    valid: issues.length === 0,
-    issues
-  };
+  // If valid, no repair needed
+  if (validation.isValid) {
+    return true;
+  }
+  
+  // Log issues found
+  console.warn(`[Transaction] Integrity issues found: ${validation.issues.length}`);
+  validation.issues.forEach(issue => console.warn(`  - ${issue}`));
+  
+  // Attempt repair
+  const repairCount = repairStuckTransactions();
+  
+  // Log repair results
+  console.log(`[Transaction] Repaired ${repairCount} stuck transactions`);
+  
+  // Return success status
+  return repairCount === validation.issues.length;
 }
 
 export default {
   useNarrativeTransaction,
   startJournalAcquisition,
-  validateCriticalTransactions
+  checkTransactionIntegrity
 };
