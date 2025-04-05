@@ -17,19 +17,19 @@ interface EnhancedNodeProps {
 
 // Map of node types to icon paths (replace with your actual icon paths)
 const NODE_ICONS = {
-  'clinical': '/icons/clinical.svg',
-  'qa': '/icons/qa.svg',
-  'educational': '/icons/educational.svg',
-  'storage': '/icons/storage.svg',
-  'entrance': '/icons/entrance.svg',
-  'boss': '/icons/boss.svg',
-  'boss-ionix': '/icons/boss-ionix.svg',
-  'kapoorCalibration': '/icons/calibration.svg',
-  'vendor': '/icons/vendor.svg',
-  'experimental': '/icons/experimental.svg',
-  'qualification': '/icons/qualification.svg',
+  'clinical': '/icons/clinical.png',
+  'qa': '/icons/qa.png',
+  'educational': '/icons/educational.png',
+  'storage': '/icons/storage.png',
+  'entrance': '/icons/entrance.png',
+  'boss': '/icons/boss.png',
+  'boss-ionix': '/icons/boss-ionix.png',
+  'kapoorCalibration': '/icons/calibration.png',
+  'vendor': '/icons/vendor.png',
+  'experimental': '/icons/experimental.png',
+  'qualification': '/icons/qualification.png',
   // Default fallback
-  'default': '/icons/default.svg'
+  'default': '/icons/default.png'
 };
 
 // Color schemes by node type for consistent visuals

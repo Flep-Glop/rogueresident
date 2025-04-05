@@ -10,16 +10,16 @@ import { gameEvents } from '../core/events/GameEvents';
 
 // Node type to icon mapping
 const NODE_TYPE_ICONS = {
-  'calibration': '/icons/calibration.svg',
-  'clinical': '/icons/clinical.svg',
-  'qa': '/icons/qa.svg', 
-  'educational': '/icons/educational.svg',
-  'storage': '/icons/storage.svg',
-  'entrance': '/icons/entrance.svg',
-  'boss': '/icons/boss.svg',
-  'boss-ionix': '/icons/boss-ionix.svg',
+  'calibration': '/icons/calibration.png',
+  'clinical': '/icons/clinical.png',
+  'qa': '/icons/qa.png', 
+  'educational': '/icons/educational.png',
+  'storage': '/icons/storage.png',
+  'entrance': '/icons/entrance.png',
+  'boss': '/icons/boss.png',
+  'boss-ionix': '/icons/boss-ionix.png',
   // Default fallback
-  'default': '/icons/node-default.svg'
+  'default': '/icons/node-default.png'
 };
 
 // Define clear progression tiers

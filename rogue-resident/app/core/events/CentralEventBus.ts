@@ -11,6 +11,9 @@
  * 
  * Inspired by event systems used in roguelikes like Hades where reliability
  * and recoverability are critical concerns.
+ * 
+ * ENHANCED: Now featuring improved dialogue progression guarantees and
+ * more robust critical path handling based on state machine integration.
  */
 
 import { create } from 'zustand';
@@ -39,6 +42,8 @@ export enum GameEventType {
   DIALOGUE_STARTED = 'dialogue:started',
   DIALOGUE_OPTION_SELECTED = 'dialogue:option:selected',
   DIALOGUE_COMPLETED = 'dialogue:completed',
+  DIALOGUE_CRITICAL_PATH = 'dialogue:critical:path',
+  DIALOGUE_PROGRESSION_REPAIR = 'dialogue:progression:repair',
   
   // Character events
   CHARACTER_INTRODUCED = 'character:introduced',
@@ -184,8 +189,50 @@ export interface NodeCompletionPayload {
   };
 }
 
+// Dialogue critical path payload
+export interface DialogueCriticalPathPayload {
+  dialogueId: string;
+  characterId: string;
+  nodeId: string;
+  criticalStateId: string;
+  playerScore: number;
+  wasRepaired: boolean;
+}
+
+// Dialogue progression repair payload
+export interface DialogueProgressionRepairPayload {
+  dialogueId: string;
+  characterId: string;
+  nodeId: string;
+  fromStateId: string;
+  toStateId: string;
+  reason: string;
+  loopDetected?: boolean;
+}
+
 // Event listener type
 export type EventListener<T = any> = (event: GameEvent<T>) => void;
+
+// ======== Critical Progression Tracking ========
+
+// Key state for tracking critical progression guarantees
+interface ProgressionState {
+  // Journal acquisition tracking
+  journalAcquired: boolean;
+  journalAcquisitionTime: number | null;
+  journalTier: 'base' | 'technical' | 'annotated' | null;
+  journalSource: string | null;
+  
+  // Dialogue progression tracking
+  kapoorCalibrationCompleted: boolean;
+  kapoorJournalAcquisitionTriggered: boolean;
+  
+  // Dialogue repair tracking
+  dialogueRepairAttempts: Record<string, number>;
+  
+  // Node completion tracking
+  completedNodes: Set<string>;
+}
 
 // ======== Event Bus Store ========
 
@@ -195,6 +242,9 @@ interface EventBusState {
   
   // Registered event listeners
   listeners: Map<GameEventType, Set<EventListener>>;
+  
+  // Critical progression tracking
+  progressionState: ProgressionState;
   
   // Event dispatch function
   dispatch: <T>(type: GameEventType, payload: T, source?: string) => void;
@@ -209,6 +259,11 @@ interface EventBusState {
   
   // Replay capability
   replayEvents: (events: GameEvent[], speed?: number) => void;
+  
+  // Progression guarantees
+  ensureCriticalProgression: () => boolean;
+  ensureJournalAcquisition: (character?: string) => boolean;
+  ensureDialogueProgression: (dialogueId: string, characterId: string, nodeId: string) => boolean;
 }
 
 // Create the event bus store
@@ -216,12 +271,23 @@ export const useEventBus = create<EventBusState>((set, get) => ({
   eventLog: [],
   listeners: new Map(),
   
+  progressionState: {
+    journalAcquired: false,
+    journalAcquisitionTime: null,
+    journalTier: null,
+    journalSource: null,
+    kapoorCalibrationCompleted: false,
+    kapoorJournalAcquisitionTriggered: false,
+    dialogueRepairAttempts: {},
+    completedNodes: new Set()
+  },
+  
   dispatch: <T>(type: GameEventType, payload: T, source?: string) => {
     const event: GameEvent<T> = {
       type,
       payload,
       timestamp: Date.now(),
-      source,
+      source: source || 'unknown',
       id: `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`
     };
     
@@ -229,6 +295,129 @@ export const useEventBus = create<EventBusState>((set, get) => ({
     set(state => ({
       eventLog: [...state.eventLog.slice(-1000), event] // Keep last 1000 events
     }));
+    
+    // Special handling for critical progression events
+    if (type === GameEventType.JOURNAL_ACQUIRED) {
+      const journalPayload = payload as unknown as JournalAcquisitionPayload;
+      
+      // Update progression state
+      set(state => ({
+        progressionState: {
+          ...state.progressionState,
+          journalAcquired: true,
+          journalAcquisitionTime: Date.now(),
+          journalTier: journalPayload.tier,
+          journalSource: journalPayload.source
+        }
+      }));
+    }
+    else if (type === GameEventType.NODE_COMPLETED) {
+      const nodePayload = payload as unknown as NodeCompletionPayload;
+      
+      // Track completed nodes
+      set(state => {
+        const updatedCompletedNodes = new Set(state.progressionState.completedNodes);
+        if (nodePayload.nodeId) {
+          updatedCompletedNodes.add(nodePayload.nodeId);
+        }
+        
+        // Special logic for Kapoor calibration node
+        let kapoorCalibrationCompleted = state.progressionState.kapoorCalibrationCompleted;
+        if (nodePayload.character === 'kapoor' && 
+            nodePayload.nodeId?.includes('calibration')) {
+          kapoorCalibrationCompleted = true;
+        }
+        
+        return {
+          progressionState: {
+            ...state.progressionState,
+            completedNodes: updatedCompletedNodes,
+            kapoorCalibrationCompleted
+          }
+        };
+      });
+      
+      // Check if this is a journal acquisition
+      if (nodePayload.result?.isJournalAcquisition && !get().progressionState.journalAcquired) {
+        // Auto-trigger journal acquisition if not already done
+        const tier = nodePayload.result.journalTier as 'base' | 'technical' | 'annotated' || 'base';
+        get().dispatch<JournalAcquisitionPayload>(
+          GameEventType.JOURNAL_ACQUIRED,
+          {
+            tier,
+            character: nodePayload.character || 'kapoor',
+            source: 'node_completion_auto_trigger'
+          }
+        );
+      }
+    }
+    else if (type === GameEventType.DIALOGUE_CRITICAL_PATH) {
+      const criticalPathPayload = payload as unknown as DialogueCriticalPathPayload;
+      
+      // For Kapoor journal presentation
+      if (criticalPathPayload.criticalStateId === 'journal-presentation' &&
+          criticalPathPayload.characterId === 'kapoor') {
+        
+        set(state => ({
+          progressionState: {
+            ...state.progressionState,
+            kapoorJournalAcquisitionTriggered: true
+          }
+        }));
+        
+        // If journal hasn't been acquired yet, trigger it
+        if (!get().progressionState.journalAcquired) {
+          // Determine journal tier based on player score
+          const tier = criticalPathPayload.playerScore >= 3 ? 'annotated' :
+                       criticalPathPayload.playerScore >= 0 ? 'technical' : 'base';
+                       
+          get().dispatch<JournalAcquisitionPayload>(
+            GameEventType.JOURNAL_ACQUIRED,
+            {
+              tier,
+              character: criticalPathPayload.characterId,
+              source: 'dialogue_critical_path'
+            }
+          );
+        }
+      }
+    }
+    else if (type === GameEventType.DIALOGUE_PROGRESSION_REPAIR) {
+      const repairPayload = payload as unknown as DialogueProgressionRepairPayload;
+      
+      // Track repair attempts
+      set(state => {
+        const dialogueKey = `${repairPayload.dialogueId}-${repairPayload.characterId}`;
+        const currentAttempts = state.progressionState.dialogueRepairAttempts[dialogueKey] || 0;
+        
+        return {
+          progressionState: {
+            ...state.progressionState,
+            dialogueRepairAttempts: {
+              ...state.progressionState.dialogueRepairAttempts,
+              [dialogueKey]: currentAttempts + 1
+            }
+          }
+        };
+      });
+      
+      // If this is Kapoor dialogue and repairing to journal-presentation,
+      // and we haven't triggered journal acquisition yet, do it now
+      if (repairPayload.characterId === 'kapoor' && 
+          repairPayload.toStateId === 'journal-presentation' &&
+          !get().progressionState.journalAcquired) {
+        
+        get().dispatch<JournalAcquisitionPayload>(
+          GameEventType.JOURNAL_ACQUIRED,
+          {
+            tier: 'base', // Default to base tier during repair
+            character: 'kapoor',
+            source: 'dialogue_repair_auto_trigger',
+            forced: true
+          }
+        );
+      }
+    }
     
     // Notify listeners
     const listeners = get().listeners.get(type);
@@ -250,6 +439,7 @@ export const useEventBus = create<EventBusState>((set, get) => ({
         type.startsWith('effect:') ? '#44cc88' :
         type.startsWith('state:') ? '#cc8844' :
         type.startsWith('challenge:') ? '#cc4488' :
+        type.startsWith('dialogue:') ? '#ff55aa' :
         '#8888aa';
       
       console.log(`%c[Event] ${type}`, `color: ${eventColor}`, payload);
@@ -332,6 +522,116 @@ export const useEventBus = create<EventBusState>((set, get) => ({
       
       lastTimestamp = event.timestamp;
     });
+  },
+  
+  // Enhanced critical progression guarantees
+  ensureCriticalProgression: () => {
+    const { progressionState } = get();
+    let repairsPerformed = false;
+    
+    // Check for critical progression inconsistencies
+    
+    // 1. Journal acquisition after Kapoor calibration
+    if (progressionState.kapoorCalibrationCompleted && 
+        !progressionState.journalAcquired) {
+      
+      console.warn('[ProgressionGuarantor] Critical inconsistency: Missing journal after Kapoor calibration');
+      
+      // Dispatch repair event
+      get().dispatch<ProgressionRepairPayload>(
+        GameEventType.PROGRESSION_REPAIR,
+        {
+          checkpointId: 'journal-acquisition',
+          description: 'Journal not acquired after calibration completion',
+          forced: true
+        }
+      );
+      
+      // Force journal acquisition
+      get().dispatch<JournalAcquisitionPayload>(
+        GameEventType.JOURNAL_ACQUIRED,
+        {
+          tier: 'base',
+          character: 'kapoor',
+          source: 'progression_repair_auto_trigger',
+          forced: true
+        }
+      );
+      
+      repairsPerformed = true;
+    }
+    
+    // 2. Dialogue progression verification
+    // This is now handled by the DialogueStateMachine
+    
+    return repairsPerformed;
+  },
+  
+  // Journal acquisition guarantee
+  ensureJournalAcquisition: (character: string = 'kapoor') => {
+    const { progressionState } = get();
+    
+    if (!progressionState.journalAcquired) {
+      console.warn(`[ProgressionGuarantor] Journal not acquired, forcing acquisition from ${character}`);
+      
+      // Force journal acquisition
+      get().dispatch<JournalAcquisitionPayload>(
+        GameEventType.JOURNAL_ACQUIRED,
+        {
+          tier: 'base',
+          character,
+          source: 'ensure_journal_acquisition_call',
+          forced: true
+        }
+      );
+      
+      return true; // Repairs were performed
+    }
+    
+    return false; // No repairs needed
+  },
+  
+  // Dialogue progression guarantee
+  ensureDialogueProgression: (dialogueId: string, characterId: string, nodeId: string) => {
+    const { progressionState } = get();
+    
+    // Track if repairs were performed
+    let repairsPerformed = false;
+    
+    // Kapoor journal acquisition verification
+    if (characterId === 'kapoor' && 
+        !progressionState.kapoorJournalAcquisitionTriggered) {
+      
+      console.warn(`[ProgressionGuarantor] Kapoor journal dialogue progression not triggered for ${dialogueId}`);
+      
+      // Dispatch critical path event
+      get().dispatch<DialogueCriticalPathPayload>(
+        GameEventType.DIALOGUE_CRITICAL_PATH,
+        {
+          dialogueId,
+          characterId,
+          nodeId,
+          criticalStateId: 'journal-presentation',
+          playerScore: 0, // Default to neutral score
+          wasRepaired: true
+        }
+      );
+      
+      // Trigger journal acquisition
+      get().dispatch<JournalAcquisitionPayload>(
+        GameEventType.JOURNAL_ACQUIRED,
+        {
+          tier: 'base',
+          character: characterId,
+          source: 'ensure_dialogue_progression_call',
+          forced: true
+        }
+      );
+      
+      repairsPerformed = true;
+    }
+    
+    return repairsPerformed;
   }
 }));
 
@@ -534,6 +834,41 @@ export function knowledgeGained(
   );
 }
 
+/**
+ * Helper for dispatching dialogue critical path events
+ */
+export function dialogueCriticalPath(
+  dialogueId: string,
+  characterId: string,
+  nodeId: string,
+  criticalStateId: string,
+  playerScore: number,
+  wasRepaired: boolean = false
+) {
+  useEventBus.getState().dispatch<DialogueCriticalPathPayload>(
+    GameEventType.DIALOGUE_CRITICAL_PATH,
+    { dialogueId, characterId, nodeId, criticalStateId, playerScore, wasRepaired }
+  );
+}
+
+/**
+ * Helper for dispatching dialogue progression repair events
+ */
+export function dialogueProgressionRepair(
+  dialogueId: string,
+  characterId: string,
+  nodeId: string,
+  fromStateId: string,
+  toStateId: string,
+  reason: string,
+  loopDetected: boolean = false
+) {
+  useEventBus.getState().dispatch<DialogueProgressionRepairPayload>(
+    GameEventType.DIALOGUE_PROGRESSION_REPAIR,
+    { dialogueId, characterId, nodeId, fromStateId, toStateId, reason, loopDetected }
+  );
+}
+
 // ======== Migration Helpers ========
 
 /**
@@ -544,53 +879,37 @@ export const gameEvents = {
   dispatch: useEventBus.getState().dispatch,
   nodeCompleted,
   journalAcquired,
-  knowledgeGained
+  knowledgeGained,
+  dialogueCriticalPath,
+  dialogueProgressionRepair
 };
 
 // ======== Critical Progression Guarantee Middleware ========
 
 /**
  * Ensures critical progression chains have occurred and repairs if needed
- * This has been migrated from the original file and enhanced
+ * Enhanced with better dialogue flow integration
  */
 export function ensureCriticalProgression() {
-  const events = useEventBus.getState().getEventHistory();
-  
-  // Check if specific chains of events have occurred and repair if needed
-  const checkAndRepair = () => {
-    // Example: Ensure journal acquisition after first calibration
-    const hasCompletedCalibration = events.some(
-      e => e.type === GameEventType.NODE_COMPLETED && 
-      (e.payload as NodeCompletionPayload).nodeId === 'kapoor-calibration-node'
-    );
-    
-    const hasJournal = events.some(
-      e => e.type === GameEventType.JOURNAL_ACQUIRED
-    );
-    
-    if (hasCompletedCalibration && !hasJournal) {
-      console.warn('Critical progression inconsistency detected: Missing journal after calibration');
-      
-      // Dispatch repair event
-      useEventBus.getState().dispatch<ProgressionRepairPayload>(
-        GameEventType.PROGRESSION_REPAIR,
-        {
-          checkpointId: 'journal-acquisition',
-          description: 'Journal not acquired after calibration completion',
-          forced: true
-        }
-      );
-      
-      // Force journal acquisition
-      journalAcquired('base', 'kapoor', 'progression_repair', true);
-      
-      return true; // Repairs were made
-    }
-    
-    return false; // No repairs needed
-  };
-  
-  return checkAndRepair();
+  return useEventBus.getState().ensureCriticalProgression();
+}
+
+/**
+ * Ensures the journal has been acquired
+ */
+export function ensureJournalAcquisition(character: string = 'kapoor') {
+  return useEventBus.getState().ensureJournalAcquisition(character);
+}
+
+/**
+ * Ensures proper dialogue progression for critical characters
+ */
+export function ensureDialogueProgression(
+  dialogueId: string,
+  characterId: string,
+  nodeId: string
+) {
+  return useEventBus.getState().ensureDialogueProgression(dialogueId, characterId, nodeId);
 }
 
 // Export all helpers and types
@@ -606,6 +925,10 @@ export default {
   nodeCompleted,
   journalAcquired,
   knowledgeGained,
+  dialogueCriticalPath,
+  dialogueProgressionRepair,
   ensureCriticalProgression,
+  ensureJournalAcquisition,
+  ensureDialogueProgression,
   gameEvents
 };

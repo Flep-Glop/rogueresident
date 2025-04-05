@@ -1,6 +1,6 @@
 // app/components/challenges/CalibrationChallenge.tsx
 'use client';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useGameStore } from '../../store/gameStore';
 import { useChallengeStore } from '../../store/challengeStore';
 import { useJournalStore } from '../../store/journalStore';
@@ -14,6 +14,9 @@ import {
   knowledgeGained
 } from '../../core/events/CentralEventBus';
 
+// Import the createKapoorCalibrationFlow to use the formal dialogue state machine
+import { createKapoorCalibrationFlow } from '../../core/dialogue/DialogueStateMachine';
+
 interface CalibrationChallengeProps {
   character: CharacterId;
 }
@@ -22,11 +25,38 @@ export default function CalibrationChallenge({ character }: CalibrationChallenge
   const { currentNodeId } = useGameStore();
   const { completeChallenge } = useChallengeStore();
   const { hasJournal } = useJournalStore();
+  const [initializationComplete, setInitializationComplete] = useState(false);
+  
+  // Use the robust dialogue flow for critical progressions
+  useEffect(() => {
+    if (character === 'kapoor' && currentNodeId && !initializationComplete) {
+      // Initialize the Kapoor dialogue flow with proper progression path
+      const kapoorFlow = createKapoorCalibrationFlow(currentNodeId);
+      
+      // Log initialization
+      console.log(`[CalibrationChallenge] Initialized Kapoor dialogue flow: ${kapoorFlow.id}`);
+      
+      // Mark initialization complete
+      setInitializationComplete(true);
+      
+      // Log event for monitoring
+      useEventBus.getState().dispatch(GameEventType.UI_BUTTON_CLICKED, {
+        componentId: 'calibrationChallenge',
+        action: 'flowInitialized',
+        metadata: {
+          character,
+          nodeId: currentNodeId,
+          flowId: kapoorFlow.id,
+          hasJournal
+        }
+      });
+    }
+  }, [character, currentNodeId, initializationComplete, hasJournal]);
   
   // Subscribe to journal acquisition events to monitor progression
   useEffect(() => {
     // Set up listener for journal acquisition events
-    const unsubscribe = useEventBus.getState().subscribe<GameEventType.JOURNAL_ACQUIRED>(
+    const unsubscribe = useEventBus.getState().subscribe(
       GameEventType.JOURNAL_ACQUIRED,
       (event) => {
         const { tier, character: sourceCharacter, source } = event.payload;
@@ -54,6 +84,14 @@ export default function CalibrationChallenge({ character }: CalibrationChallenge
   
   // Handle completion of the challenge
   const handleCompletion = (results: InteractionResults) => {
+    // Log that we're in the completion handler
+    console.log(`[CalibrationChallenge] handleCompletion called with results:`, {
+      character,
+      relationshipChange: results.relationshipChange,
+      journalTier: results.journalTier,
+      knowledgeGained: Object.keys(results.knowledgeGained).length
+    });
+    
     // Determine challenge grade based on results
     const grade = results.relationshipChange >= 3 ? 'S' : 
                   results.relationshipChange >= 1 ? 'A' : 
@@ -67,6 +105,9 @@ export default function CalibrationChallenge({ character }: CalibrationChallenge
         character,
         'challenge_completion'
       );
+      
+      // Log that we're triggering journal acquisition
+      console.log(`[CalibrationChallenge] Triggering journal acquisition: ${results.journalTier || 'base'}`);
     }
     
     // Log concept mastery data
@@ -86,18 +127,13 @@ export default function CalibrationChallenge({ character }: CalibrationChallenge
     completeChallenge(grade);
     
     // Log final completion analytics
-    useEventBus.getState().dispatch(GameEventType.UI_BUTTON_CLICKED, {
-      componentId: 'calibrationChallenge',
-      action: 'challengeCompleted',
-      metadata: {
-        nodeId: currentNodeId,
-        character,
-        relationshipScore: results.relationshipChange,
-        journalTier: results.journalTier,
-        insightGained: results.insightGained,
-        knowledgeGained: Object.keys(results.knowledgeGained).length,
-        grade
-      }
+    useEventBus.getState().dispatch(GameEventType.CHALLENGE_COMPLETED, {
+      nodeId: currentNodeId,
+      character,
+      relationshipScore: results.relationshipChange,
+      journalTier: results.journalTier,
+      insightGained: results.insightGained,
+      grade
     });
   };
   
@@ -195,15 +231,205 @@ export default function CalibrationChallenge({ character }: CalibrationChallenge
         ]
       },
       
-      // Only including a small portion of the dialogue stages for brevity
-      // Additional stages would be defined here...
+      // Stage 2: PTP Correction Factors
+      {
+        id: 'correction-factors',
+        text: "Now, when taking our readings, we need to apply several correction factors. Which of these is most critical for today's measurements given the current atmospheric conditions?",
+        contextNote: "Kapoor points to the barometer on the wall showing a pressure drop of 15 hPa since yesterday.",
+        equipment: {
+          itemId: 'electrometer',
+          alt: "Electrometer",
+          description: "Standard Therapy Electrometer with digital readout displaying charge collection."
+        },
+        options: [
+          { 
+            id: "correct-ptp",
+            text: "The pressure-temperature-polarization (PTP) correction, since barometric pressure has changed significantly today.", 
+            nextStageId: 'measurement-tolerance',
+            approach: 'precision',
+            insightGain: 15,
+            relationshipChange: 1,
+            knowledgeGain: { 
+              conceptId: 'ptp_correction_understood',
+              domainId: 'radiation-physics',
+              amount: 15
+            },
+            triggersBackstory: true,
+            isCriticalPath: true, // Mark as critical path option
+            responseText: "Excellent. PTP correction accounts for the deviation of air density from calibration reference conditions. Today's pressure drop of 15 hPa would significantly impact our results without proper correction."
+          },
+          { 
+            id: "incorrect-kq",
+            text: "The beam quality correction factor (kQ), since we're measuring a clinical beam.", 
+            nextStageId: 'measurement-tolerance',
+            approach: 'precision',
+            insightGain: 5,
+            relationshipChange: 0,
+            knowledgeGain: { 
+              conceptId: 'ptp_correction_understood',
+              domainId: 'radiation-physics',
+              amount: 5
+            },
+            responseText: "While kQ is indeed important, it's a constant for our specific chamber-beam combination. The significant pressure change today means the PTP correction is most critical for today's measurements."
+          },
+          { 
+            id: "incorrect-polarity",
+            text: "The polarity correction, since we're using a new electrometer.", 
+            nextStageId: 'measurement-tolerance',
+            approach: 'confidence',
+            insightGain: 0,
+            relationshipChange: -1,
+            responseText: "The polarity effect is minimal for our Farmer chamber in photon beams. While it's applied as standard procedure, the atmospheric pressure change today means the PTP correction is the most critical factor."
+          }
+        ]
+      },
       
-      // Journal presentation - critical progression state
+      // Backstory Stage
+      {
+        id: 'backstory-ptp',
+        type: 'backstory',
+        text: "During my early career at Memorial Hospital, I once failed to apply the PTP correction properly when recalibrating after maintenance. The output was off by nearly 3%. I discovered this by cross-checking with a separate chamber. Since then, I've developed a verification protocol that has been adopted by several facilities in the region. Small details can have significant clinical impact.",
+        nextStageId: 'measurement-tolerance'
+      },
+      
+      // Stage 3: Tolerance Questions
+      {
+        id: 'measurement-tolerance',
+        text: "Our monthly output measurements show the machine is delivering 101.2% of expected dose. What action should we take?",
+        contextNote: "Kapoor shows you the measurement log with three consistent readings between 101.1% and 101.3%.",
+        equipment: {
+          itemId: 'measurement-log',
+          alt: "Measurement Log",
+          description: "Digital measurement log showing consistent 101.2% output readings."
+        },
+        options: [
+          { 
+            id: "correct-tolerance",
+            text: "Document the finding but no immediate action needed as it's within the ±2% tolerance.", 
+            nextStageId: 'clinical-significance',
+            approach: 'precision',
+            insightGain: 15,
+            relationshipChange: 1,
+            knowledgeGain: { 
+              conceptId: 'output_calibration_tolerance',
+              domainId: 'radiation-physics',
+              amount: 15
+            },
+            isCriticalPath: true, // Mark as critical path option
+            responseText: "Correct. TG-142 specifies a ±2% tolerance for photon output constancy. While we always aim for perfect calibration, variations within tolerance are acceptable and expected."
+          },
+          { 
+            id: "overly-cautious",
+            text: "Recalibrate the machine to get closer to 100%.", 
+            nextStageId: 'clinical-significance',
+            approach: 'confidence',
+            insightGain: 0,
+            relationshipChange: -1,
+            responseText: "That would be unnecessary. Our protocols follow TG-142 guidelines which specify a ±2% tolerance. Frequent recalibration can introduce more variability over time."
+          },
+          { 
+            id: "incorrect-uncertainty",
+            text: "Repeat the measurement to reduce uncertainty.", 
+            nextStageId: 'clinical-significance',
+            approach: 'humble',
+            insightGain: 5,
+            relationshipChange: 0,
+            knowledgeGain: { 
+              conceptId: 'output_calibration_tolerance',
+              domainId: 'radiation-physics',
+              amount: 5
+            },
+            responseText: "We already performed three measurements with excellent reproducibility. At 101.2%, we're well within the ±2% tolerance specified by TG-142. Additional measurements would not change our action plan."
+          }
+        ]
+      },
+      
+      // Stage 4: Clinical Significance
+      {
+        id: 'clinical-significance',
+        text: "Final question: A radiation oncologist asks if the 1.2% output deviation we measured could affect patient treatments. How would you respond?",
+        contextNote: "Kapoor looks at you expectantly, testing your understanding of the clinical context.",
+        options: [
+          { 
+            id: "correct-clinical",
+            text: "The deviation is clinically insignificant, as it falls well below the 5% uncertainty threshold considered impactful for treatment outcomes.", 
+            nextStageId: 'conclusion',
+            approach: 'precision',
+            insightGain: 15,
+            relationshipChange: 1,
+            knowledgeGain: { 
+              conceptId: 'clinical_dose_significance',
+              domainId: 'radiation-physics',
+              amount: 15
+            },
+            isCriticalPath: true, // Mark as critical path option
+            responseText: "Your response demonstrates an understanding of both the technical and clinical aspects. A 1.2% deviation has negligible impact on treatment efficacy or side effects, while staying well within our quality parameters."
+          },
+          { 
+            id: "partially-correct",
+            text: "It's within tolerance but we should monitor it closely on the specific machines used for their patients.", 
+            nextStageId: 'conclusion',
+            approach: 'humble',
+            insightGain: 5,
+            relationshipChange: 0,
+            knowledgeGain: { 
+              conceptId: 'clinical_dose_significance',
+              domainId: 'radiation-physics',
+              amount: 5
+            },
+            responseText: "Your caution is noted, though perhaps excessive. We always monitor all machines consistently according to protocol. The 1.2% deviation is well below the threshold for clinical significance, which is typically considered to be around 5%."
+          },
+          { 
+            id: "incorrect-clinical",
+            text: "Any deviation could potentially impact sensitive treatments, so we should inform treatment planning.", 
+            nextStageId: 'conclusion',
+            approach: 'confidence',
+            insightGain: 0,
+            relationshipChange: -1,
+            responseText: "That response would unnecessarily alarm our clinical colleagues. Our QA program accounts for these acceptable variations. Treatment planning systems use beam data that already incorporates these expected minor fluctuations."
+          }
+        ]
+      },
+      
+      // Standard Conclusion
+      {
+        id: 'conclusion',
+        type: 'conclusion',
+        text: "Your understanding of calibration procedures is satisfactory. Regular output measurements are a fundamental responsibility of medical physics. Consistency and attention to detail are essential. Continue to develop your technical knowledge alongside clinical awareness.",
+        isConclusion: true,
+        nextStageId: 'journal-presentation'
+      },
+      
+      // Excellence Conclusion (high score)
+      {
+        id: 'conclusion-excellence',
+        type: 'conclusion',
+        text: "Your grasp of calibration principles and their clinical context is impressive for a first-day resident. You demonstrate the careful balance of technical precision and clinical judgment that defines excellent medical physics practice. I look forward to your contributions to our department.",
+        isConclusion: true,
+        nextStageId: 'journal-presentation'
+      },
+      
+      // Needs Improvement Conclusion (low score)
+      {
+        id: 'conclusion-needs-improvement',
+        type: 'conclusion',
+        text: "Your understanding of calibration procedures requires significant improvement. These are foundational concepts in medical physics that impact patient safety. I recommend reviewing TG-51 and TG-142 protocols tonight. This profession demands precision and thorough understanding of both technical and clinical implications.",
+        isConclusion: true,
+        nextStageId: 'journal-presentation'
+      },
+      
+      // Journal Presentation (Critical Progression Point)
       {
         id: 'journal-presentation',
+        type: 'critical-moment',
         text: "Every medical physicist must maintain meticulous records. This journal will serve you throughout your residency. Use it to document observations, track your knowledge development, and maintain procedural notes.",
-        contextNote: "Kapoor retrieves a leather-bound journal and opens to the first page.",
-        isCriticalPath: true, // Mark as critical path state
+        contextNote: "Kapoor hands you a leather-bound journal with the department logo embossed on the cover.",
+        equipment: {
+          itemId: 'journal',
+          alt: "Journal",
+          description: "A high-quality leather journal with the hospital's medical physics department emblem."
+        },
+        isCriticalPath: true, // Critical for progression
         isConclusion: true
       }
     ],
