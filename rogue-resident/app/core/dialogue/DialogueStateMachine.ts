@@ -7,7 +7,7 @@
  * by formalizing state transitions and protecting against edge cases.
  * 
  * Enhanced with formal state validation, checkpoint tracking, and integration
- * with the central event system to guarantee progression reliability.
+ * with the narrative transaction system to guarantee progression reliability.
  */
 
 import { 
@@ -18,6 +18,10 @@ import {
   dialogueCriticalPath,
   dialogueProgressionRepair
 } from '../events/CentralEventBus';
+import { 
+  useNarrativeTransaction, 
+  startJournalAcquisition 
+} from './NarrativeTransaction';
 import { create } from 'zustand';
 
 // Define dialogue flow states
@@ -52,6 +56,7 @@ export interface DialogueContext {
   visitedStateIds: string[]; // Added to track visited states - prevents loops
   loopDetection: Record<string, number>; // Track how many times a state is visited
   criticalPathProgress: Record<string, boolean>; // Track progress through critical paths
+  transactionIds?: Record<string, string>; // Track active narrative transactions 
   [key: string]: any; // Allow for custom context properties
 }
 
@@ -142,6 +147,13 @@ interface DialogueStateMachineState {
   validateDialogueProgression: () => boolean;
   getProgressionStatus: () => DialogueProgressionStatus;
   forceProgressionRepair: () => void;
+  
+  // Transaction integration
+  startNarrativeTransaction: (
+    type: 'journal_acquisition' | 'knowledge_revelation' | 'character_introduction' | 'boss_encounter',
+    metadata: Record<string, any>
+  ) => string;
+  completeNarrativeTransaction: (transactionId: string) => boolean;
 }
 
 export interface DialogueProgressionStatus {
@@ -172,9 +184,10 @@ export const useDialogueStateMachine = create<DialogueStateMachineState>((set, g
     // Ensure context has our new tracking properties
     const enhancedContext = {
       ...flow.context,
-      visitedStateIds: [],
-      loopDetection: {},
-      criticalPathProgress: {},
+      visitedStateIds: flow.context.visitedStateIds || [],
+      loopDetection: flow.context.loopDetection || {},
+      criticalPathProgress: flow.context.criticalPathProgress || {},
+      transactionIds: flow.context.transactionIds || {}
     };
     
     // Find initial state
@@ -204,11 +217,14 @@ export const useDialogueStateMachine = create<DialogueStateMachineState>((set, g
     }
     
     // Track this state visit
-    const updatedContext = get().context;
-    if (updatedContext) {
-      updatedContext.visitedStateIds = [initialState.id];
-      updatedContext.loopDetection = { [initialState.id]: 1 };
-    }
+    set(state => {
+      const updatedContext = state.context;
+      if (updatedContext) {
+        updatedContext.visitedStateIds = [initialState.id];
+        updatedContext.loopDetection = { [initialState.id]: 1 };
+      }
+      return { context: updatedContext };
+    });
     
     // Log the start of this dialogue flow
     useEventBus.getState().dispatch(GameEventType.DIALOGUE_STARTED, {
@@ -590,7 +606,7 @@ export const useDialogueStateMachine = create<DialogueStateMachineState>((set, g
             }
           }
           
-          // Critical path protection
+          // Critical path protection - journal acquisition pathway
           // If this state is journal-presentation or similar critical path
           if (targetState.isCriticalPath && targetState.id === 'journal-presentation') {
             // Log journal acquisition readiness
@@ -615,6 +631,19 @@ export const useDialogueStateMachine = create<DialogueStateMachineState>((set, g
                 false
               );
               
+              // Create narrative transaction
+              const transactionId = startJournalAcquisition(
+                updatedContext.characterId,
+                updatedContext.nodeId,
+                journalTier
+              );
+              
+              // Store transaction ID in context
+              updatedContext.transactionIds = {
+                ...updatedContext.transactionIds,
+                'journal_acquisition': transactionId
+              };
+              
               // Safe dispatch for journal acquisition with delay to avoid loops
               setTimeout(() => {
                 journalAcquired(
@@ -622,6 +651,11 @@ export const useDialogueStateMachine = create<DialogueStateMachineState>((set, g
                   updatedContext.characterId,
                   'dialogue_state_machine'
                 );
+                
+                // After slightly longer delay, complete the transaction
+                setTimeout(() => {
+                  get().completeNarrativeTransaction(transactionId);
+                }, 300);
               }, 50);
             }
           }
@@ -671,6 +705,15 @@ export const useDialogueStateMachine = create<DialogueStateMachineState>((set, g
           get().forceProgressionRepair();
         }, 10);
         return;
+      }
+      
+      // Complete any active transactions
+      if (context.transactionIds) {
+        Object.entries(context.transactionIds).forEach(([type, id]) => {
+          if (id) {
+            get().completeNarrativeTransaction(id);
+          }
+        });
       }
       
       // Call the onComplete callback if it exists
@@ -874,6 +917,26 @@ export const useDialogueStateMachine = create<DialogueStateMachineState>((set, g
       if (journalState && !context.visitedStateIds.includes('journal-presentation')) {
         console.log(`[DialogueStateMachine] Forcing jump to journal presentation state`);
         
+        // Start journal acquisition transaction if not already present
+        if (!context.transactionIds?.journal_acquisition) {
+          const journalTier = determineJournalTier(context);
+          const transactionId = startJournalAcquisition(
+            context.characterId,
+            context.nodeId,
+            journalTier
+          );
+          
+          // Store transaction ID in context
+          set(state => {
+            const updatedContext = { ...state.context } as DialogueContext;
+            updatedContext.transactionIds = {
+              ...updatedContext.transactionIds,
+              journal_acquisition: transactionId
+            };
+            return { context: updatedContext };
+          });
+        }
+        
         // Use safe jump to prevent recursion
         setTimeout(() => {
           get().jumpToState('journal-presentation');
@@ -907,6 +970,40 @@ export const useDialogueStateMachine = create<DialogueStateMachineState>((set, g
         get().jumpToState(conclusionState[0]);
       }, 10);
     }
+  },
+  
+  // Integration with narrative transaction system
+  startNarrativeTransaction: (type, metadata) => {
+    const { context } = get();
+    
+    if (!context) {
+      console.error('[DialogueStateMachine] Cannot start transaction without context');
+      return '';
+    }
+    
+    // Start transaction using NarrativeTransaction module
+    const id = useNarrativeTransaction.getState().startTransaction(
+      type, 
+      metadata,
+      context.characterId,
+      context.nodeId
+    );
+    
+    // Store transaction ID in context for reference
+    set(state => {
+      const updatedContext = { ...state.context } as DialogueContext;
+      updatedContext.transactionIds = {
+        ...updatedContext.transactionIds,
+        [type]: id
+      };
+      return { context: updatedContext };
+    });
+    
+    return id;
+  },
+  
+  completeNarrativeTransaction: (transactionId) => {
+    return useNarrativeTransaction.getState().completeTransaction(transactionId);
   }
 }));
 
@@ -928,6 +1025,7 @@ export function createDialogueFlow(
     visitedStateIds: [],
     loopDetection: {},
     criticalPathProgress: {},
+    transactionIds: {},
     ...context
   };
   
@@ -1032,7 +1130,12 @@ export const createKapoorCalibrationFlow = (nodeId: string) => {
             nextStateId: 'correction-factors',
             responseText: "Precisely. Electronic equilibrium is essential for accurate dosimetry. The buildup material ensures charged particle equilibrium at the measurement point.",
             relationshipChange: 1,
-            isCriticalPath: true
+            isCriticalPath: true,
+            knowledgeGain: {
+              conceptId: "electron_equilibrium_understood",
+              domainId: "radiation-physics",
+              amount: 25
+            }
           },
           { 
             id: "engaged-learner",
@@ -1065,7 +1168,12 @@ export const createKapoorCalibrationFlow = (nodeId: string) => {
             responseText: "Excellent. PTP correction accounts for the deviation of air density from calibration reference conditions. Today's pressure drop of 15 hPa would significantly impact our results without proper correction.",
             relationshipChange: 1,
             triggersBackstory: true,
-            isCriticalPath: true
+            isCriticalPath: true,
+            knowledgeGain: {
+              conceptId: "ptp_correction_understood",
+              domainId: "quality-assurance",
+              amount: 25
+            }
           },
           { 
             id: "incorrect-kq",
@@ -1105,7 +1213,12 @@ export const createKapoorCalibrationFlow = (nodeId: string) => {
             nextStateId: 'clinical-significance',
             responseText: "Correct. TG-142 specifies a ±2% tolerance for photon output constancy. While we always aim for perfect calibration, variations within tolerance are acceptable and expected.",
             relationshipChange: 1,
-            isCriticalPath: true
+            isCriticalPath: true,
+            knowledgeGain: {
+              conceptId: "output_calibration_tolerance",
+              domainId: "quality-assurance",
+              amount: 25
+            }
           },
           { 
             id: "overly-cautious",
@@ -1137,7 +1250,12 @@ export const createKapoorCalibrationFlow = (nodeId: string) => {
             nextStateId: 'conclusion',
             responseText: "Your response demonstrates an understanding of both the technical and clinical aspects. A 1.2% deviation has negligible impact on treatment efficacy or side effects, while staying well within our quality parameters.",
             relationshipChange: 1,
-            isCriticalPath: true
+            isCriticalPath: true,
+            knowledgeGain: {
+              conceptId: "clinical_dose_significance",
+              domainId: "clinical-practice",
+              amount: 25
+            }
           },
           { 
             id: "partially-correct",
@@ -1200,24 +1318,42 @@ export const createKapoorCalibrationFlow = (nodeId: string) => {
             // Determine journal tier based on performance
             const journalTier = determineJournalTier(context);
             
+            // Create a narrative transaction for journal acquisition
+            const transactionId = startJournalAcquisition(
+              context.characterId,
+              context.nodeId,
+              journalTier
+            );
+            
+            // Store transaction ID in context
+            context.transactionIds = {
+              ...context.transactionIds,
+              journal_acquisition: transactionId
+            };
+            
+            // Notify of critical path with transaction reference
+            dialogueCriticalPath(
+              'kapoor-calibration',
+              context.characterId,
+              context.nodeId,
+              'journal-presentation',
+              context.playerScore,
+              false
+            );
+            
             // Use safe dispatching with timeout to prevent infinite loops
             setTimeout(() => {
-              // Notify of critical path
-              dialogueCriticalPath(
-                'kapoor-calibration',
-                context.characterId,
-                context.nodeId,
-                'journal-presentation',
-                context.playerScore,
-                false
-              );
-              
               // This ensures the journal is acquired safely
               journalAcquired(
                 journalTier,
                 context.characterId,
                 'dialogue_state_machine'
               );
+              
+              // Complete the transaction after a short delay
+              setTimeout(() => {
+                useNarrativeTransaction.getState().completeTransaction(transactionId);
+              }, 300);
             }, 50);
           }
         }
@@ -1227,6 +1363,15 @@ export const createKapoorCalibrationFlow = (nodeId: string) => {
     { characterId: 'kapoor', nodeId },
     (context) => {
       // Final completion handler that runs regardless of path taken
+      // Complete any pending transactions
+      if (context.transactionIds) {
+        Object.values(context.transactionIds).forEach(id => {
+          if (id) {
+            useNarrativeTransaction.getState().completeTransaction(id);
+          }
+        });
+      }
+      
       // Use safe dispatching with timeout to prevent infinite loops
       setTimeout(() => {
         nodeCompleted(nodeId, 

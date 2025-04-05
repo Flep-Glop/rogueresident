@@ -13,6 +13,12 @@ import {
   useEventBus, 
   GameEventType 
 } from '../../../core/events/CentralEventBus';
+import { useJournalStore } from '../../../store/journalStore';
+import { 
+  validateDialogueProgression,
+  repairDialogueProgression
+} from '../../../core/dialogue/DialogueProgressionHelpers';
+import { useNarrativeTransaction } from '../../../core/dialogue/NarrativeTransaction';
 import Image from 'next/image';
 
 // Results interface for challenge completion
@@ -40,6 +46,9 @@ export default function ConversationFormat({
   
   const { playSound, flashScreen, showRewardEffect } = useGameEffects();
   
+  // Add journal store access for journal acquisition
+  const { initializeJournal, hasJournal } = useJournalStore();
+  
   // Core state
   const [encounterComplete, setEncounterComplete] = useState(false);
   const [masteryConcepts, setMasteryConcepts] = useState<Record<string, boolean>>({
@@ -54,6 +63,9 @@ export default function ConversationFormat({
   
   // Track critical progression states for analytics
   const [progressionHistory, setProgressionHistory] = useState<string[]>([]);
+  
+  // Track narrative transactions
+  const [activeTransactions, setActiveTransactions] = useState<Record<string, string>>({});
   
   // Character data mapping
   const characterData = {
@@ -122,7 +134,9 @@ export default function ConversationFormat({
     showBackstorySegment,
     setCurrentStageId,
     isProgressionValid,
-    dialogueStateMachine
+    dialogueStateMachine,
+    startTransaction,
+    completeTransaction
   } = useDialogueFlow({
     stages: dialogueStages,
     onOptionSelected: (option) => {
@@ -212,6 +226,32 @@ export default function ConversationFormat({
         // Mark journey step for analytics
         setProgressionHistory(prev => [...prev, 'journal-presentation-reached']);
         
+        // Start journal acquisition transaction if not already started
+        if (!activeTransactions.journal_acquisition) {
+          // Determine journal tier based on performance
+          const journalTier = characterRespect >= 3 ? 'annotated' : 
+                            characterRespect >= 0 ? 'technical' : 'base';
+          
+          // Start transaction
+          const transactionId = startTransaction('journal_acquisition', {
+            journalTier,
+            relationshipScore: characterRespect,
+            nodeId: currentNodeId
+          });
+          
+          // Track transaction
+          setActiveTransactions(prev => ({
+            ...prev,
+            journal_acquisition: transactionId
+          }));
+          
+          // Immediately attempt to create journal to avoid progression breaks
+          // Only create if doesn't exist yet
+          if (!hasJournal) {
+            initializeJournal(journalTier);
+          }
+        }
+        
         // Log key progression event with detailed metadata
         useEventBus.getState().dispatch(GameEventType.UI_BUTTON_CLICKED, {
           componentId: 'conversationFormat',
@@ -220,7 +260,7 @@ export default function ConversationFormat({
             character,
             characterRespect,
             journalTier: characterRespect >= 3 ? 'annotated' : 
-                         characterRespect >= 0 ? 'technical' : 'base',
+                        characterRespect >= 0 ? 'technical' : 'base',
             progressionSteps: progressionHistory.length,
             currentProgressionState: isProgressionValid ? 'valid' : 'repair-needed',
             nodeId: currentNodeId
@@ -275,8 +315,8 @@ export default function ConversationFormat({
       
       // Only need to do this once
       if (!progressionValidated) {
-        // Get progression status directly from state machine
-        const progressionStatus = dialogueStateMachine.getProgressionStatus();
+        // Run formal progression validation
+        const progressionStatus = validateDialogueProgression(character, currentNodeId || '');
         
         // Log progression state
         console.log(`[DIALOGUE] Validating progression at ${currentStageId}:`, progressionStatus);
@@ -284,7 +324,7 @@ export default function ConversationFormat({
         setProgressionValidated(true);
         
         // If we detect a progression issue, try to repair
-        if (progressionStatus.progressionBlocked) {
+        if (progressionStatus.requiresRepair) {
           console.warn(`[DIALOGUE] Progression validation failed - repair required`);
           
           // Log the issue
@@ -301,7 +341,14 @@ export default function ConversationFormat({
           
           // After short delay, force progression repair
           setTimeout(() => {
-            dialogueStateMachine.forceProgressionRepair();
+            repairDialogueProgression(character, currentNodeId || '');
+            
+            // Complete any pending transactions
+            Object.values(activeTransactions).forEach(txId => {
+              if (txId) {
+                completeTransaction(txId);
+              }
+            });
           }, 300);
         } else {
           // Log successful validation
@@ -315,6 +362,13 @@ export default function ConversationFormat({
               progressionHistory
             }
           });
+          
+          // Complete any pending transactions
+          Object.values(activeTransactions).forEach(txId => {
+            if (txId) {
+              completeTransaction(txId);
+            }
+          });
         }
       }
     }
@@ -324,7 +378,10 @@ export default function ConversationFormat({
     currentStageId, 
     progressionValidated, 
     dialogueStateMachine,
-    progressionHistory
+    progressionHistory,
+    currentNodeId,
+    activeTransactions,
+    completeTransaction
   ]);
   
   // Handle continue button click
@@ -413,6 +470,13 @@ export default function ConversationFormat({
       - journalTier: ${journalTier}
     `);
     
+    // Complete all active transactions
+    Object.entries(activeTransactions).forEach(([type, id]) => {
+      if (id) {
+        completeTransaction(id);
+      }
+    });
+    
     // Final event for node completion that's picked up by progression guarantor
     if (currentNodeId) {
       useEventBus.getState().dispatch(GameEventType.NODE_COMPLETED, {
@@ -438,6 +502,9 @@ export default function ConversationFormat({
         }, {} as Record<string, number>),
       journalTier
     });
+    
+    // Final progression validation
+    validateDialogueProgression(character, currentNodeId || '');
     
     // Narrative timing - give journal acquisition a more dramatic pause
     setTimeout(() => {
@@ -521,6 +588,11 @@ export default function ConversationFormat({
             {/* Debug indicator for progression status */}
             {process.env.NODE_ENV !== 'production' && (
               <div className={`absolute top-0 right-0 w-3 h-3 rounded-full ${isProgressionValid ? 'bg-green-500' : 'bg-red-500'}`}></div>
+            )}
+            
+            {/* Transaction indicator */}
+            {process.env.NODE_ENV !== 'production' && Object.keys(activeTransactions).length > 0 && (
+              <div className="absolute bottom-0 right-0 w-3 h-3 rounded-full bg-blue-500 animate-pulse"></div>
             )}
           </div>
           
@@ -610,6 +682,9 @@ export default function ConversationFormat({
         <div className="mt-4 border-t border-border pt-2 text-xs text-gray-500">
           <div>Stage: {currentStageId} | Respect: {characterRespect} | Progression Valid: {isProgressionValid ? '✓' : '✗'}</div>
           <div>Critical Path: {progressionHistory.slice(-3).join(' → ')}{progressionHistory.length > 3 ? '...' : ''}</div>
+          {Object.keys(activeTransactions).length > 0 && (
+            <div>Active Transactions: {Object.keys(activeTransactions).join(', ')}</div>
+          )}
         </div>
       )}
     </div>

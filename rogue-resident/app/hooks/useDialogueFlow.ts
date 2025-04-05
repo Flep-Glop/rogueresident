@@ -1,6 +1,8 @@
 // app/hooks/useDialogueFlow.ts
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { useDialogueStateMachine, DialogueState } from '../core/dialogue/DialogueStateMachine';
+import { useNarrativeTransaction } from '../core/dialogue/NarrativeTransaction';
+import { validateDialogueProgression, repairDialogueProgression } from '../core/dialogue/DialogueProgressionHelpers';
 import { useEventBus, GameEventType } from '../core/events/CentralEventBus';
 
 export interface DialogueOption {
@@ -53,8 +55,8 @@ interface DialogueFlowOptions {
 /**
  * A streamlined hook that manages dialogue flow using the formal DialogueStateMachine.
  * 
- * Enhanced with reentrant safety guards and optimized render logic to prevent 
- * infinite update loops and stack overflows.
+ * Enhanced with reentrant safety guards, optimized render logic, and integration
+ * with the NarrativeTransaction system for critical progression points.
  */
 export function useDialogueFlow({
   initialStageId = 'intro',
@@ -74,9 +76,13 @@ export function useDialogueFlow({
   const progressionValidatedRef = useRef<boolean>(false);
   const prevProgressionStatusRef = useRef<boolean>(true);
   const isUpdatingRef = useRef<boolean>(false);
+  const activeTransactionsRef = useRef<Record<string, string>>({});
   
   // Access the dialogue state machine
   const stateMachine = useDialogueStateMachine();
+  
+  // Access narrative transaction system
+  const narrativeTransaction = useNarrativeTransaction();
   
   // Helper to convert stages format to state machine states
   const convertStagesToStates = useCallback(() => {
@@ -144,7 +150,8 @@ export function useDialogueFlow({
           knowledgeGained: {},
           visitedStateIds: [initialStageId],
           loopDetection: { [initialStageId]: 1 },
-          criticalPathProgress: {}
+          criticalPathProgress: {},
+          transactionIds: {}
         },
         progressionCheckpoints: criticalCheckpoints,
       });
@@ -179,10 +186,20 @@ export function useDialogueFlow({
             visitedStages: Array.from(visitedStagesRef.current)
           }
         });
+        
+        // Complete any active transactions to prevent leaks
+        if (activeTransactionsRef.current) {
+          Object.values(activeTransactionsRef.current).forEach(txId => {
+            if (txId) {
+              narrativeTransaction.completeTransaction(txId);
+            }
+          });
+        }
       }
     };
   }, [
     stateMachine, 
+    narrativeTransaction,
     convertStagesToStates, 
     initialStageId, 
     characterId, 
@@ -237,6 +254,29 @@ export function useDialogueFlow({
           }, 0);
         }
         
+        // Start narrative transaction for special stages
+        if (machineStageId === 'journal-presentation' && characterId === 'kapoor') {
+          const context = stateMachine.context;
+          
+          // Only start if not already started
+          if (context && !context.transactionIds?.journal_acquisition) {
+            // Determine journal tier based on performance
+            const journalTier = context.playerScore >= 3 ? 'annotated' : 
+                              context.playerScore >= 0 ? 'technical' : 'base';
+                              
+            // Create transaction
+            const transactionId = narrativeTransaction.startTransaction(
+              'journal_acquisition',
+              { journalTier, source: 'dialogue_flow_hook' },
+              characterId,
+              nodeId
+            );
+            
+            // Track transaction
+            activeTransactionsRef.current.journal_acquisition = transactionId;
+          }
+        }
+        
         // Call the onStageChange callback
         if (onStageChange) {
           onStageChange(machineStageId, currentStageId);
@@ -288,6 +328,13 @@ export function useDialogueFlow({
         
         // Special validation for journal presentation
         if (machineStageId === 'journal-presentation') {
+          // Complete any active journal acquisition transaction
+          if (activeTransactionsRef.current.journal_acquisition) {
+            narrativeTransaction.completeTransaction(
+              activeTransactionsRef.current.journal_acquisition
+            );
+          }
+          
           // Use safe event dispatching
           setTimeout(() => {
             useEventBus.getState().dispatch(GameEventType.UI_BUTTON_CLICKED, {
@@ -301,6 +348,14 @@ export function useDialogueFlow({
               }
             });
           }, 0);
+          
+          // Run dialogue validation
+          const progressionStatus = validateDialogueProgression(characterId, nodeId);
+          
+          // Repair if needed
+          if (progressionStatus.requiresRepair) {
+            repairDialogueProgression(characterId, nodeId);
+          }
         }
       }
     } finally {
@@ -314,7 +369,8 @@ export function useDialogueFlow({
     stages, 
     characterId, 
     nodeId, 
-    progressionHistory
+    progressionHistory,
+    narrativeTransaction
   ]);
   
   // Get the current stage object
@@ -466,6 +522,38 @@ export function useDialogueFlow({
     }
   }, [stateMachine]);
   
+  // Start a narrative transaction with proper lifecycle management
+  const startTransaction = useCallback((
+    type: 'journal_acquisition' | 'knowledge_revelation' | 'character_introduction' | 'boss_encounter',
+    metadata: Record<string, any>
+  ) => {
+    const transactionId = stateMachine.startNarrativeTransaction(type, metadata);
+    
+    // Track in local ref for cleanup
+    activeTransactionsRef.current[type] = transactionId;
+    
+    return transactionId;
+  }, [stateMachine]);
+  
+  // Complete a transaction and remove from tracking
+  const completeTransaction = useCallback((transactionId: string) => {
+    // Find transaction type by ID
+    const transactionType = Object.entries(activeTransactionsRef.current)
+      .find(([_, id]) => id === transactionId)?.[0];
+    
+    // Complete the transaction
+    const result = stateMachine.completeNarrativeTransaction(transactionId);
+    
+    // If successful, remove from tracking
+    if (result && transactionType) {
+      const updatedTransactions = { ...activeTransactionsRef.current };
+      delete updatedTransactions[transactionType];
+      activeTransactionsRef.current = updatedTransactions;
+    }
+    
+    return result;
+  }, [stateMachine]);
+  
   return {
     // Core state
     currentStage: getCurrentStage(),
@@ -488,7 +576,11 @@ export function useDialogueFlow({
     dialogueStateMachine: stateMachine,
     
     // State inspection
-    getProgressionStatus: stateMachine.getProgressionStatus
+    getProgressionStatus: stateMachine.getProgressionStatus,
+    
+    // Transaction management
+    startTransaction,
+    completeTransaction
   };
 }
 

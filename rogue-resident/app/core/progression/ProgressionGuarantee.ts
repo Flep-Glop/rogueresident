@@ -1,19 +1,21 @@
 // app/core/progression/ProgressionGuarantee.ts
 /**
- * Progression Guarantor System
+ * Enhanced Progression Guarantor System
  * 
  * This system provides multiple layers of protection for critical progression items
  * like the journal. It operates independently from the normal acquisition paths to
  * ensure that game-breaking progression issues cannot occur.
  * 
- * This pattern was developed for roguelikes like Hades to recover from state 
- * inconsistencies that can emerge in procedural systems.
+ * Integrates with the NarrativeTransaction pattern for maximum reliability,
+ * implementing a "belt and suspenders" approach to progression safety.
  */
 
 import React, { useEffect } from 'react';
 import { gameEvents, GameEventType, useEventBus, ensureCriticalProgression } from '../events/GameEvents';
 import { useJournalStore } from '../../store/journalStore';
 import { useGameStore } from '../../store/gameStore';
+import { useNarrativeTransaction, validateCriticalTransactions } from '../dialogue/NarrativeTransaction';
+import { validateDialogueProgression, repairDialogueProgression, ensureJournalAcquisition } from '../dialogue/DialogueProgressionHelpers';
 
 // Define the node progress type for type safety
 interface NodeProgress {
@@ -29,6 +31,7 @@ interface ProgressionCheckpoint {
   condition: () => boolean;
   repair: () => void;
   description: string;
+  transactionType?: 'journal_acquisition' | 'knowledge_revelation' | 'character_introduction' | 'boss_encounter';
 }
 
 // Define critical progression checkpoints
@@ -54,21 +57,81 @@ const progressionCheckpoints: ProgressionCheckpoint[] = [
     repair: () => {
       // Force journal acquisition
       console.warn('[PROGRESSION_REPAIR] Critical journal acquisition missing - forcing repair');
-      useJournalStore.getState().initializeJournal('base');
+      
+      // Determine journal tier based on node history
+      const nodeHistory = useGameStore.getState().getNodeHistory('kapoor-calibration-node');
+      const relationshipScore = nodeHistory?.relationshipScore || 0;
+      const journalTier = relationshipScore >= 3 ? 'annotated' : 
+                        relationshipScore >= 0 ? 'technical' : 'base';
+      
+      // Initialize journal with determined tier
+      ensureJournalAcquisition(journalTier, false);
       
       // Log the repair
-      gameEvents.dispatch(GameEventType.JOURNAL_ACQUIRED, {
-        tier: 'base',
-        character: 'kapoor',
-        source: 'progression_repair',
-        forced: true
+      gameEvents.dispatch(GameEventType.UI_BUTTON_CLICKED, {
+        componentId: 'progressionGuarantor',
+        action: 'journalRepaired',
+        metadata: {
+          source: 'progression_repair',
+          forced: true,
+          journalTier,
+          characterId: 'kapoor'
+        }
       });
-    }
+    },
+    transactionType: 'journal_acquisition'
   },
   
   // Add more critical progression checkpoints here as game expands
   // For example, boss key item acquisition, character unlocks, etc.
 ];
+
+/**
+ * Validate and repair critical transactions
+ * Integrates the NarrativeTransaction system with progression guarantees
+ */
+function validateTransactions(): boolean {
+  let transactionsRepaired = false;
+  
+  // Get all transactions
+  const transactionState = useNarrativeTransaction.getState();
+  const allTransactions = transactionState.getAllTransactions();
+  
+  // Check for stuck or failed transactions
+  allTransactions.forEach(transaction => {
+    if (transaction.state === 'failed') {
+      console.warn(`[PROGRESSION_REPAIR] Found failed transaction: ${transaction.id} (${transaction.type})`);
+      
+      // Handle specific transaction types
+      if (transaction.type === 'journal_acquisition') {
+        // Force journal repair
+        const journalTier = transaction.metadata.journalTier || 'base';
+        ensureJournalAcquisition(journalTier, false);
+        transactionsRepaired = true;
+      }
+      
+      // Force complete the transaction
+      transactionState.completeTransaction(transaction.id);
+    }
+    else if (transaction.state === 'in_progress' && 
+            (Date.now() - transaction.startTime > 30000)) {
+      console.warn(`[PROGRESSION_REPAIR] Found stalled transaction: ${transaction.id} (${transaction.type})`);
+      
+      // Handle specific transaction types
+      if (transaction.type === 'journal_acquisition') {
+        // Force journal repair
+        const journalTier = transaction.metadata.journalTier || 'base';
+        ensureJournalAcquisition(journalTier, false);
+        transactionsRepaired = true;
+      }
+      
+      // Force complete the transaction
+      transactionState.completeTransaction(transaction.id);
+    }
+  });
+  
+  return transactionsRepaired;
+}
 
 // Run all progression checks
 export function runProgressionChecks() {
@@ -76,6 +139,11 @@ export function runProgressionChecks() {
   
   // Run built-in critical progression check from event system
   if (ensureCriticalProgression()) {
+    repairsPerformed = true;
+  }
+  
+  // Validate and repair any stuck transactions
+  if (validateTransactions()) {
     repairsPerformed = true;
   }
   
@@ -127,6 +195,25 @@ export function initializeProgressionGuarantor() {
       () => {
         // Day/night transitions are natural integrity check points
         runProgressionChecks();
+      }
+    )
+  );
+  
+  // Listen for transaction failures
+  unsubscribers.push(
+    useEventBus.getState().subscribe(
+      GameEventType.UI_BUTTON_CLICKED,
+      (event) => {
+        const { componentId, action } = event.payload;
+        if (
+          (componentId === 'narrativeTransaction' && action === 'transactionFailed') ||
+          (componentId === 'dialogueFlow' && action === 'progressionBlockDetected')
+        ) {
+          // Repair progression immediately
+          setTimeout(() => {
+            runProgressionChecks();
+          }, 500);
+        }
       }
     )
   );
