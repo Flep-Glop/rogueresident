@@ -8,17 +8,25 @@
  * system with good debugging tools proved more effective than multiple fallbacks.
  */
 
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { 
-  useEventBus, 
-  GameEventType, 
-  journalAcquired 
+  useEventBus
 } from '../events/CentralEventBus';
+import { GameEventType } from '../events/EventTypes';
 import { useJournalStore } from '../../store/journalStore';
 import { useGameStore } from '../../store/gameStore';
 import { 
   checkTransactionIntegrity 
 } from '../dialogue/NarrativeTransaction';
+
+// Helper function to trigger journal acquisition
+function journalAcquired(tier: string, character: string, source: string) {
+  useEventBus.getState().dispatch(GameEventType.JOURNAL_ACQUIRED, {
+    tier,
+    character,
+    source
+  });
+}
 
 // Define progression checkpoint interface
 export interface ProgressionCheckpoint {

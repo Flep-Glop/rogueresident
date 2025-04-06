@@ -1,4 +1,5 @@
 // app/core/dialogue/DialogueController.ts
+
 /**
  * Dialogue Controller
  * 
@@ -11,26 +12,109 @@
  * remaining resilient to the unpredictable nature of player-driven pacing.
  */
 
-import { useEventBus, GameEventType } from '../events/CentralEventBus';
+// Fix imports to get GameEventType from EventTypes
+import { useEventBus } from '../events/CentralEventBus';
+import { GameEventType } from '../events/EventTypes';
 import { 
   useDialogueStateMachine, 
   DialogueState, 
   DialogueStateType,
-  DialogueContext 
+  DialogueContext
 } from './DialogueStateMachine';
 import { useNarrativeTransaction } from './NarrativeTransaction';
 import { validateDialogueProgression, repairDialogueProgression } from './DialogueProgressionHelpers';
 import { useGameStore } from '../../store/gameStore';
 import { useKnowledgeStore } from '../../store/knowledgeStore';
 import { useJournalStore } from '../../store/journalStore';
-import { 
-  DialogueOptionSelectedPayload, 
-  DialogueCriticalPathPayload,
-  DialogueProgressionRepairPayload,
-  DialogueStartPayload,
-  DialogueCompletionPayload,
-  UIEventPayload
-} from '../events/EventTypes';
+
+// Define payload types that were previously imported
+interface DialogueOptionSelectedPayload {
+  optionId: string;
+  stageId?: string;
+  character?: string;
+  flowId?: string;
+  insightGain?: number;
+  relationshipChange?: number;
+  knowledgeGain?: {
+    conceptId: string;
+    domainId: string;
+    amount: number;
+  };
+  isCriticalPath?: boolean;
+}
+
+interface DialogueStartPayload {
+  flowId: string;
+  initialStageId: string;
+  stages: Array<{
+    id: string;
+    text: string;
+    options?: Array<{
+      id: string;
+      text: string;
+      responseText?: string;
+      nextStageId?: string;
+      insightGain?: number;
+      relationshipChange?: number;
+      knowledgeGain?: {
+        conceptId: string;
+        domainId: string;
+        amount: number;
+      };
+      triggersBackstory?: boolean;
+      isCriticalPath?: boolean;
+      condition?: (context: DialogueContext) => boolean;
+    }>;
+    nextStageId?: string;
+    isConclusion?: boolean;
+    isCriticalPath?: boolean;
+    isMandatory?: boolean;
+    maxVisits?: number;
+    type?: string;
+    onEnter?: (context: DialogueContext) => void;
+    onExit?: (context: DialogueContext) => void;
+  }>;
+  characterId?: string;
+  nodeId?: string;
+}
+
+interface DialogueCompletionPayload {
+  flowId: string;
+  completed: boolean;
+  reason?: string;
+  character?: string;
+  nodeId?: string;
+  result?: {
+    playerScore: number;
+    visitedStates: string[];
+    selectedOptions: string[];
+  };
+}
+
+interface DialogueCriticalPathPayload {
+  dialogueId: string;
+  characterId: string;
+  nodeId: string;
+  criticalStateId: string;
+  playerScore: number;
+  wasRepaired?: boolean;
+}
+
+interface DialogueProgressionRepairPayload {
+  dialogueId: string;
+  characterId: string;
+  nodeId: string;
+  fromStateId: string;
+  toStateId: string;
+  reason: string;
+  loopDetected: boolean;
+}
+
+interface UIEventPayload {
+  componentId: string;
+  action: string;
+  metadata?: Record<string, any>;
+}
 
 /**
  * Initialize the dialogue controller and establish event subscriptions
@@ -247,7 +331,7 @@ export function initializeDialogueController() {
               nodeId: nodeId || stateMachine.context?.nodeId || 'unknown',
               fromStateId: progressionStatus.lastVisitedStateId || 'unknown',
               toStateId: 'forced_conclusion',
-              reason: `interrupted_${reason}`,
+              reason: `interrupted_${reason || 'unknown'}`,
               loopDetected: progressionStatus.loopDetected
             }
           );
@@ -288,24 +372,30 @@ export function initializeDialogueController() {
       
       // Apply relationship change if applicable
       if (relationshipChange && character) {
-        useGameStore.getState().updateRelationship(character, relationshipChange);
-        
-        // Visual feedback based on direction of change
-        if (relationshipChange > 0) {
-          eventBus.dispatch(GameEventType.EFFECT_SOUND_PLAYED, {
-            effect: 'relationship-up',
-            volume: 0.6
-          });
-        } else if (relationshipChange < 0) {
-          eventBus.dispatch(GameEventType.EFFECT_SOUND_PLAYED, {
-            effect: 'relationship-down',
-            volume: 0.6
-          });
+        const gameState = useGameStore.getState();
+        // Check if updateRelationship exists before calling it
+        if (typeof gameState.updateRelationship === 'function') {
+          gameState.updateRelationship(character, relationshipChange);
+          
+          // Visual feedback based on direction of change
+          if (relationshipChange > 0) {
+            eventBus.dispatch(GameEventType.EFFECT_SOUND_PLAYED, {
+              effect: 'relationship-up',
+              volume: 0.6
+            });
+          } else if (relationshipChange < 0) {
+            eventBus.dispatch(GameEventType.EFFECT_SOUND_PLAYED, {
+              effect: 'relationship-down',
+              volume: 0.6
+            });
+          }
+        } else {
+          console.warn('[DialogueController] updateRelationship not available in gameStore');
         }
       }
       
       // Apply knowledge gain if applicable
-      if (knowledgeGain) {
+      if (knowledgeGain && knowledgeGain.conceptId) {
         useKnowledgeStore.getState().updateMastery(
           knowledgeGain.conceptId,
           knowledgeGain.amount
@@ -321,7 +411,7 @@ export function initializeDialogueController() {
         });
       }
       
-      console.log(`[DialogueController] Processed option selection: ${optionId} in stage ${stageId}`);
+      console.log(`[DialogueController] Processed option selection: ${optionId} in stage ${stageId || 'unknown'}`);
     })
   );
   

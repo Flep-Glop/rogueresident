@@ -10,13 +10,45 @@
  * from interrupted Shade or Olympian conversations while maintaining narrative continuity.
  */
 
-import { useEventBus, GameEventType } from '../events/CentralEventBus';
+import { useEventBus } from '../events/CentralEventBus';
+import { GameEventType } from '../events/EventTypes';
 import { useGameStore } from '../../store/gameStore';
 import { useJournalStore } from '../../store/journalStore';
 import { useNarrativeTransaction } from '../dialogue/NarrativeTransaction';
 import { useKnowledgeStore } from '../../store/knowledgeStore';
 import { useDialogueStateMachine } from '../dialogue/DialogueStateMachine';
 import { validateNarrativeProgression, repairNarrativeProgression } from './NarrativeProgressionValidator';
+
+// Type imports for the stores
+import { Item } from '../../data/items';
+
+// Interface for the GameState
+interface GameState {
+  currentDay: number;
+  gamePhase: string;
+  completedNodeIds: string[];
+  inventory: Item[];
+  isInDialogue?: boolean;
+  completeNode: (nodeId: string, payload: any) => void;
+  addToInventory: (item: Item) => void;
+  getRelationshipLevel: (character: string) => number;
+  updateRelationship?: (character: string, change: number) => void;
+  markNodeCompleted?: (nodeId: string) => void;
+}
+
+// Interface for KnowledgeState
+interface KnowledgeState {
+  totalMastery: number;
+  nodes: Array<{
+    id: string;
+    discovered: boolean;
+    mastery: number;
+  }>;
+  domainMastery: Record<string, number>;
+  updateMastery: (conceptId: string, amount: number) => void;
+  discoverConcept: (conceptId: string) => void;
+  hasMasteredConcept?: (conceptId: string, level: number) => boolean;
+}
 
 // Progression interruption types
 export type InterruptionType = 
@@ -109,7 +141,7 @@ const CRITICAL_STORY_BEATS = [
 ];
 
 // Heuristic scores for different recovery approaches
-const RECOVERY_APPROACH_SCORES = {
+const RECOVERY_APPROACH_SCORES: Record<string, Record<RecoveryAction, number>> = {
   // Provide continuity by preserving player's progress
   CONTINUITY: {
     restart_dialogue: -10,       // Major continuity break
@@ -185,7 +217,8 @@ export function detectProgressionIssues(): boolean {
   // If dialogue state machine has an active flow but UI isn't showing it
   // (would need to be detected via a UI presence flag)
   const hasActiveDialogue = useDialogueStateMachine.getState().activeFlow !== null;
-  const dialogueIsVisible = useGameStore.getState().isInDialogue; // Assuming this state exists
+  const gameState = useGameStore.getState() as GameState;
+  const dialogueIsVisible = gameState.isInDialogue || false;
   
   if (hasActiveDialogue && !dialogueIsVisible) {
     return true;
@@ -269,7 +302,8 @@ export function createRecoveryPlan(): RecoveryPlan | null {
   
   // Check for dialogue state/UI mismatch
   const hasActiveDialogue = useDialogueStateMachine.getState().activeFlow !== null;
-  const dialogueIsVisible = useGameStore.getState().isInDialogue;
+  const gameState = useGameStore.getState() as GameState;
+  const dialogueIsVisible = gameState.isInDialogue || false;
   
   if (hasActiveDialogue && !dialogueIsVisible) {
     shouldCreatePlan = true;
@@ -341,8 +375,9 @@ export function createRecoveryPlan(): RecoveryPlan | null {
           let highestRelationship = '';
           let maxLevel = -1;
           
+          const typedGameState = useGameStore.getState() as GameState;
           characters.forEach(character => {
-            const level = useGameStore.getState().getRelationshipLevel(character);
+            const level = typedGameState.getRelationshipLevel(character);
             if (level > maxLevel) {
               maxLevel = level;
               highestRelationship = character;
@@ -422,741 +457,764 @@ export function createRecoveryPlan(): RecoveryPlan | null {
  * This occurs when later story beats exist without prerequisites
  */
 function checkForNarrativeDiscontinuity(): boolean {
-  const { currentDay } = useGameStore.getState();
-  const completedNodes = useGameStore.getState().completedNodeIds;
-  
-  // Define story beat dependencies
-  const storyBeatDependencies = [
-    { beat: 'ionix-boss', requires: ['quantum-theory', 'equipment-safety'] },
-    { beat: 'quinn-theory', requires: ['journal-acquisition'] },
-    { beat: 'jesse-equipment', requires: ['journal-acquisition'] }
-  ];
-  
-  // Only check dependencies relevant to current day
-  const relevantDependencies = storyBeatDependencies.filter(dep => {
-    // Simple day-based filtering
-    if (dep.beat.includes('boss') && currentDay < 3) return false;
-    if (dep.beat.includes('theory') && currentDay < 2) return false;
-    return true;
-  });
-  
-  // Check if any beat exists without its prerequisites
-  for (const dependency of relevantDependencies) {
-    const beatCompleted = completedNodes.some(node => node.includes(dependency.beat));
+    const { currentDay } = useGameStore.getState();
+    const completedNodes = useGameStore.getState().completedNodeIds;
     
-    if (beatCompleted) {
-      // Check if all prerequisites are met
-      const missingPrerequisites = dependency.requires.filter(req => 
-        !completedNodes.some(node => node.includes(req))
-      );
+    // Define story beat dependencies
+    const storyBeatDependencies = [
+      { beat: 'ionix-boss', requires: ['quantum-theory', 'equipment-safety'] },
+      { beat: 'quinn-theory', requires: ['journal-acquisition'] },
+      { beat: 'jesse-equipment', requires: ['journal-acquisition'] }
+    ];
+    
+    // Only check dependencies relevant to current day
+    const relevantDependencies = storyBeatDependencies.filter(dep => {
+      // Simple day-based filtering
+      if (dep.beat.includes('boss') && currentDay < 3) return false;
+      if (dep.beat.includes('theory') && currentDay < 2) return false;
+      return true;
+    });
+    
+    // Check if any beat exists without its prerequisites
+    for (const dependency of relevantDependencies) {
+      const beatCompleted = completedNodes.some(node => node.includes(dependency.beat));
       
-      if (missingPrerequisites.length > 0) {
-        console.warn(`[ProgressionRecovery] Narrative discontinuity detected: ${dependency.beat} completed without prerequisites: ${missingPrerequisites.join(', ')}`);
-        return true;
+      if (beatCompleted) {
+        // Check if all prerequisites are met
+        const missingPrerequisites = dependency.requires.filter(req => 
+          !completedNodes.some(node => node.includes(req))
+        );
+        
+        if (missingPrerequisites.length > 0) {
+          console.warn(`[ProgressionRecovery] Narrative discontinuity detected: ${dependency.beat} completed without prerequisites: ${missingPrerequisites.join(', ')}`);
+          return true;
+        }
       }
     }
-  }
-  
-  return false;
-}
-
-/**
- * Finds the most critical missing story beat
- */
-function findMissingStoryBeat(): { missingBeat: string | null, character: string | null } {
-  const { currentDay } = useGameStore.getState();
-  const hasJournal = useJournalStore.getState().hasJournal;
-  
-  // Check for journal first as it's the most critical
-  if (!hasJournal && currentDay >= 1) {
-    return { missingBeat: 'journal-presentation', character: 'kapoor' };
-  }
-  
-  // Check for knowledge prerequisites for ionix
-  if (currentDay >= 3) {
-    const knowledge = useKnowledgeStore.getState();
     
-    if (!knowledge.hasMasteredConcept('quantum_dosimetry_principles', 5)) {
-      return { missingBeat: 'quantum-understanding', character: 'quinn' };
+    return false;
+  }
+  
+  /**
+   * Finds the most critical missing story beat
+   */
+  function findMissingStoryBeat(): { missingBeat: string | null, character: string | null } {
+    const { currentDay } = useGameStore.getState();
+    const hasJournal = useJournalStore.getState().hasJournal;
+    
+    // Check for journal first as it's the most critical
+    if (!hasJournal && currentDay >= 1) {
+      return { missingBeat: 'journal-presentation', character: 'kapoor' };
     }
     
-    if (!knowledge.hasMasteredConcept('equipment_safety_protocol', 5)) {
-      return { missingBeat: 'equipment-safety', character: 'jesse' };
+    // Check for knowledge prerequisites for ionix
+    if (currentDay >= 3) {
+      const knowledge = useKnowledgeStore.getState() as KnowledgeState;
+      const hasMasteredConcept = knowledge.hasMasteredConcept || 
+        ((conceptId: string, level: number) => {
+          const node = knowledge.nodes.find(n => n.id === conceptId);
+          return !!node && node.discovered && node.mastery >= level;
+        });
+      
+      if (!hasMasteredConcept('quantum_dosimetry_principles', 5)) {
+        return { missingBeat: 'quantum-understanding', character: 'quinn' };
+      }
+      
+      if (!hasMasteredConcept('equipment_safety_protocol', 5)) {
+        return { missingBeat: 'equipment-safety', character: 'jesse' };
+      }
     }
+    
+    return { missingBeat: null, character: null };
   }
   
-  return { missingBeat: null, character: null };
-}
-
-/**
- * Apply heuristics to optimize the recovery plan
- */
-function optimizeRecoveryPlan(plan: RecoveryPlan): RecoveryPlan {
-  // Nothing to optimize if there are no actions
-  if (plan.requiredActions.length === 0) {
+  /**
+   * Apply heuristics to optimize the recovery plan
+   */
+  function optimizeRecoveryPlan(plan: RecoveryPlan): RecoveryPlan {
+    // Nothing to optimize if there are no actions
+    if (plan.requiredActions.length === 0) {
+      return plan;
+    }
+    
+    // Score each action across our heuristics
+    const actionScores: Record<string, number> = {};
+    
+    plan.requiredActions.forEach(action => {
+      // Combine scores from each approach, weighted by importance
+      actionScores[action] = 
+        RECOVERY_APPROACH_SCORES.CONTINUITY[action] * 1.0 +
+        RECOVERY_APPROACH_SCORES.DISRUPTION[action] * 1.5 +
+        RECOVERY_APPROACH_SCORES.COHERENCE[action] * 2.0;
+    });
+    
+    // Sort actions by score, highest first
+    const sortedActions = [...plan.requiredActions].sort((a, b) => 
+      (actionScores[b] || 0) - (actionScores[a] || 0)
+    );
+    
+    // Critical progression fixes always come first, regardless of score
+    if (sortedActions.includes('force_journal_acquisition')) {
+      sortedActions.splice(sortedActions.indexOf('force_journal_acquisition'), 1);
+      sortedActions.unshift('force_journal_acquisition');
+    }
+    
+    // Replace with optimized actions
+    plan.requiredActions = sortedActions;
+    
     return plan;
   }
   
-  // Score each action across our heuristics
-  const actionScores: Record<string, number> = {};
-  
-  plan.requiredActions.forEach(action => {
-    // Combine scores from each approach, weighted by importance
-    actionScores[action] = 
-      RECOVERY_APPROACH_SCORES.CONTINUITY[action] * 1.0 +
-      RECOVERY_APPROACH_SCORES.DISRUPTION[action] * 1.5 +
-      RECOVERY_APPROACH_SCORES.COHERENCE[action] * 2.0;
-  });
-  
-  // Sort actions by score, highest first
-  const sortedActions = [...plan.requiredActions].sort((a, b) => 
-    (actionScores[b] || 0) - (actionScores[a] || 0)
-  );
-  
-  // Critical progression fixes always come first, regardless of score
-  if (sortedActions.includes('force_journal_acquisition')) {
-    sortedActions.splice(sortedActions.indexOf('force_journal_acquisition'), 1);
-    sortedActions.unshift('force_journal_acquisition');
-  }
-  
-  // Replace with optimized actions
-  plan.requiredActions = sortedActions;
-  
-  return plan;
-}
-
-/**
- * Executes a recovery plan to fix progression issues
- */
-export function executeRecoveryPlan(plan: RecoveryPlan, interruptionType: InterruptionType = 'state_corruption'): boolean {
-  if (!plan || plan.requiredActions.length === 0) {
-    return false;
-  }
-  
-  const eventBus = useEventBus.getState();
-  
-  // Create a transaction record
-  const transactionId = `recovery-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
-  const transaction: RecoveryTransaction = {
-    id: transactionId,
-    timestamp: Date.now(),
-    interruptionType,
-    recoveryActions: [...plan.requiredActions],
-    characterId: plan.characterId,
-    nodeId: plan.nodeId,
-    dialogueId: plan.dialogueId,
-    stateBeforeRecovery: {
-      hasJournal: useJournalStore.getState().hasJournal,
-      currentDay: useGameStore.getState().currentDay,
-      completedNodes: useGameStore.getState().completedNodeIds.length,
-      hasActiveDialogue: useDialogueStateMachine.getState().activeFlow !== null,
-      knowledge: summarizeKnowledgeState()
-    },
-    successful: false,
-    gameDay: useGameStore.getState().currentDay,
-    gamePhase: useGameStore.getState().gamePhase
-  };
-  
-  // Log recovery attempt
-  console.log(`[ProgressionRecovery] Executing recovery plan with ${plan.requiredActions.length} actions - ${plan.reasoning}`, plan);
-  
-  // Track for analytics
-  eventBus.dispatch(GameEventType.UI_BUTTON_CLICKED, {
-    componentId: 'progressionRecovery',
-    action: 'recoveryAttempted',
-    metadata: {
-      actions: plan.requiredActions,
+  /**
+   * Executes a recovery plan to fix progression issues
+   */
+  export function executeRecoveryPlan(plan: RecoveryPlan, interruptionType: InterruptionType = 'state_corruption'): boolean {
+    if (!plan || plan.requiredActions.length === 0) {
+      return false;
+    }
+    
+    const eventBus = useEventBus.getState();
+    
+    // Create a transaction record
+    const transactionId = `recovery-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+    const gameState = useGameStore.getState() as GameState;
+    const transaction: RecoveryTransaction = {
+      id: transactionId,
+      timestamp: Date.now(),
+      interruptionType,
+      recoveryActions: [...plan.requiredActions],
       characterId: plan.characterId,
       nodeId: plan.nodeId,
-      interruptionType,
-      priority: plan.priority,
-      reasoning: plan.reasoning
-    }
-  });
-  
-  try {
-    // Execute each required action
-    for (const action of plan.requiredActions) {
-      switch (action) {
-        case 'force_journal_acquisition':
-          if (!useJournalStore.getState().hasJournal) {
-            console.log('[ProgressionRecovery] Forcing journal acquisition');
-            
-            // Determine appropriate journal tier
-            const relationshipLevel = useGameStore.getState().getRelationshipLevel('kapoor');
-            const journalTier = relationshipLevel >= 3 ? 'annotated' : 
-                               relationshipLevel >= 1 ? 'technical' : 'base';
-            
-            // Initialize journal
-            useJournalStore.getState().initializeJournal(journalTier);
-            
-            // Create transaction for tracking
-            useNarrativeTransaction.getState().startTransaction(
-              'journal_acquisition',
-              { 
-                source: 'progression_recovery',
-                tier: journalTier,
-                forced: true
-              },
-              'kapoor'
-            );
-            
-            // Notify system
-            eventBus.dispatch(GameEventType.JOURNAL_ACQUIRED, {
-              tier: journalTier,
-              character: 'kapoor',
-              source: 'progression_recovery',
-              forced: true
-            });
-          }
-          break;
-          
-        case 'grant_required_knowledge':
-          if (plan.requiredKnowledge && plan.characterId) {
-            console.log(`[ProgressionRecovery] Granting required knowledge: ${plan.requiredKnowledge.join(', ')}`);
-            
-            // Grant each required knowledge concept
-            plan.requiredKnowledge.forEach(conceptId => {
-              useKnowledgeStore.getState().updateMastery(conceptId, 10);
-              
-              // Determine domain based on character or concept
-              let domainId = 'general';
-              switch (plan.characterId) {
-                case 'kapoor': domainId = 'clinical'; break;
-                case 'jesse': domainId = 'quality-assurance'; break;
-                case 'quinn': domainId = 'theoretical'; break;
-              }
-              
-              // Create transaction for tracking
-              useNarrativeTransaction.getState().startTransaction(
-                'knowledge_revelation',
-                {
-                  concept: conceptId,
-                  domain: domainId,
-                  source: 'progression_recovery'
-                },
-                plan.characterId,
-                plan.nodeId
-              );
-              
-              // Notify knowledge system
-              eventBus.dispatch(GameEventType.KNOWLEDGE_GAINED, {
-                conceptId,
-                amount: 10,
-                domainId,
-                character: plan.characterId,
-                source: 'progression_recovery'
-              });
-            });
-          }
-          break;
-          
-        case 'mark_node_completed':
-          if (plan.nodeId) {
-            console.log(`[ProgressionRecovery] Marking node as completed: ${plan.nodeId}`);
-            
-            // Mark node as completed
-            useGameStore.getState().completeNode(plan.nodeId, {
-              relationshipChange: 1,
-              forced: true
-            });
-            
-            // Also mark in GameStateMachine
-            if (useGameStore.getState().markNodeCompleted) {
-              useGameStore.getState().markNodeCompleted(plan.nodeId);
-            }
-          }
-          break;
-          
-        case 'resume_dialogue':
-          if (plan.dialogueId && plan.characterId) {
-            console.log(`[ProgressionRecovery] Resuming dialogue: ${plan.dialogueId}`);
-            
-            // First ensure any active dialogue is properly closed
-            if (useDialogueStateMachine.getState().activeFlow) {
-              useDialogueStateMachine.getState().completeFlow();
-            }
-            
-            // Signal game to restart dialogue
-            eventBus.dispatch(GameEventType.UI_BUTTON_CLICKED, {
-              componentId: 'progressionRecovery',
-              action: 'restartDialogue',
-              metadata: {
-                characterId: plan.characterId,
-                nodeId: plan.nodeId,
-                dialogueId: plan.dialogueId,
-                source: 'progression_recovery'
-              }
-            });
-          }
-          break;
-          
-        case 'restart_dialogue':
-          if (plan.characterId && plan.nodeId) {
-            console.log(`[ProgressionRecovery] Restarting dialogue for ${plan.characterId} at ${plan.nodeId}`);
-            
-            // First ensure any active dialogue is properly closed
-            if (useDialogueStateMachine.getState().activeFlow) {
-              useDialogueStateMachine.getState().completeFlow();
-            }
-            
-            // Signal game to restart dialogue from beginning
-            eventBus.dispatch(GameEventType.UI_BUTTON_CLICKED, {
-              componentId: 'progressionRecovery',
-              action: 'startDialogue',
-              metadata: {
-                characterId: plan.characterId,
-                nodeId: plan.nodeId,
-                source: 'progression_recovery',
-                restartFromBeginning: true
-              }
-            });
-          }
-          break;
-          
-        case 'force_critical_path':
-          if (plan.characterId && plan.criticalPathId) {
-            console.log(`[ProgressionRecovery] Forcing critical path: ${plan.criticalPathId}`);
-            
-            // Determine if this is a journal critical path
-            if (plan.criticalPathId === 'journal-presentation') {
-              // Only force if journal doesn't exist
-              if (!useJournalStore.getState().hasJournal) {
-                // Determine journal tier
-                const relationshipLevel = useGameStore.getState().getRelationshipLevel('kapoor');
-                const journalTier = relationshipLevel >= 3 ? 'annotated' : 
-                                   relationshipLevel >= 1 ? 'technical' : 'base';
-                
-                // Initialize journal
-                useJournalStore.getState().initializeJournal(journalTier);
-                
-                // Notify system
-                eventBus.dispatch(GameEventType.JOURNAL_ACQUIRED, {
-                  tier: journalTier,
-                  character: 'kapoor',
-                  source: 'progression_recovery',
-                  forced: true
-                });
-              }
-            }
-            
-            // Signal that critical path has been forced
-            eventBus.dispatch(GameEventType.DIALOGUE_CRITICAL_PATH, {
-              dialogueId: plan.dialogueId || `recovery-${Date.now()}`,
-              characterId: plan.characterId,
-              nodeId: plan.nodeId || 'unknown',
-              criticalStateId: plan.criticalPathId,
-              playerScore: 0, // Minimal score for forced progression
-              wasRepaired: true
-            });
-          }
-          break;
-          
-        case 'repair_relationship':
-          if (plan.characterId) {
-            console.log(`[ProgressionRecovery] Repairing relationship with: ${plan.characterId}`);
-            
-            // Add minimal relationship if none exists
-            const currentRelationship = useGameStore.getState().getRelationshipLevel(plan.characterId);
-            if (currentRelationship <= 0) {
-              useGameStore.getState().updateRelationship(plan.characterId, 1);
-            }
-          }
-          break;
-          
-        case 'repair_transaction':
-          // Already handled when detecting stalled transactions
-          console.log('[ProgressionRecovery] Transactions already repaired in detection phase');
-          break;
-          
-        case 'reinsert_dialogue_node':
-          if (plan.characterId && plan.criticalPathId) {
-            console.log(`[ProgressionRecovery] Reinserting critical dialogue node: ${plan.criticalPathId}`);
-            
-            // First identify the specific story beat to reinsert
-            const storyBeat = CRITICAL_STORY_BEATS.find(beat => 
-              beat.fallbackState === plan.criticalPathId || beat.id === plan.criticalPathId
-            );
-            
-            if (storyBeat) {
-              // Signal game to insert this dialogue node
-              eventBus.dispatch(GameEventType.UI_BUTTON_CLICKED, {
-                componentId: 'progressionRecovery',
-                action: 'insertCriticalNode',
-                metadata: {
-                  characterId: plan.characterId,
-                  nodeType: storyBeat.nodeType,
-                  stateId: storyBeat.fallbackState,
-                  source: 'progression_recovery',
-                  priority: 'critical'
-                }
-              });
-              
-              // Also add a transaction record for this insertion
-              useNarrativeTransaction.getState().startTransaction(
-                'character_introduction',
-                {
-                  nodeType: storyBeat.nodeType,
-                  stateId: storyBeat.fallbackState,
-                  source: 'progression_recovery',
-                  wasReinserted: true
-                },
-                plan.characterId
-              );
-            }
-          }
-          break;
-          
-        case 'grant_required_item':
-          if (plan.requiredItems && plan.requiredItems.length > 0) {
-            console.log(`[ProgressionRecovery] Granting required items: ${plan.requiredItems.join(', ')}`);
-            
-            // Add each required item to inventory
-            plan.requiredItems.forEach(itemId => {
-              // Add item to inventory if not already present
-              const hasItem = useGameStore.getState().inventory.some(item => item.id === itemId);
-              
-              if (!hasItem) {
-                // This is a simplified version - in reality, you'd need to retrieve the full item data
-                // before adding it to inventory
-                useGameStore.getState().addToInventory({
-                  id: itemId,
-                  name: getItemName(itemId),
-                  description: `Recovery system provided ${getItemName(itemId)}`,
-                  effects: []
-                });
-                
-                // Notify system
-                eventBus.dispatch(GameEventType.ITEM_ACQUIRED, {
-                  itemId,
-                  source: 'progression_recovery',
-                  forced: true
-                });
-              }
-            });
-          }
-          break;
-          
-        default:
-          console.warn(`[ProgressionRecovery] Unhandled recovery action: ${action}`);
-      }
-    }
-    
-    // Update transaction with final state
-    transaction.stateAfterRecovery = {
-      hasJournal: useJournalStore.getState().hasJournal,
-      currentDay: useGameStore.getState().currentDay,
-      completedNodes: useGameStore.getState().completedNodeIds.length,
-      hasActiveDialogue: useDialogueStateMachine.getState().activeFlow !== null,
-      knowledge: summarizeKnowledgeState()
+      dialogueId: plan.dialogueId,
+      stateBeforeRecovery: {
+        hasJournal: useJournalStore.getState().hasJournal,
+        currentDay: gameState.currentDay,
+        completedNodes: gameState.completedNodeIds.length,
+        hasActiveDialogue: useDialogueStateMachine.getState().activeFlow !== null,
+        knowledge: summarizeKnowledgeState()
+      },
+      successful: false,
+      gameDay: gameState.currentDay,
+      gamePhase: gameState.gamePhase
     };
-    transaction.successful = true;
     
-    // Add to history
-    recoveryHistory.push(transaction);
-    
-    // Log success
-    console.log('[ProgressionRecovery] Recovery plan executed successfully');
+    // Log recovery attempt
+    console.log(`[ProgressionRecovery] Executing recovery plan with ${plan.requiredActions.length} actions - ${plan.reasoning}`, plan);
     
     // Track for analytics
     eventBus.dispatch(GameEventType.UI_BUTTON_CLICKED, {
       componentId: 'progressionRecovery',
-      action: 'recoverySucceeded',
+      action: 'recoveryAttempted',
       metadata: {
-        transactionId,
         actions: plan.requiredActions,
         characterId: plan.characterId,
         nodeId: plan.nodeId,
-        stateChange: compareStates(
-          transaction.stateBeforeRecovery, 
-          transaction.stateAfterRecovery
-        )
-      }
-    });
-    
-    return true;
-  } catch (error) {
-    // Update transaction with error
-    transaction.successful = false;
-    transaction.stateAfterRecovery = { error: String(error) };
-    
-    // Add to history
-    recoveryHistory.push(transaction);
-    
-    // Log error
-    console.error('[ProgressionRecovery] Error executing recovery plan:', error);
-    
-    // Track for analytics
-    eventBus.dispatch(GameEventType.UI_BUTTON_CLICKED, {
-      componentId: 'progressionRecovery',
-      action: 'recoveryFailed',
-      metadata: {
-        transactionId,
-        error: String(error),
-        actions: plan.requiredActions,
-        characterId: plan.characterId,
-        nodeId: plan.nodeId
-      }
-    });
-    
-    return false;
-  }
-}
-
-/**
- * Compare before and after states for telemetry
- */
-function compareStates(before: any, after: any): Record<string, any> {
-  if (!before || !after) return { incomplete: true };
-  
-  const changes: Record<string, any> = {};
-  
-  // Compare journal state
-  if (before.hasJournal !== after.hasJournal) {
-    changes.journal = { before: before.hasJournal, after: after.hasJournal };
-  }
-  
-  // Compare completed nodes count
-  if (before.completedNodes !== after.completedNodes) {
-    changes.completedNodes = { before: before.completedNodes, after: after.completedNodes };
-  }
-  
-  // Compare active dialogue state
-  if (before.hasActiveDialogue !== after.hasActiveDialogue) {
-    changes.activeDialogue = { before: before.hasActiveDialogue, after: after.hasActiveDialogue };
-  }
-  
-  return changes;
-}
-
-/**
- * Helper function to get item name from ID
- */
-function getItemName(itemId: string): string {
-  switch (itemId) {
-    case 'journal': return 'Resident Journal';
-    case 'dosimeter': return 'Personal Dosimeter';
-    case 'calibration_tool': return 'Calibration Tool';
-    default: return itemId.split('_').map(word => 
-      word.charAt(0).toUpperCase() + word.slice(1)
-    ).join(' ');
-  }
-}
-
-/**
- * Create a summary of knowledge state for telemetry
- */
-function summarizeKnowledgeState(): Record<string, any> {
-  const knowledge = useKnowledgeStore.getState();
-  
-  return {
-    totalMastery: knowledge.totalMastery,
-    domainCount: Object.keys(knowledge.domainMastery).length,
-    discoveredConcepts: knowledge.nodes.filter(n => n.discovered).length,
-    totalConcepts: knowledge.nodes.length
-  };
-}
-
-/**
- * Check for progression issues and automatically execute recovery if needed
- */
-export function checkAndRepairProgression(): boolean {
-  // First check if recovery is needed
-  if (!detectProgressionIssues()) {
-    return true; // No issues detected
-  }
-  
-  // Create recovery plan
-  const plan = createRecoveryPlan();
-  
-  // Execute plan if needed
-  if (plan) {
-    return executeRecoveryPlan(plan);
-  }
-  
-  return true;
-}
-
-/**
- * Setup automatic progression checking
- */
-export function setupProgressionRecovery(): () => void {
-  const eventBus = useEventBus.getState();
-  
-  // Array to track subscription cleanup functions
-  const cleanupFns: (() => void)[] = [];
-  
-  // Check at game load
-  cleanupFns.push(
-    eventBus.subscribe(
-      GameEventType.SESSION_STARTED,
-      () => {
-        console.log('[ProgressionRecovery] Checking progression on game load');
-        setTimeout(() => checkAndRepairProgression(), 1000);
-      }
-    )
-  );
-  
-  // Check at day/night transitions
-  cleanupFns.push(
-    eventBus.subscribe(
-      GameEventType.GAME_PHASE_CHANGED,
-      (event) => {
-        const { from, to } = event.payload;
-        
-        // When transitioning between day and night
-        if ((from === 'day' && to === 'night') || (from === 'night' && to === 'day')) {
-          console.log(`[ProgressionRecovery] Checking progression on ${from} → ${to} transition`);
-          setTimeout(() => checkAndRepairProgression(), 1000);
-        }
-      }
-    )
-  );
-  
-  // Check for dialogue interruptions
-  cleanupFns.push(
-    eventBus.subscribe(
-      GameEventType.DIALOGUE_COMPLETED,
-      (event) => {
-        const { completed, reason } = event.payload;
-        
-        // If dialogue was interrupted
-        if (!completed) {
-          console.log(`[ProgressionRecovery] Dialogue interrupted: ${reason}`);
-          
-          // Map reason to interruption type
-          let interruptionType: InterruptionType = 'dialogue_unmount';
-          if (reason === 'component_unmounted') interruptionType = 'dialogue_unmount';
-          if (reason === 'browser_refresh') interruptionType = 'browser_refresh';
-          if (reason === 'session_end') interruptionType = 'session_end';
-          
-          // Create recovery plan with specific information
-          const plan = createRecoveryPlan();
-          
-          // Execute plan if needed
-          if (plan) {
-            executeRecoveryPlan(plan, interruptionType);
-          }
-        }
-      }
-    )
-  );
-  
-  // Check periodically for stalled transactions
-  const intervalId = setInterval(() => {
-    // Check for stalled transactions
-    const transactions = useNarrativeTransaction.getState().getAllTransactions();
-    const stalledTransactions = transactions.filter(tx => 
-      tx.state === 'active' && (Date.now() - tx.startTime > 300000) // Stalled for over 5 minutes
-    );
-    
-    if (stalledTransactions.length > 0) {
-      console.log(`[ProgressionRecovery] Found ${stalledTransactions.length} stalled transactions`);
-      checkAndRepairProgression();
-    }
-  }, 60000); // Check every minute
-  
-  // Check after node completion for sequence violations
-  cleanupFns.push(
-    eventBus.subscribe(
-      GameEventType.NODE_COMPLETED,
-      () => {
-        // Short delay to let state update
-        setTimeout(() => {
-          const sequenceViolation = checkForSequenceViolations();
-          if (sequenceViolation) {
-            console.log('[ProgressionRecovery] Sequence violation detected after node completion');
-            checkAndRepairProgression();
-          }
-        }, 500);
-      }
-    )
-  );
-  
-  // Return cleanup function
-  return () => {
-    cleanupFns.forEach(cleanup => cleanup());
-    clearInterval(intervalId);
-  };
-}
-
-/**
- * Manual check for specific narrative inconsistencies
- * This can be exposed to debug systems or triggered by player reporting issues
- */
-export function performDeepProgressionValidation(): Record<string, any> {
-  // Begin by running standard validation
-  const validationResult = validateNarrativeProgression();
-  
-  // Additional checks beyond standard validation
-  const results: Record<string, any> = {
-    standardValidation: validationResult.isValid,
-    failedCheckpoints: validationResult.failedCheckpoints,
-    additionalChecks: {}
-  };
-  
-  // Check for inconsistencies between knowledge and node completion
-  const knowledgeState = useKnowledgeStore.getState();
-  const gameState = useGameStore.getState();
-  
-  // Characters should have introduced core concepts related to their expertise
-  results.additionalChecks.characterKnowledgeConsistency = {
-    kapoor: gameState.hasCompletedNode('kapoor-calibration') && 
-            knowledgeState.hasMasteredConcept('electron_equilibrium_understood', 1),
-            
-    jesse: gameState.hasCompletedNode('jesse-equipment') &&
-            knowledgeState.hasMasteredConcept('equipment_safety_protocol', 1),
-            
-    quinn: gameState.hasCompletedNode('quinn-theory') &&
-            knowledgeState.hasMasteredConcept('quantum_dosimetry_principles', 1)
-  };
-  
-  // Journal state should be consistent with progression
-  results.additionalChecks.journalConsistency = 
-    gameState.hasCompletedNode('kapoor-calibration') === useJournalStore.getState().hasJournal;
-  
-  // Narrative transactions should be properly completed
-  const transactions = useNarrativeTransaction.getState().getAllTransactions();
-  results.additionalChecks.transactionHealth = {
-    totalTransactions: transactions.length,
-    activeTransactions: transactions.filter(t => t.state === 'active').length,
-    completedTransactions: transactions.filter(t => t.state === 'completed').length,
-    stalledTransactions: transactions.filter(t => 
-      t.state === 'active' && (Date.now() - t.startTime > 60000)
-    ).length
-  };
-  
-  // Overall health assessment
-  results.needsRepair = !validationResult.isValid || 
-                       !results.additionalChecks.journalConsistency ||
-                       results.additionalChecks.transactionHealth.stalledTransactions > 0 ||
-                       Object.values(results.additionalChecks.characterKnowledgeConsistency).includes(false);
-  
-  // If repairs needed, trigger them
-  if (results.needsRepair) {
-    const plan = createRecoveryPlan();
-    if (plan) {
-      results.recoveryPlanCreated = true;
-      results.recoveryPlan = {
-        actions: plan.requiredActions,
+        interruptionType,
         priority: plan.priority,
         reasoning: plan.reasoning
-      };
+      }
+    });
+    
+    try {
+      // Execute each required action
+      for (const action of plan.requiredActions) {
+        switch (action) {
+          case 'force_journal_acquisition':
+            if (!useJournalStore.getState().hasJournal) {
+              console.log('[ProgressionRecovery] Forcing journal acquisition');
+              
+              // Determine appropriate journal tier
+              const typedGameState = useGameStore.getState() as GameState;
+              const relationshipLevel = typedGameState.getRelationshipLevel('kapoor');
+              const journalTier = relationshipLevel >= 3 ? 'annotated' : 
+                                 relationshipLevel >= 1 ? 'technical' : 'base';
+              
+              // Initialize journal
+              useJournalStore.getState().initializeJournal(journalTier);
+              
+              // Create transaction for tracking
+              useNarrativeTransaction.getState().startTransaction(
+                'journal_acquisition',
+                { 
+                  source: 'progression_recovery',
+                  tier: journalTier,
+                  forced: true
+                },
+                'kapoor'
+              );
+              
+              // Notify system
+              eventBus.dispatch(GameEventType.JOURNAL_ACQUIRED, {
+                tier: journalTier,
+                character: 'kapoor',
+                source: 'progression_recovery',
+                forced: true
+              });
+            }
+            break;
+            
+          case 'grant_required_knowledge':
+            if (plan.requiredKnowledge && plan.characterId) {
+              console.log(`[ProgressionRecovery] Granting required knowledge: ${plan.requiredKnowledge.join(', ')}`);
+              
+              // Grant each required knowledge concept
+              plan.requiredKnowledge.forEach(conceptId => {
+                useKnowledgeStore.getState().updateMastery(conceptId, 10);
+                
+                // Determine domain based on character or concept
+                let domainId = 'general';
+                switch (plan.characterId) {
+                  case 'kapoor': domainId = 'clinical'; break;
+                  case 'jesse': domainId = 'quality-assurance'; break;
+                  case 'quinn': domainId = 'theoretical'; break;
+                }
+                
+                // Create transaction for tracking
+                useNarrativeTransaction.getState().startTransaction(
+                  'knowledge_revelation',
+                  {
+                    concept: conceptId,
+                    domain: domainId,
+                    source: 'progression_recovery'
+                  },
+                  plan.characterId,
+                  plan.nodeId
+                );
+                
+                // Notify knowledge system
+                eventBus.dispatch(GameEventType.KNOWLEDGE_GAINED, {
+                  conceptId,
+                  amount: 10,
+                  domainId,
+                  character: plan.characterId,
+                  source: 'progression_recovery'
+                });
+              });
+            }
+            break;
+            
+          case 'mark_node_completed':
+            if (plan.nodeId) {
+              console.log(`[ProgressionRecovery] Marking node as completed: ${plan.nodeId}`);
+              
+              // Mark node as completed
+              useGameStore.getState().completeNode(plan.nodeId, {
+                relationshipChange: 1,
+                forced: true
+              });
+              
+              // Also mark in GameStateMachine if the method exists
+              const gameState = useGameStore.getState() as GameState;
+              if (gameState.markNodeCompleted) {
+                gameState.markNodeCompleted(plan.nodeId);
+              }
+            }
+            break;
+            
+          case 'resume_dialogue':
+            if (plan.dialogueId && plan.characterId) {
+              console.log(`[ProgressionRecovery] Resuming dialogue: ${plan.dialogueId}`);
+              
+              // First ensure any active dialogue is properly closed
+              if (useDialogueStateMachine.getState().activeFlow) {
+                useDialogueStateMachine.getState().completeFlow();
+              }
+              
+              // Signal game to restart dialogue
+              eventBus.dispatch(GameEventType.UI_BUTTON_CLICKED, {
+                componentId: 'progressionRecovery',
+                action: 'restartDialogue',
+                metadata: {
+                  characterId: plan.characterId,
+                  nodeId: plan.nodeId,
+                  dialogueId: plan.dialogueId,
+                  source: 'progression_recovery'
+                }
+              });
+            }
+            break;
+            
+          case 'restart_dialogue':
+            if (plan.characterId && plan.nodeId) {
+              console.log(`[ProgressionRecovery] Restarting dialogue for ${plan.characterId} at ${plan.nodeId}`);
+              
+              // First ensure any active dialogue is properly closed
+              if (useDialogueStateMachine.getState().activeFlow) {
+                useDialogueStateMachine.getState().completeFlow();
+              }
+              
+              // Signal game to restart dialogue from beginning
+              eventBus.dispatch(GameEventType.UI_BUTTON_CLICKED, {
+                componentId: 'progressionRecovery',
+                action: 'startDialogue',
+                metadata: {
+                  characterId: plan.characterId,
+                  nodeId: plan.nodeId,
+                  source: 'progression_recovery',
+                  restartFromBeginning: true
+                }
+              });
+            }
+            break;
+            
+          case 'force_critical_path':
+            if (plan.characterId && plan.criticalPathId) {
+              console.log(`[ProgressionRecovery] Forcing critical path: ${plan.criticalPathId}`);
+              
+              // Determine if this is a journal critical path
+              if (plan.criticalPathId === 'journal-presentation') {
+                // Only force if journal doesn't exist
+                if (!useJournalStore.getState().hasJournal) {
+                  // Determine journal tier
+                  const gameState = useGameStore.getState() as GameState;
+                  const relationshipLevel = gameState.getRelationshipLevel('kapoor');
+                  const journalTier = relationshipLevel >= 3 ? 'annotated' : 
+                                     relationshipLevel >= 1 ? 'technical' : 'base';
+                  
+                  // Initialize journal
+                  useJournalStore.getState().initializeJournal(journalTier);
+                  
+                  // Notify system
+                  eventBus.dispatch(GameEventType.JOURNAL_ACQUIRED, {
+                    tier: journalTier,
+                    character: 'kapoor',
+                    source: 'progression_recovery',
+                    forced: true
+                  });
+                }
+              }
+              
+              // Signal that critical path has been forced
+              eventBus.dispatch(GameEventType.DIALOGUE_CRITICAL_PATH, {
+                dialogueId: plan.dialogueId || `recovery-${Date.now()}`,
+                characterId: plan.characterId,
+                nodeId: plan.nodeId || 'unknown',
+                criticalStateId: plan.criticalPathId,
+                playerScore: 0, // Minimal score for forced progression
+                wasRepaired: true
+              });
+            }
+            break;
+            
+          case 'repair_relationship':
+            if (plan.characterId) {
+              console.log(`[ProgressionRecovery] Repairing relationship with: ${plan.characterId}`);
+              
+              // Add minimal relationship if none exists
+              const gameState = useGameStore.getState() as GameState;
+              const currentRelationship = gameState.getRelationshipLevel(plan.characterId);
+              if (currentRelationship <= 0 && gameState.updateRelationship) {
+                gameState.updateRelationship(plan.characterId, 1);
+              }
+            }
+            break;
+            
+          case 'repair_transaction':
+            // Already handled when detecting stalled transactions
+            console.log('[ProgressionRecovery] Transactions already repaired in detection phase');
+            break;
+            
+          case 'reinsert_dialogue_node':
+            if (plan.characterId && plan.criticalPathId) {
+              console.log(`[ProgressionRecovery] Reinserting critical dialogue node: ${plan.criticalPathId}`);
+              
+              // First identify the specific story beat to reinsert
+              const storyBeat = CRITICAL_STORY_BEATS.find(beat => 
+                beat.fallbackState === plan.criticalPathId || beat.id === plan.criticalPathId
+              );
+              
+              if (storyBeat) {
+                // Signal game to insert this dialogue node
+                eventBus.dispatch(GameEventType.UI_BUTTON_CLICKED, {
+                  componentId: 'progressionRecovery',
+                  action: 'insertCriticalNode',
+                  metadata: {
+                    characterId: plan.characterId,
+                    nodeType: storyBeat.nodeType,
+                    stateId: storyBeat.fallbackState,
+                    source: 'progression_recovery',
+                    priority: 'critical'
+                  }
+                });
+                
+                // Also add a transaction record for this insertion
+                useNarrativeTransaction.getState().startTransaction(
+                  'character_introduction',
+                  {
+                    nodeType: storyBeat.nodeType,
+                    stateId: storyBeat.fallbackState,
+                    source: 'progression_recovery',
+                    wasReinserted: true
+                  },
+                  plan.characterId
+                );
+              }
+            }
+            break;
+            
+          case 'grant_required_item':
+            if (plan.requiredItems && plan.requiredItems.length > 0) {
+              console.log(`[ProgressionRecovery] Granting required items: ${plan.requiredItems.join(', ')}`);
+              
+              // Add each required item to inventory
+              plan.requiredItems.forEach(itemId => {
+                // Add item to inventory if not already present
+                const gameState = useGameStore.getState() as GameState;
+                const hasItem = gameState.inventory.some(item => item.id === itemId);
+                
+                if (!hasItem) {
+                  // Create a basic item with required properties
+                  const newItem: Item = {
+                    id: itemId,
+                    name: getItemName(itemId),
+                    description: `Recovery system provided ${getItemName(itemId)}`,
+                    effects: [],
+                    rarity: 'common'  // Default rarity
+                  };
+                  
+                  gameState.addToInventory(newItem);
+                  
+                  // Notify system
+                  eventBus.dispatch(GameEventType.ITEM_ACQUIRED, {
+                    itemId,
+                    source: 'progression_recovery',
+                    forced: true
+                  });
+                }
+              });
+            }
+            break;
+            
+          default:
+            console.warn(`[ProgressionRecovery] Unhandled recovery action: ${action}`);
+        }
+      }
       
-      // Execute recovery (uncomment to auto-execute)
-      // results.recoveryExecuted = executeRecoveryPlan(plan, 'manual_request');
+      // Update transaction with final state
+      transaction.stateAfterRecovery = {
+        hasJournal: useJournalStore.getState().hasJournal,
+        currentDay: useGameStore.getState().currentDay,
+        completedNodes: useGameStore.getState().completedNodeIds.length,
+        hasActiveDialogue: useDialogueStateMachine.getState().activeFlow !== null,
+        knowledge: summarizeKnowledgeState()
+      };
+      transaction.successful = true;
+      
+      // Add to history
+      recoveryHistory.push(transaction);
+      
+      // Log success
+      console.log('[ProgressionRecovery] Recovery plan executed successfully');
+      
+      // Track for analytics
+      eventBus.dispatch(GameEventType.UI_BUTTON_CLICKED, {
+        componentId: 'progressionRecovery',
+        action: 'recoverySucceeded',
+        metadata: {
+          transactionId,
+          actions: plan.requiredActions,
+          characterId: plan.characterId,
+          nodeId: plan.nodeId,
+          stateChange: compareStates(
+            transaction.stateBeforeRecovery, 
+            transaction.stateAfterRecovery
+          )
+        }
+      });
+      
+      return true;
+    } catch (error) {
+      // Update transaction with error
+      transaction.successful = false;
+      transaction.stateAfterRecovery = { error: String(error) };
+      
+      // Add to history
+      recoveryHistory.push(transaction);
+      
+      // Log error
+      console.error('[ProgressionRecovery] Error executing recovery plan:', error);
+      
+      // Track for analytics
+      eventBus.dispatch(GameEventType.UI_BUTTON_CLICKED, {
+        componentId: 'progressionRecovery',
+        action: 'recoveryFailed',
+        metadata: {
+          transactionId,
+          error: String(error),
+          actions: plan.requiredActions,
+          characterId: plan.characterId,
+          nodeId: plan.nodeId
+        }
+      });
+      
+      return false;
     }
   }
   
-  return results;
-}
-
-export default {
-  detectProgressionIssues,
-  createRecoveryPlan,
-  executeRecoveryPlan,
-  checkAndRepairProgression,
-  setupProgressionRecovery,
-  performDeepProgressionValidation,
-  getRecoveryHistory: () => recoveryHistory,
-};
+  /**
+   * Compare before and after states for telemetry
+   */
+  function compareStates(before: any, after: any): Record<string, any> {
+    if (!before || !after) return { incomplete: true };
+    
+    const changes: Record<string, any> = {};
+    
+    // Compare journal state
+    if (before.hasJournal !== after.hasJournal) {
+      changes.journal = { before: before.hasJournal, after: after.hasJournal };
+    }
+    
+    // Compare completed nodes count
+    if (before.completedNodes !== after.completedNodes) {
+      changes.completedNodes = { before: before.completedNodes, after: after.completedNodes };
+    }
+    
+    // Compare active dialogue state
+    if (before.hasActiveDialogue !== after.hasActiveDialogue) {
+      changes.activeDialogue = { before: before.hasActiveDialogue, after: after.hasActiveDialogue };
+    }
+    
+    return changes;
+  }
+  
+  /**
+   * Helper function to get item name from ID
+   */
+  function getItemName(itemId: string): string {
+    switch (itemId) {
+      case 'journal': return 'Resident Journal';
+      case 'dosimeter': return 'Personal Dosimeter';
+      case 'calibration_tool': return 'Calibration Tool';
+      default: return itemId.split('_').map(word => 
+        word.charAt(0).toUpperCase() + word.slice(1)
+      ).join(' ');
+    }
+  }
+  
+  /**
+   * Create a summary of knowledge state for telemetry
+   */
+  function summarizeKnowledgeState(): Record<string, any> {
+    const knowledge = useKnowledgeStore.getState() as KnowledgeState;
+    
+    return {
+      totalMastery: knowledge.totalMastery,
+      domainCount: Object.keys(knowledge.domainMastery).length,
+      discoveredConcepts: knowledge.nodes.filter(n => n.discovered).length,
+      totalConcepts: knowledge.nodes.length
+    };
+  }
+  
+  /**
+   * Check for progression issues and automatically execute recovery if needed
+   */
+  export function checkAndRepairProgression(): boolean {
+    // First check if recovery is needed
+    if (!detectProgressionIssues()) {
+      return true; // No issues detected
+    }
+    
+    // Create recovery plan
+    const plan = createRecoveryPlan();
+    
+    // Execute plan if needed
+    if (plan) {
+      return executeRecoveryPlan(plan);
+    }
+    
+    return true;
+  }
+  
+  /**
+   * Setup automatic progression checking
+   */
+  export function setupProgressionRecovery(): () => void {
+    const eventBus = useEventBus.getState();
+    
+    // Array to track subscription cleanup functions
+    const cleanupFns: (() => void)[] = [];
+    
+    // Check at game load
+    cleanupFns.push(
+      eventBus.subscribe(
+        GameEventType.SESSION_STARTED,
+        () => {
+          console.log('[ProgressionRecovery] Checking progression on game load');
+          setTimeout(() => checkAndRepairProgression(), 1000);
+        }
+      )
+    );
+    
+    // Check at day/night transitions
+    cleanupFns.push(
+      eventBus.subscribe<{payload: {from: string, to: string}}>(
+        GameEventType.GAME_PHASE_CHANGED,
+        (event) => {
+          const { from, to } = event.payload;
+          
+          // When transitioning between day and night
+          if ((from === 'day' && to === 'night') || (from === 'night' && to === 'day')) {
+            console.log(`[ProgressionRecovery] Checking progression on ${from} → ${to} transition`);
+            setTimeout(() => checkAndRepairProgression(), 1000);
+          }
+        }
+      )
+    );
+    
+    // Check for dialogue interruptions
+    cleanupFns.push(
+      eventBus.subscribe<{payload: {completed: boolean, reason: string}}>(
+        GameEventType.DIALOGUE_COMPLETED,
+        (event) => {
+          const { completed, reason } = event.payload;
+          
+          // If dialogue was interrupted
+          if (!completed) {
+            console.log(`[ProgressionRecovery] Dialogue interrupted: ${reason}`);
+            
+            // Map reason to interruption type
+            let interruptionType: InterruptionType = 'dialogue_unmount';
+            if (reason === 'component_unmounted') interruptionType = 'dialogue_unmount';
+            if (reason === 'browser_refresh') interruptionType = 'browser_refresh';
+            if (reason === 'session_end') interruptionType = 'session_end';
+            
+            // Create recovery plan with specific information
+            const plan = createRecoveryPlan();
+            
+            // Execute plan if needed
+            if (plan) {
+              executeRecoveryPlan(plan, interruptionType);
+            }
+          }
+        }
+      )
+    );
+    
+    // Check periodically for stalled transactions
+    const intervalId = setInterval(() => {
+      // Check for stalled transactions
+      const transactions = useNarrativeTransaction.getState().getAllTransactions();
+      const stalledTransactions = transactions.filter(tx => 
+        tx.state === 'active' && (Date.now() - tx.startTime > 300000) // Stalled for over 5 minutes
+      );
+      
+      if (stalledTransactions.length > 0) {
+        console.log(`[ProgressionRecovery] Found ${stalledTransactions.length} stalled transactions`);
+        checkAndRepairProgression();
+      }
+    }, 60000); // Check every minute
+    
+    // Check after node completion for sequence violations
+    cleanupFns.push(
+      eventBus.subscribe(
+        GameEventType.NODE_COMPLETED,
+        () => {
+          // Short delay to let state update
+          setTimeout(() => {
+            const sequenceViolation = checkForSequenceViolations();
+            if (sequenceViolation) {
+              console.log('[ProgressionRecovery] Sequence violation detected after node completion');
+              checkAndRepairProgression();
+            }
+          }, 500);
+        }
+      )
+    );
+    
+    // Return cleanup function
+    return () => {
+      cleanupFns.forEach(cleanup => cleanup());
+      clearInterval(intervalId);
+    };
+  }
+  
+  /**
+   * Manual check for specific narrative inconsistencies
+   * This can be exposed to debug systems or triggered by player reporting issues
+   */
+  export function performDeepProgressionValidation(): Record<string, any> {
+    // Begin by running standard validation
+    const validationResult = validateNarrativeProgression();
+    
+    // Additional checks beyond standard validation
+    const results: Record<string, any> = {
+      standardValidation: validationResult.isValid,
+      failedCheckpoints: validationResult.failedCheckpoints,
+      additionalChecks: {}
+    };
+    
+    // Check for inconsistencies between knowledge and node completion
+    const knowledgeState = useKnowledgeStore.getState() as KnowledgeState;
+    const gameState = useGameStore.getState() as GameState;
+    
+    // Add fallback hasMasteredConcept if not present
+    const hasMasteredConcept = knowledgeState.hasMasteredConcept || 
+      ((conceptId: string, level: number) => {
+        const node = knowledgeState.nodes.find(n => n.id === conceptId);
+        return !!node && node.discovered && node.mastery >= level;
+      });
+    
+    // Characters should have introduced core concepts related to their expertise
+    const hasCompletedNode = (nodeId: string) => 
+      gameState.completedNodeIds.includes(nodeId);
+    
+    results.additionalChecks.characterKnowledgeConsistency = {
+      kapoor: hasCompletedNode('kapoor-calibration') && 
+              hasMasteredConcept('electron_equilibrium_understood', 1),
+              
+      jesse: hasCompletedNode('jesse-equipment') &&
+              hasMasteredConcept('equipment_safety_protocol', 1),
+              
+      quinn: hasCompletedNode('quinn-theory') &&
+              hasMasteredConcept('quantum_dosimetry_principles', 1)
+    };
+    
+    // Journal state should be consistent with progression
+    results.additionalChecks.journalConsistency = 
+      hasCompletedNode('kapoor-calibration') === useJournalStore.getState().hasJournal;
+    
+    // Narrative transactions should be properly completed
+    const transactions = useNarrativeTransaction.getState().getAllTransactions();
+    results.additionalChecks.transactionHealth = {
+      totalTransactions: transactions.length,
+      activeTransactions: transactions.filter(t => t.state === 'active').length,
+      completedTransactions: transactions.filter(t => t.state === 'completed').length,
+      stalledTransactions: transactions.filter(t => 
+        t.state === 'active' && (Date.now() - t.startTime > 60000)
+      ).length
+    };
+    
+    // Overall health assessment
+    results.needsRepair = !validationResult.isValid || 
+                         !results.additionalChecks.journalConsistency ||
+                         results.additionalChecks.transactionHealth.stalledTransactions > 0 ||
+                         Object.values(results.additionalChecks.characterKnowledgeConsistency).includes(false);
+    
+    // If repairs needed, trigger them
+    if (results.needsRepair) {
+      const plan = createRecoveryPlan();
+      if (plan) {
+        results.recoveryPlanCreated = true;
+        results.recoveryPlan = {
+          actions: plan.requiredActions,
+          priority: plan.priority,
+          reasoning: plan.reasoning
+        };
+        
+        // Execute recovery (uncomment to auto-execute)
+        // results.recoveryExecuted = executeRecoveryPlan(plan, 'manual_request');
+      }
+    }
+    
+    return results;
+  }
+  
+  export default {
+    detectProgressionIssues,
+    createRecoveryPlan,
+    executeRecoveryPlan,
+    checkAndRepairProgression,
+    setupProgressionRecovery,
+    performDeepProgressionValidation,
+    getRecoveryHistory: () => recoveryHistory,
+  };

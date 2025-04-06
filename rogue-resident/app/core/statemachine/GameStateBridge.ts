@@ -33,7 +33,7 @@ export function initializeStateBridge(): () => void {
   const eventBus = useEventBus.getState();
   
   // 1. Subscribe to state machine's game state changes with proper typing
-  const unsubGameState = useGameStateMachine.subscribe<GameState>(
+  const unsubGameState = useGameStateMachine.subscribe(
     state => state.gameState,
     (gameState: GameState) => {
       // Only update store if different (prevents loops)
@@ -45,7 +45,7 @@ export function initializeStateBridge(): () => void {
   );
   
   // 2. Subscribe to state machine's phase changes with proper typing
-  const unsubGamePhase = useGameStateMachine.subscribe<GamePhase>(
+  const unsubGamePhase = useGameStateMachine.subscribe(
     state => state.gamePhase,
     (gamePhase: GamePhase) => {
       // Only update store if different (prevents loops)

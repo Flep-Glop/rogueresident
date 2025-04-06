@@ -17,7 +17,32 @@ import { useGameStore } from '../../store/gameStore';
 import { useKnowledgeStore } from '../../store/knowledgeStore';
 import { useGameStateMachine } from '../statemachine/GameStateMachine';
 import { useJournalStore } from '../../store/journalStore'; // Added import for journal store
-import { playSoundEffect, flashScreen } from './CentralEventBus';
+
+// Define SoundEffect type to include dialogue-specific sounds
+type SoundEffect = 
+  | 'click' 
+  | 'success' 
+  | 'failure'
+  | 'relationship-up'
+  | 'relationship-down'
+  | 'rare-item'
+  | 'uncommon-item'
+  | 'common-item';
+
+// Helper functions for effects with proper typing
+function playSoundEffect(effect: SoundEffect, volume?: number) {
+  useEventBus.getState().dispatch(GameEventType.EFFECT_SOUND_PLAYED, {
+    effect,
+    volume: volume || 0.5
+  });
+}
+
+function flashScreen(color: string, duration?: number) {
+  useEventBus.getState().dispatch(GameEventType.EFFECT_SCREEN_FLASH, {
+    color,
+    duration: duration || 300
+  });
+}
 
 // Dialogue option selection payload
 interface DialogueOptionPayload {
@@ -40,6 +65,25 @@ interface JournalAcquisitionPayload {
   character: string;
   source: string;
   nodeId?: string;
+}
+
+// Dialogue completion payload
+interface DialogueCompletionPayload {
+  flowId: string;
+  completed: boolean;
+  reason?: string;
+  character?: string;
+  nodeId?: string;
+}
+
+// Critical path payload
+interface DialogueCriticalPathPayload {
+  dialogueId: string;
+  characterId: string;
+  nodeId: string;
+  criticalStateId: string;
+  playerScore: number;
+  wasRepaired?: boolean;
 }
 
 /**
@@ -76,13 +120,19 @@ export function initializeDialogueEventHandlers() {
         
         // Apply character relationship changes
         if (relationshipChange && character) {
-          useGameStore.getState().updateRelationship(character, relationshipChange);
-          
-          // Visual feedback for relationship changes
-          if (relationshipChange > 0) {
-            playSoundEffect('relationship-up', 0.6);
-          } else if (relationshipChange < 0) {
-            playSoundEffect('relationship-down', 0.6);
+          // Check if updateRelationship exists before calling it
+          const gameStore = useGameStore.getState();
+          if (typeof gameStore.updateRelationship === 'function') {
+            gameStore.updateRelationship(character, relationshipChange);
+            
+            // Visual feedback for relationship changes
+            if (relationshipChange > 0) {
+              playSoundEffect('relationship-up', 0.6);
+            } else if (relationshipChange < 0) {
+              playSoundEffect('relationship-down', 0.6);
+            }
+          } else {
+            console.warn('[DialogueEventHandlers] updateRelationship not available in gameStore');
           }
         }
         
@@ -165,7 +215,7 @@ export function initializeDialogueEventHandlers() {
   
   // ======== Handle Dialogue Completion ========
   subscriptions.push(
-    eventBus.subscribe(
+    eventBus.subscribe<DialogueCompletionPayload>(
       GameEventType.DIALOGUE_COMPLETED,
       (event) => {
         const { flowId, completed, character, nodeId } = event.payload;
@@ -193,10 +243,10 @@ export function initializeDialogueEventHandlers() {
   
   // ======== Handle Critical Path Events ========
   subscriptions.push(
-    eventBus.subscribe(
+    eventBus.subscribe<DialogueCriticalPathPayload>(
       GameEventType.DIALOGUE_CRITICAL_PATH,
       (event) => {
-        const { dialogueId, characterId, criticalStateId, playerScore } = event.payload;
+        const { dialogueId, characterId, criticalStateId, playerScore, nodeId } = event.payload;
         
         // Process specific critical path events
         if (criticalStateId === 'journal-presentation' && characterId === 'kapoor') {

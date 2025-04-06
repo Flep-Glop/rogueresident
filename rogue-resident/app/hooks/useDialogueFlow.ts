@@ -8,13 +8,41 @@
  */
 
 import { useState, useEffect, useRef } from 'react';
-import { useEventBus, GameEventType } from '../core/events/CentralEventBus';
-import { useDialogueStateMachine } from '../core/dialogue/DialogueStateMachine';
+import { useEventBus } from '../core/events/CentralEventBus';
+import { GameEventType } from '../core/events/EventTypes';
+import { useDialogueStateMachine, DialogueContext } from '../core/dialogue/DialogueStateMachine';
 import { shallow } from 'zustand/shallow';
 
-// Type imports
-import type { DialogueStage, DialogueOption } from '../core/events/EventTypes';
-import type { DialogueState, DialogueContext } from '../core/dialogue/DialogueStateMachine';
+// Define types that were previously imported
+export interface DialogueStage {
+  id: string;
+  text: string;
+  options?: DialogueOption[];
+  nextStageId?: string;
+  isConclusion?: boolean;
+  isCriticalPath?: boolean;
+  isMandatory?: boolean;
+  type?: string;
+  onEnter?: (context: DialogueContext) => void;
+  onExit?: (context: DialogueContext) => void;
+}
+
+export interface DialogueOption {
+  id: string;
+  text: string;
+  responseText?: string;
+  nextStageId?: string;
+  insightGain?: number;
+  relationshipChange?: number;
+  knowledgeGain?: {
+    conceptId: string;
+    domainId: string;
+    amount: number;
+  };
+  triggersBackstory?: boolean;
+  isCriticalPath?: boolean;
+  condition?: (context: DialogueContext) => boolean;
+}
 
 // Interface for hook properties
 interface UseDialogueFlowProps {
@@ -116,7 +144,7 @@ export function useDialogueFlow({
     if (initializedRef.current) return;
     
     // Convert our stages to state machine format
-    const states: Record<string, DialogueState> = {};
+    const states: Record<string, any> = {};
     const criticalPathIds: string[] = [];
     
     stages.forEach(stage => {
@@ -131,7 +159,7 @@ export function useDialogueFlow({
       // Create state definition
       states[stage.id] = {
         id: stage.id,
-        type: stateType as any,
+        type: stateType,
         text: stage.text,
         options: stage.options?.map(option => ({
           id: option.id,
@@ -166,7 +194,7 @@ export function useDialogueFlow({
     // Initialize in state machine
     stateMachine.initializeFlow({
       id: dialogueFlowIdRef.current,
-      initialStateId,
+      initialStateId: initialStageId,
       states,
       context: initialContext,
       progressionCheckpoints: criticalPathIds,
@@ -213,7 +241,7 @@ export function useDialogueFlow({
     // 3. We store the unsubscribe function to clean up properly
     const unsubState = useDialogueStateMachine.subscribe(
       state => state.currentState?.id,
-      (stateId: string | undefined) => {
+      (stateId) => {
         if (stateId && stateId !== currentStageId) {
           // Keep previous state ID for transitions
           prevStageIdRef.current = currentStageId;
@@ -333,7 +361,5 @@ export function useDialogueFlow({
     }
   };
 }
-
-export type { DialogueStage, DialogueOption };
 
 export default useDialogueFlow;

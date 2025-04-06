@@ -13,7 +13,8 @@
 import { useGameStore } from '../../store/gameStore';
 import { useJournalStore } from '../../store/journalStore';
 import { useKnowledgeStore } from '../../store/knowledgeStore';
-import { useEventBus, GameEventType } from '../events/CentralEventBus';
+import { useEventBus } from '../events/CentralEventBus';
+import { GameEventType } from '../events/EventTypes';
 import { useNarrativeTransaction } from '../dialogue/NarrativeTransaction';
 import { validateDialogueProgression, repairDialogueProgression } from '../dialogue/DialogueProgressionHelpers';
 
@@ -38,6 +39,51 @@ export interface ValidationResult {
   gameDay: number;
   gamePhase: string;
   narrativeState?: Record<string, any>;
+}
+
+// Extend the interface to define domain types
+interface KnowledgeState {
+  totalMastery: number;
+  domainMastery: Record<KnowledgeDomain, number>;
+  nodes: Array<{
+    id: string;
+    name: string;
+    domain: string;
+    discovered: boolean;
+    mastery: number;
+  }>;
+  // Add a type definition for the missing method
+  hasMasteredConcept: (conceptId: string, level?: number) => boolean;
+}
+
+// Extend GameState with missing methods
+interface GameState {
+  completedNodeIds: string[];
+  currentDay: number;
+  gamePhase: string;
+  gameState: string;
+  inventory: Array<{id: string, [key: string]: any}>;
+  completeNode: (nodeId: string, payload?: any) => void;
+  // The methods that were missing
+  getRelationshipLevel: (characterId: string) => number;
+  hasCompletedNode?: (nodeId: string) => boolean;
+  setRelationship?: (characterId: string, level: number) => void;
+}
+
+// Define domain types
+type KnowledgeDomain = 
+  | 'radiation-physics'
+  | 'quality-assurance'
+  | 'clinical-practice'
+  | 'radiation-protection'
+  | 'technical'
+  | 'theoretical'
+  | 'general';
+
+// Define a type for state change
+interface StateChangePayload {
+  from: string;
+  to: string;
 }
 
 /**
@@ -68,7 +114,8 @@ const NARRATIVE_CHECKPOINTS: NarrativeCheckpoint[] = [
     requiredItems: ['journal'],
     verificationFunction: () => {
       // Verify equipment safety knowledge exists
-      return useKnowledgeStore.getState().hasMasteredConcept('equipment_safety_protocol', 5);
+      const knowledgeState = useKnowledgeStore.getState() as KnowledgeState;
+      return knowledgeState.hasMasteredConcept('equipment_safety_protocol', 5);
     }
   },
   
@@ -81,7 +128,8 @@ const NARRATIVE_CHECKPOINTS: NarrativeCheckpoint[] = [
     requiredItems: ['journal'],
     verificationFunction: () => {
       // Verify quantum theory knowledge exists
-      return useKnowledgeStore.getState().hasMasteredConcept('quantum_dosimetry_principles', 5);
+      const knowledgeState = useKnowledgeStore.getState() as KnowledgeState;
+      return knowledgeState.hasMasteredConcept('quantum_dosimetry_principles', 5);
     }
   },
   
@@ -95,7 +143,8 @@ const NARRATIVE_CHECKPOINTS: NarrativeCheckpoint[] = [
     requiredKnowledge: ['radiation_dose_concepts', 'calibration_procedures'],
     verificationFunction: () => {
       // Verify boss preparation status
-      return useGameStore.getState().hasCompletedNode('boss-preparation');
+      const gameState = useGameStore.getState();
+      return gameState.completedNodeIds.includes('boss-preparation');
     }
   },
   
@@ -109,7 +158,8 @@ const NARRATIVE_CHECKPOINTS: NarrativeCheckpoint[] = [
     requiredKnowledge: ['quantum_dosimetry_principles'],
     verificationFunction: () => {
       // Check if player has discovered the Ionix concept
-      return useKnowledgeStore.getState().hasMasteredConcept('ionix_anomaly', 1);
+      const knowledgeState = useKnowledgeStore.getState() as KnowledgeState;
+      return knowledgeState.hasMasteredConcept('ionix_anomaly', 1);
     }
   },
   
@@ -121,7 +171,8 @@ const NARRATIVE_CHECKPOINTS: NarrativeCheckpoint[] = [
     nodeType: 'characterDevelopment',
     verificationFunction: () => {
       // Check if relationship has reached minimum level
-      return useGameStore.getState().getRelationshipLevel('kapoor') >= 1;
+      const gameState = useGameStore.getState() as GameState;
+      return gameState.getRelationshipLevel('kapoor') >= 1;
     }
   },
   
@@ -188,7 +239,7 @@ const NARRATIVE_SEQUENCE_GRAPH = {
  * should have been reached by this point in the game are valid.
  */
 export function validateNarrativeProgression(): ValidationResult {
-  const gameStore = useGameStore.getState();
+  const gameStore = useGameStore.getState() as GameState;
   const result: ValidationResult = {
     isValid: true,
     failedCheckpoints: [],
@@ -274,7 +325,7 @@ export function validateNarrativeProgression(): ValidationResult {
         }
         
         if (checkpoint.requiredKnowledge) {
-          const knowledge = useKnowledgeStore.getState();
+          const knowledge = useKnowledgeStore.getState() as KnowledgeState;
           const missingKnowledge = checkpoint.requiredKnowledge.filter(
             conceptId => !knowledge.hasMasteredConcept(conceptId, 5)
           );
@@ -315,9 +366,9 @@ export function validateNarrativeProgression(): ValidationResult {
     hasJournal: useJournalStore.getState().hasJournal,
     completedNodes: gameStore.completedNodeIds,
     relationships: {
-      kapoor: gameStore.getRelationshipLevel('kapoor'),
-      jesse: gameStore.getRelationshipLevel('jesse'),
-      quinn: gameStore.getRelationshipLevel('quinn')
+      kapoor: (gameStore as GameState).getRelationshipLevel('kapoor'),
+      jesse: (gameStore as GameState).getRelationshipLevel('jesse'),
+      quinn: (gameStore as GameState).getRelationshipLevel('quinn')
     },
     knowledge: summarizeKnowledgeState()
   };
@@ -380,7 +431,7 @@ function validateSequenceCorrectness(result: ValidationResult): void {
  * Creates a summary of the player's knowledge state for telemetry
  */
 function summarizeKnowledgeState(): Record<string, any> {
-  const knowledge = useKnowledgeStore.getState();
+  const knowledge = useKnowledgeStore.getState() as KnowledgeState;
   
   // Get core concepts for each domain
   const domains = Object.keys(knowledge.domainMastery);
@@ -393,8 +444,9 @@ function summarizeKnowledgeState(): Record<string, any> {
   
   // Summarize each domain
   domains.forEach(domain => {
+    const domainKey = domain as KnowledgeDomain;
     knowledgeSummary.domains[domain] = {
-      mastery: knowledge.domainMastery[domain as any],
+      mastery: knowledge.domainMastery[domainKey],
       // Get top 5 concepts in this domain
       keyConcepts: knowledge.nodes
         .filter(node => node.domain === domain && node.discovered)
@@ -415,7 +467,9 @@ function summarizeKnowledgeState(): Record<string, any> {
  * Sends telemetry data about validation results
  */
 function sendValidationTelemetry(result: ValidationResult): void {
-  useEventBus.getState().dispatch(GameEventType.UI_BUTTON_CLICKED, {
+  const eventBus = useEventBus.getState();
+  
+  eventBus.dispatch(GameEventType.UI_BUTTON_CLICKED, {
     componentId: 'narrativeProgressionValidator',
     action: result.isValid ? 'validationPassed' : 'validationFailed',
     metadata: {
@@ -461,9 +515,7 @@ export function repairNarrativeProgression(result: ValidationResult): boolean {
     eventBus.dispatch(GameEventType.PROGRESSION_REPAIR, {
       checkpointId,
       description: checkpoint.description,
-      forced: true,
-      prevState: { valid: false },
-      newState: { valid: true, repaired: true }
+      forced: true
     });
     
     try {
@@ -475,7 +527,8 @@ export function repairNarrativeProgression(result: ValidationResult): boolean {
             console.log('[NarrativeProgressionValidator] Forcing journal acquisition');
             
             // Create appropriate journal tier based on relationship
-            const relationshipLevel = useGameStore.getState().getRelationshipLevel('kapoor');
+            const gameState = useGameStore.getState() as GameState;
+            const relationshipLevel = gameState.getRelationshipLevel('kapoor');
             const journalTier = relationshipLevel >= 3 ? 'annotated' : 
                                relationshipLevel >= 1 ? 'technical' : 'base';
             
@@ -504,7 +557,7 @@ export function repairNarrativeProgression(result: ValidationResult): boolean {
           
         case 'equipment-safety-training':
           // Ensure equipment safety knowledge exists
-          if (!useKnowledgeStore.getState().hasMasteredConcept('equipment_safety_protocol', 5)) {
+          if (!(useKnowledgeStore.getState() as KnowledgeState).hasMasteredConcept('equipment_safety_protocol', 5)) {
             console.log('[NarrativeProgressionValidator] Forcing equipment safety knowledge');
             
             // Grant minimal knowledge level
@@ -534,7 +587,7 @@ export function repairNarrativeProgression(result: ValidationResult): boolean {
           
         case 'quantum-theory-introduction':
           // Ensure quantum theory knowledge exists
-          if (!useKnowledgeStore.getState().hasMasteredConcept('quantum_dosimetry_principles', 5)) {
+          if (!(useKnowledgeStore.getState() as KnowledgeState).hasMasteredConcept('quantum_dosimetry_principles', 5)) {
             console.log('[NarrativeProgressionValidator] Forcing quantum theory knowledge');
             
             // Grant minimal knowledge level
@@ -564,7 +617,8 @@ export function repairNarrativeProgression(result: ValidationResult): boolean {
           
         case 'boss-preparation':
           // Ensure boss preparation has been done
-          if (!useGameStore.getState().hasCompletedNode('boss-preparation')) {
+          const gameState = useGameStore.getState();
+          if (!gameState.completedNodeIds.includes('boss-preparation')) {
             console.log('[NarrativeProgressionValidator] Forcing boss preparation completion');
             
             // Find character with highest relationship
@@ -572,8 +626,9 @@ export function repairNarrativeProgression(result: ValidationResult): boolean {
             let highestRelationship = '';
             let maxLevel = -1;
             
+            const typedGameState = gameState as GameState;
             characters.forEach(character => {
-              const level = useGameStore.getState().getRelationshipLevel(character);
+              const level = typedGameState.getRelationshipLevel(character);
               if (level > maxLevel) {
                 maxLevel = level;
                 highestRelationship = character;
@@ -584,7 +639,7 @@ export function repairNarrativeProgression(result: ValidationResult): boolean {
             const characterId = highestRelationship || 'kapoor';
             
             // Mark node as completed
-            useGameStore.getState().completeNode('boss-preparation', {
+            gameState.completeNode('boss-preparation', {
               character: characterId,
               relationshipChange: 1,
               forced: true
@@ -604,7 +659,7 @@ export function repairNarrativeProgression(result: ValidationResult): boolean {
           
         case 'ionix-introduction':
           // Ensure ionix anomaly concept is introduced
-          if (!useKnowledgeStore.getState().hasMasteredConcept('ionix_anomaly', 1)) {
+          if (!(useKnowledgeStore.getState() as KnowledgeState).hasMasteredConcept('ionix_anomaly', 1)) {
             console.log('[NarrativeProgressionValidator] Forcing ionix anomaly introduction');
             
             // Grant minimal knowledge level
@@ -631,21 +686,26 @@ export function repairNarrativeProgression(result: ValidationResult): boolean {
           const characterId = checkpointId.split('-').pop() || '';
           
           // Ensure minimal relationship level
-          if (useGameStore.getState().getRelationshipLevel(characterId) < 1) {
+          const typedGameState = useGameStore.getState() as GameState;
+          if (typedGameState.getRelationshipLevel(characterId) < 1) {
             console.log(`[NarrativeProgressionValidator] Forcing minimal relationship with ${characterId}`);
             
-            // Set relationship to minimal level
-            useGameStore.getState().setRelationship(characterId, 1);
-            
-            // Create transaction record
-            useNarrativeTransaction.getState().startTransaction(
-              'character_introduction',
-              { 
-                relationshipLevel: 1,
-                source: 'progression_repair' 
-              },
-              characterId
-            );
+            // Set relationship to minimal level if the method exists
+            if (typedGameState.setRelationship) {
+              typedGameState.setRelationship(characterId, 1);
+              
+              // Create transaction record
+              useNarrativeTransaction.getState().startTransaction(
+                'character_introduction',
+                { 
+                  relationshipLevel: 1,
+                  source: 'progression_repair' 
+                },
+                characterId
+              );
+            } else {
+              console.warn(`[NarrativeProgressionValidator] Cannot repair relationship - setRelationship not available`);
+            }
           }
           break;
           
@@ -769,7 +829,7 @@ export function validateAndRepairDialogue(characterId: string, nodeId: string): 
  * Ensures relationships are developing appropriately for game progress
  */
 export function validateCharacterRelationships(): boolean {
-  const gameStore = useGameStore.getState();
+  const gameStore = useGameStore.getState() as GameState;
   const { currentDay } = gameStore;
   let isValid = true;
   
@@ -805,7 +865,7 @@ export function validateCharacterRelationships(): boolean {
  * Ensures progression milestones are appropriately distributed
  */
 export function validateNarrativePacing(): Record<string, any> {
-  const gameStore = useGameStore.getState();
+  const gameStore = useGameStore.getState() as GameState;
   const { currentDay } = gameStore;
   
   // Track critical narrative moments completed by day
@@ -831,7 +891,7 @@ export function validateNarrativePacing(): Record<string, any> {
     characterMoments,
     missingCharacters,
     pacingStatus: 'on_track',
-    recommendations: []
+    recommendations: [] as string[]
   };
   
   // Add pacing recommendations
@@ -866,7 +926,7 @@ export function setupNarrativeValidation(): () => void {
   const eventBus = useEventBus.getState();
   
   // Subscribe to game phase changes to validate at critical moments
-  const unsubPhase = eventBus.subscribe(
+  const unsubPhase = eventBus.subscribe<StateChangePayload>(
     GameEventType.GAME_PHASE_CHANGED,
     (event) => {
       const { from, to } = event.payload;
@@ -899,7 +959,7 @@ export function setupNarrativeValidation(): () => void {
         const pacingResult = validateNarrativePacing();
         if (pacingResult.pacingStatus !== 'on_track') {
           console.warn('[NarrativeProgressionValidator] Narrative pacing issues detected');
-          console.warn(pacingResult.recommendations.join('\n'));
+          pacingResult.recommendations.forEach(rec => console.warn(rec));
         }
       }
     }
@@ -910,8 +970,9 @@ export function setupNarrativeValidation(): () => void {
     GameEventType.ITEM_ACQUIRED,
     (event) => {
       // Check if the acquired item might affect narrative progression
+      const payload = event.payload as { itemId: string };
       const journalItems = ['journal', 'annotated_journal', 'technical_journal'];
-      if (journalItems.includes(event.payload.itemId)) {
+      if (journalItems.includes(payload.itemId)) {
         console.log('[NarrativeProgressionValidator] Journal acquired, validating progression');
         validateNarrativeProgression();
       }
@@ -923,7 +984,8 @@ export function setupNarrativeValidation(): () => void {
     GameEventType.KNOWLEDGE_GAINED,
     (event) => {
       // Only validate for significant knowledge gains
-      if (event.payload.amount >= 10) {
+      const payload = event.payload as { amount: number };
+      if (payload.amount >= 10) {
         console.log('[NarrativeProgressionValidator] Significant knowledge gained, validating progression');
         validateNarrativeProgression();
       }

@@ -7,7 +7,8 @@ import { useTypewriter } from '../../hooks/useTypewriter';
 import { meetsRequirement, getMissingKnowledgeInfo } from '../../utils/knowledgeRequirements';
 import { KnowledgeRequirement } from '../../utils/knowledgeRequirements';
 import { KNOWLEDGE_DOMAINS } from '../knowledge/ConstellationView';
-import { useEventBus, GameEventType } from '../../core/events/CentralEventBus';
+import { useEventBus } from '../../core/events/CentralEventBus';
+import { GameEventType } from '../../core/events/EventTypes';
 import { useDialogueStateMachine } from '../../core/dialogue/DialogueStateMachine';
 import { shallow } from 'zustand/shallow';
 
@@ -137,7 +138,7 @@ export function DialogueProvider({ children }: { children: ReactNode }) {
   const dialogueIdRef = useRef<string>('');
   const onDialogueCompleteRef = useRef<(() => void) | null>(null);
   
-  // Get current state using Zustand's shallow equality pattern for performance
+  // Fix the state destructuring with proper typing
   const {
     isActive,
     dialogueNodes,
@@ -146,12 +147,12 @@ export function DialogueProvider({ children }: { children: ReactNode }) {
     currentReaction,
     isShaking
   } = useDialogueStateMachine(state => ({
-    isActive: state.isActive,
-    dialogueNodes: state.dialogueNodes,
-    currentNodeId: state.currentNodeId,
-    selectedOption: state.selectedOption,
-    currentReaction: state.currentReaction,
-    isShaking: state.isShaking
+    isActive: state.isActive || false,
+    dialogueNodes: state.dialogueNodes || [],
+    currentNodeId: state.currentNodeId || null,
+    selectedOption: state.selectedOption || null,
+    currentReaction: state.currentReaction || null,
+    isShaking: state.isShaking || false
   }), shallow);
   
   // Component ready state
@@ -366,16 +367,20 @@ export function DialogueProvider({ children }: { children: ReactNode }) {
     const getDomainStyle = () => {
       if (!knowledge) return {};
       
-      // Properly handle union type - check if 'domain' property exists in the knowledge object
+      // Check if 'domain' property exists in the knowledge object
       if ('domain' in knowledge && knowledge.domain) {
-        const domain = knowledge.domain as keyof typeof KNOWLEDGE_DOMAINS;
-        return {
-          borderColor: KNOWLEDGE_DOMAINS[domain].color,
-          textClass: KNOWLEDGE_DOMAINS[domain].textClass,
-          bgClass: isMet ? KNOWLEDGE_DOMAINS[domain].bgClass : ''
-        };
+        // Need to validate knowledge.domain is a key in KNOWLEDGE_DOMAINS
+        const domainKey = knowledge.domain as keyof typeof KNOWLEDGE_DOMAINS;
+        if (KNOWLEDGE_DOMAINS[domainKey]) {
+          return {
+            borderColor: KNOWLEDGE_DOMAINS[domainKey].color,
+            textClass: KNOWLEDGE_DOMAINS[domainKey].textClass,
+            bgClass: isMet ? KNOWLEDGE_DOMAINS[domainKey].bgClass : ''
+          };
+        }
       }
       
+      // Default fallback values
       return {
         borderColor: 'var(--educational-color)',
         textClass: 'text-educational-light',
@@ -461,11 +466,13 @@ export function DialogueProvider({ children }: { children: ReactNode }) {
                 </div>
                 
                 {/* Character reaction */}
-                <CharacterReaction 
-                  type={currentReaction || 'positive'} 
-                  isActive={currentReaction !== null}
-                  character={currentNode.character}
-                />
+                {currentReaction && (
+                  <CharacterReaction 
+                    type={currentReaction} 
+                    isActive={currentReaction !== null}
+                    character={currentNode.character}
+                  />
+                )}
               </div>
             </div>
             

@@ -1,4 +1,5 @@
 // app/core/dialogue/DialogueStateMachine.ts
+
 /**
  * Dialogue State Machine
  * 
@@ -12,12 +13,9 @@
  * to the player's history without sacrificing narrative reliability.
  */
 
-import { 
-  useEventBus, 
-  GameEventType, 
-  journalAcquired,
-  dialogueCriticalPath 
-} from '../events/CentralEventBus';
+// Properly import types from EventTypes
+import { useEventBus } from '../events/CentralEventBus';
+import { GameEventType } from '../events/EventTypes';
 import { useNarrativeTransaction } from './NarrativeTransaction';
 import { create } from 'zustand';
 import { immer } from 'zustand/middleware/immer';
@@ -143,6 +141,34 @@ interface DialogueStateMachineState {
   
   // Critical path event handler (moved from transaction system)
   handleCriticalPathEvent: (stateId: string) => void;
+}
+
+// Helper function to dispatch journal acquired events
+function journalAcquired(tier: string, character: string, source: string) {
+  useEventBus.getState().dispatch(GameEventType.JOURNAL_ACQUIRED, {
+    tier,
+    character,
+    source
+  });
+}
+
+// Helper function to dispatch dialogue critical path events
+function dialogueCriticalPath(
+  dialogueId: string,
+  characterId: string,
+  nodeId: string,
+  criticalStateId: string,
+  playerScore: number,
+  wasRepaired: boolean
+) {
+  useEventBus.getState().dispatch(GameEventType.DIALOGUE_CRITICAL_PATH, {
+    dialogueId,
+    characterId,
+    nodeId,
+    criticalStateId,
+    playerScore,
+    wasRepaired
+  });
 }
 
 // Optimized state machine implementation with immer for immutable updates
