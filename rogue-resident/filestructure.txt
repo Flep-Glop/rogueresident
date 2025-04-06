@@ -1,6 +1,7 @@
 .
 ├── README.md
 ├── app
+│   ├── architectural-migration-checklist.md
 │   ├── components
 │   │   ├── EnhancedMap.tsx
 │   │   ├── EnhancedNode.tsx
@@ -58,23 +59,35 @@
 │   │       └── NotificationManager.tsx
 │   ├── core
 │   │   ├── dialogue
+│   │   │   ├── DialogueController.ts
 │   │   │   ├── DialogueProgressionHelpers.ts
 │   │   │   ├── DialogueStateMachine.ts
 │   │   │   └── NarrativeTransaction.ts
 │   │   ├── events
 │   │   │   ├── CentralEventBus.ts
 │   │   │   ├── EventEffectsIntegration.ts
+│   │   │   ├── EventTypes.ts
 │   │   │   ├── GameEvents.ts
 │   │   │   ├── baseHandlers.ts
+│   │   │   ├── compat.ts
+│   │   │   ├── dialogueEventHandlers.ts
 │   │   │   ├── journalEventHandlers.ts
 │   │   │   └── uiHandlers.ts
+│   │   ├── init.ts
 │   │   ├── progression
-│   │   │   └── ProgressionGuarantee.ts
+│   │   │   ├── ProgressionGuarantee.ts
+│   │   │   └── ProgressionService.ts
 │   │   └── statemachine
 │   │       ├── GameStateBridge.ts
 │   │       └── GameStateMachine.ts
 │   ├── data
 │   │   ├── clinicalChallenges.ts
+│   │   ├── dialogues
+│   │   │   ├── calibrations
+│   │   │   │   ├── jesse-equipment.ts
+│   │   │   │   ├── kapoor-calibration.ts
+│   │   │   │   └── quinn-theory.ts
+│   │   │   └── index.ts
 │   │   ├── items.ts
 │   │   └── spriteMapping.ts
 │   ├── favicon.ico
@@ -100,10 +113,12 @@
 │   │   └── map.ts
 │   └── utils
 │       ├── CharacterTeachingStyles.ts
+│       ├── dialogueLoader.ts
 │       ├── improvedMapGenerator.ts
 │       ├── knowledgeRequirements.ts
 │       ├── mapGenerator.ts
-│       └── seedUtils.ts
+│       ├── seedUtils.ts
+│       └── telemetryService.ts
 ├── eslint.config.mjs
 ├── filestructure.txt
 ├── jest-config.js
@@ -115,6 +130,7 @@
 ├── tailwind.config.js
 ├── tests
 │   ├── assert.js
+│   ├── dialogueProgressionTest.js
 │   ├── eventRecorder.js
 │   ├── progressionTests.js
 │   ├── simpleRunner.js
@@ -127,4 +143,4 @@
 │   └── testNodeAccessibility.js
 └── tsconfig.json
 
-20 directories, 107 files
+22 directories, 121 files

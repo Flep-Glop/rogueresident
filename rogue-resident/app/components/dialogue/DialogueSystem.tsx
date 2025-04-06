@@ -8,6 +8,8 @@ import { meetsRequirement, getMissingKnowledgeInfo } from '../../utils/knowledge
 import { KnowledgeRequirement } from '../../utils/knowledgeRequirements';
 import { KNOWLEDGE_DOMAINS } from '../knowledge/ConstellationView';
 import { useEventBus, GameEventType } from '../../core/events/CentralEventBus';
+import { useDialogueStateMachine } from '../../core/dialogue/DialogueStateMachine';
+import { shallow } from 'zustand/shallow';
 
 // Prototype character types - limited to 3 key characters
 export type Character = 'kapoor' | 'jesse' | 'quinn' | 'player';
@@ -22,15 +24,15 @@ export interface DialogueOption {
   id: string;
   text: string;
   responseText: string;
-  insightGain?: number; // Insight points gained for this option
+  insightGain?: number; 
   knowledgeGain?: {
     domain: KnowledgeDomain;
     conceptId?: string;
-    amount: number; // Percentage progress toward mastery
+    amount: number;
   };
-  nextNodeId?: string; // ID of next dialogue node if this option is selected
-  requiresKnowledge?: KnowledgeRequirement; // Knowledge requirement to unlock this option
-  reaction?: ReactionType; // Character's reaction to this option
+  nextNodeId?: string;
+  requiresKnowledge?: KnowledgeRequirement;
+  reaction?: ReactionType;
 }
 
 // Dialogue node interface
@@ -66,7 +68,6 @@ const CharacterReaction = ({ type, isActive, character }: { type: ReactionType, 
   
   useEffect(() => {
     if (isActive) {
-      console.log(`Reaction triggered: ${type} for ${character}`); // Debug log
       setVisible(true);
       setAnimationClass('reaction-enter');
       
@@ -131,18 +132,30 @@ export function DialogueProvider({ children }: { children: ReactNode }) {
   const { playSound, flashScreen } = useGameEffects();
   const eventBus = useEventBus();
   
-  const [dialogueNodes, setDialogueNodes] = useState<DialogueNode[]>([]);
-  const [currentNodeId, setCurrentNodeId] = useState<string | null>(null);
-  const [isActive, setIsActive] = useState(false);
-  const [selectedOption, setSelectedOption] = useState<DialogueOption | null>(null);
-  const [onDialogueComplete, setOnDialogueComplete] = useState<(() => void) | null>(null);
-  const [currentReaction, setCurrentReaction] = useState<ReactionType | null>(null);
-  const [isShaking, setIsShaking] = useState(false);
-  const [isReady, setIsReady] = useState(false);
-  const [dialogueId, setDialogueId] = useState<string>(''); // Track dialogue flow ID
-  
   // Ref to track if component is mounted
   const isMounted = useRef(true);
+  const dialogueIdRef = useRef<string>('');
+  const onDialogueCompleteRef = useRef<(() => void) | null>(null);
+  
+  // Get current state using Zustand's shallow equality pattern for performance
+  const {
+    isActive,
+    dialogueNodes,
+    currentNodeId, 
+    selectedOption,
+    currentReaction,
+    isShaking
+  } = useDialogueStateMachine(state => ({
+    isActive: state.isActive,
+    dialogueNodes: state.dialogueNodes,
+    currentNodeId: state.currentNodeId,
+    selectedOption: state.selectedOption,
+    currentReaction: state.currentReaction,
+    isShaking: state.isShaking
+  }), shallow);
+  
+  // Component ready state
+  const [isReady, setIsReady] = useState(false);
   
   // Get current node
   const currentNode = currentNodeId 
@@ -159,9 +172,7 @@ export function DialogueProvider({ children }: { children: ReactNode }) {
     complete: skipTyping,
     showContinueIndicator
   } = useTypewriter(textToShow, {
-    // Add a starting delay to ensure component is fully mounted
     startDelay: 150,
-    // Slightly faster typing for better pacing
     speed: 25
   });
   
@@ -174,41 +185,40 @@ export function DialogueProvider({ children }: { children: ReactNode }) {
       }
     }, 100);
     
+    // Dispatch initialization event
+    eventBus.dispatch(GameEventType.UI_DIALOGUE_ADVANCED, {
+      componentId: 'dialogueSystem',
+      action: 'initialize',
+      metadata: {}
+    });
+    
     // Cleanup on unmount
     return () => {
       isMounted.current = false;
       clearTimeout(timer);
       
       // Only dispatch completion on unmount if active
-      if (isActive && dialogueId) {
+      if (isActive && dialogueIdRef.current) {
         eventBus.dispatch(GameEventType.DIALOGUE_COMPLETED, {
-          flowId: dialogueId,
+          flowId: dialogueIdRef.current,
           completed: false,
           reason: 'component_unmounted',
           character: currentNode?.character || 'unknown'
         });
       }
     };
-  }, [eventBus, isActive, dialogueId, currentNode]);
+  }, [eventBus, isActive, currentNode]);
   
   // Start dialogue
   const startDialogue = (nodes: DialogueNode[], startNodeId: string, onComplete?: () => void) => {
     // Generate a unique ID for this dialogue flow
     const newDialogueId = `dialogue-${Date.now()}-${startNodeId}`;
-    setDialogueId(newDialogueId);
+    dialogueIdRef.current = newDialogueId;
     
-    setDialogueNodes(nodes);
-    setCurrentNodeId(startNodeId);
-    setIsActive(true);
-    setSelectedOption(null);
-    setCurrentReaction(null);
-    
+    // Store callback in ref to avoid it changing
     if (onComplete) {
-      setOnDialogueComplete(() => onComplete);
+      onDialogueCompleteRef.current = onComplete;
     }
-    
-    // Play dialogue start sound
-    if (playSound) playSound('ui-click');
     
     // Dispatch dialogue start event
     eventBus.dispatch(GameEventType.DIALOGUE_STARTED, {
@@ -224,44 +234,42 @@ export function DialogueProvider({ children }: { children: ReactNode }) {
       characterId: nodes[0]?.character || 'unknown',
       nodeId: startNodeId
     });
+    
+    // Play dialogue start sound
+    if (playSound) playSound('ui-click');
   };
   
   // End dialogue
   const endDialogue = () => {
     // Dispatch dialogue completion event before clearing state
-    if (isActive && dialogueId) {
+    if (isActive && dialogueIdRef.current) {
       eventBus.dispatch(GameEventType.DIALOGUE_COMPLETED, {
-        flowId: dialogueId,
+        flowId: dialogueIdRef.current,
         completed: true,
         reason: 'normal_completion',
         character: currentNode?.character || 'unknown'
       });
     }
     
-    setIsActive(false);
-    setDialogueNodes([]);
-    setCurrentNodeId(null);
-    setSelectedOption(null);
-    setCurrentReaction(null);
-    setDialogueId('');
+    // Reset ref values
+    dialogueIdRef.current = '';
     
     // Call completion callback if exists
-    if (onDialogueComplete) {
-      onDialogueComplete();
-      setOnDialogueComplete(null);
+    if (onDialogueCompleteRef.current) {
+      onDialogueCompleteRef.current();
+      onDialogueCompleteRef.current = null;
     }
   };
   
   // Handle option selection
   const selectOption = (option: DialogueOption) => {
-    setSelectedOption(option);
-    
     // Dispatch option selection event
     eventBus.dispatch(GameEventType.UI_DIALOGUE_ADVANCED, {
       componentId: 'dialogueSystem',
       action: 'option-selected',
       metadata: {
         optionId: option.id,
+        stageId: currentNodeId,
         insightGain: option.insightGain,
         knowledgeGain: option.knowledgeGain,
         character: currentNode?.character,
@@ -269,28 +277,19 @@ export function DialogueProvider({ children }: { children: ReactNode }) {
       }
     });
     
-    // Set reaction if any
-    if (option.reaction) {
-      setCurrentReaction(option.reaction);
-      
-      // Trigger portrait shake
-      setIsShaking(true);
-      setTimeout(() => setIsShaking(false), 400);
-    } else if (option.insightGain && option.insightGain >= 15) {
-      // Default positive reaction for high insight
-      setCurrentReaction('positive');
-      setIsShaking(true);
-      setTimeout(() => setIsShaking(false), 400);
-    } else if (option.insightGain && option.insightGain <= 0) {
-      // Default negative reaction for no insight
-      setCurrentReaction('negative');
-      setIsShaking(true);
-      setTimeout(() => setIsShaking(false), 400);
-    }
+    // Dispatch detailed event with full context
+    eventBus.dispatch(GameEventType.DIALOGUE_OPTION_SELECTED, {
+      optionId: option.id,
+      stageId: currentNodeId || 'unknown',
+      character: currentNode?.character || 'unknown',
+      flowId: dialogueIdRef.current,
+      insightGain: option.insightGain,
+      knowledgeGain: option.knowledgeGain,
+    });
     
-    // Play selection sound based on insight gain
-    if (playSound) {
-      if (option.insightGain && option.insightGain >= 15) {
+    // Visual and audio feedback based on insight gain
+    if (option.insightGain && playSound) {
+      if (option.insightGain >= 15) {
         playSound('success');
         if (flashScreen) flashScreen('green');
       } else if (option.insightGain && option.insightGain <= 5) {
@@ -331,31 +330,6 @@ export function DialogueProvider({ children }: { children: ReactNode }) {
         character: currentNode.character
       }
     });
-    
-    // Clear reaction when moving to next node
-    setCurrentReaction(null);
-    
-    if (selectedOption) {
-      // If we have a selected option
-      if (currentNode.options && selectedOption) {
-        setSelectedOption(null);
-        
-        // Find a matching option and get its next node if specified
-        const matchingOption = currentNode.options.find(opt => opt.id === selectedOption.id);
-        if (matchingOption && matchingOption.nextNodeId) {
-          setCurrentNodeId(matchingOption.nextNodeId);
-          return;
-        }
-      }
-    }
-    
-    // Otherwise use the current node's next node
-    if (currentNode.nextNodeId) {
-      setCurrentNodeId(currentNode.nextNodeId);
-    } else {
-      // No next node, end dialogue
-      endDialogue();
-    }
   };
   
   // Character data for styling dialogue based on character
