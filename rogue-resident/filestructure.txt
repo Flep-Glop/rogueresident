@@ -75,7 +75,9 @@
 │   │   │   └── uiHandlers.ts
 │   │   ├── init.ts
 │   │   ├── progression
+│   │   │   ├── NarrativeProgressionValidator.ts
 │   │   │   ├── ProgressionGuarantee.ts
+│   │   │   ├── ProgressionRecoverySystem.ts
 │   │   │   └── ProgressionService.ts
 │   │   └── statemachine
 │   │       ├── GameStateBridge.ts
@@ -143,4 +145,4 @@
 │   └── testNodeAccessibility.js
 └── tsconfig.json
 
-22 directories, 121 files
+22 directories, 123 files
