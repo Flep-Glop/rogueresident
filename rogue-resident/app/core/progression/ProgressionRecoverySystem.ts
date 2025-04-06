@@ -25,17 +25,21 @@ export type InterruptionType =
   | 'session_end'        // Game session ended abruptly
   | 'state_corruption'   // Game state became corrupted
   | 'critical_path_miss' // Critical path was skipped
+  | 'sequence_violation' // Story beats happened in wrong order
+  | 'save_corruption'    // Persisted state was corrupted/invalid
   | 'manual_request';    // User requested recovery
 
 // Recovery action types
 export type RecoveryAction =
-  | 'restart_dialogue'       // Restart dialogue from beginning
-  | 'resume_dialogue'        // Resume dialogue from last state
-  | 'force_critical_path'    // Jump directly to critical path
-  | 'grant_required_item'    // Grant a required item
+  | 'restart_dialogue'         // Restart dialogue from beginning
+  | 'resume_dialogue'          // Resume dialogue from last state
+  | 'force_critical_path'      // Jump directly to critical path
+  | 'grant_required_item'      // Grant a required item
   | 'grant_required_knowledge' // Grant required knowledge
-  | 'mark_node_completed'    // Mark node as completed
-  | 'repair_relationship'    // Repair character relationship
+  | 'mark_node_completed'      // Mark node as completed
+  | 'repair_relationship'      // Repair character relationship
+  | 'repair_transaction'       // Repair stalled transaction
+  | 'reinsert_dialogue_node'   // Reinsert a missed dialogue node
   | 'force_journal_acquisition'; // Force journal acquisition
 
 // Recovery transaction record
@@ -50,6 +54,8 @@ export interface RecoveryTransaction {
   stateBeforeRecovery?: any;
   stateAfterRecovery?: any;
   successful: boolean;
+  gameDay: number;
+  gamePhase: string;
 }
 
 // Recovery plan
@@ -61,10 +67,91 @@ export interface RecoveryPlan {
   criticalPathId?: string;
   requiredKnowledge?: string[];
   requiredItems?: string[];
+  priority: 'high' | 'medium' | 'low';
+  reasoning: string;
 }
 
 // Track recovery history
 let recoveryHistory: RecoveryTransaction[] = [];
+
+// Define critical story beats that must not be skipped
+const CRITICAL_STORY_BEATS = [
+  {
+    id: 'journal-acquisition',
+    characterId: 'kapoor',
+    nodeType: 'kapoorCalibration',
+    fallbackState: 'journal-presentation'
+  },
+  {
+    id: 'equipment-training',
+    characterId: 'jesse',
+    nodeType: 'jesseEquipment',
+    fallbackState: 'equipment-safety'
+  },
+  {
+    id: 'quantum-introduction',
+    characterId: 'quinn',
+    nodeType: 'quinnTheory',
+    fallbackState: 'quantum-understanding'
+  },
+  {
+    id: 'boss-preparation',
+    characterId: 'any', // Will choose highest relationship character
+    nodeType: 'bossPreparation',
+    fallbackState: null // Dynamic decision
+  },
+  {
+    id: 'ionix-introduction',
+    characterId: 'quinn',
+    nodeType: 'ionixTheory',
+    fallbackState: 'ionix-anomaly-description'
+  }
+];
+
+// Heuristic scores for different recovery approaches
+const RECOVERY_APPROACH_SCORES = {
+  // Provide continuity by preserving player's progress
+  CONTINUITY: {
+    restart_dialogue: -10,       // Major continuity break
+    resume_dialogue: 10,         // Best for continuity
+    force_critical_path: 0,      // Mixed impact on continuity
+    grant_required_item: 5,      // Moderate continuity preservation
+    grant_required_knowledge: 5, // Moderate continuity preservation 
+    mark_node_completed: 0,      // Neutral for continuity
+    repair_relationship: 5,      // Moderate continuity preservation
+    repair_transaction: 8,       // Good for continuity
+    reinsert_dialogue_node: -5,  // Minor continuity break
+    force_journal_acquisition: 0 // Neutral for continuity
+  },
+  
+  // Minimize disruption to player's experience
+  DISRUPTION: {
+    restart_dialogue: -10,       // Major disruption
+    resume_dialogue: 5,          // Minor disruption
+    force_critical_path: -5,     // Moderate disruption
+    grant_required_item: 10,     // Minimal disruption
+    grant_required_knowledge: 10,// Minimal disruption
+    mark_node_completed: 8,      // Little disruption
+    repair_relationship: 10,     // Minimal disruption
+    repair_transaction: 10,      // Minimal disruption
+    reinsert_dialogue_node: -8,  // Significant disruption
+    force_journal_acquisition: 5 // Some disruption
+  },
+  
+  // Preserve story coherence and progression
+  COHERENCE: {
+    restart_dialogue: 5,         // Good for coherence
+    resume_dialogue: -5,         // May create incoherence
+    force_critical_path: 10,     // Best for ensuring coherence
+    grant_required_item: 8,      // Good for progression coherence
+    grant_required_knowledge: 8, // Good for progression coherence
+    mark_node_completed: 5,      // Moderate coherence improvement
+    repair_relationship: 7,      // Good for character coherence
+    repair_transaction: 8,       // Good for narrative coherence
+    reinsert_dialogue_node: 10,  // Excellent for story coherence
+    force_journal_acquisition: 10// Critical for progression coherence
+  }
+};
 
 /**
  * Detects if the current game state needs progression recovery
@@ -104,6 +191,59 @@ export function detectProgressionIssues(): boolean {
     return true;
   }
   
+  // Check for dialogue loops
+  const dialogueContext = useDialogueStateMachine.getState().context;
+  if (dialogueContext) {
+    // Count state visit frequencies
+    const stateVisits: Record<string, number> = {};
+    dialogueContext.visitedStateIds.forEach(id => {
+      stateVisits[id] = (stateVisits[id] || 0) + 1;
+    });
+    
+    // Check for any state visited more than 5 times, which likely indicates a loop
+    const excessiveVisits = Object.entries(stateVisits).filter(([_, count]) => count > 5);
+    if (excessiveVisits.length > 0) {
+      return true;
+    }
+  }
+  
+  // Check for sequence violations in narrative progression
+  const sequenceViolation = checkForSequenceViolations();
+  if (sequenceViolation) {
+    return true;
+  }
+  
+  return false;
+}
+
+/**
+ * Checks if narrative events have occurred out of sequence
+ */
+function checkForSequenceViolations(): boolean {
+  // Get completed nodes
+  const completedNodes = useGameStore.getState().completedNodeIds;
+  
+  // Define critical sequences
+  const requiredSequences = [
+    {
+      prerequisite: 'kapoor-calibration',
+      dependent: 'boss-node'
+    },
+    {
+      prerequisite: 'journal-acquisition',
+      dependent: 'quinn-theory'
+    }
+  ];
+  
+  // Check each sequence
+  for (const sequence of requiredSequences) {
+    // If the dependent is completed without the prerequisite, we have a violation
+    if (completedNodes.includes(sequence.dependent) && !completedNodes.includes(sequence.prerequisite)) {
+      console.warn(`[ProgressionRecovery] Sequence violation detected: ${sequence.dependent} completed before ${sequence.prerequisite}`);
+      return true;
+    }
+  }
+  
   return false;
 }
 
@@ -114,25 +254,40 @@ export function createRecoveryPlan(): RecoveryPlan | null {
   // Detect issues
   const validationResult = validateNarrativeProgression();
   
-  // If everything is valid, no recovery needed
-  if (validationResult.isValid) {
-    const transactions = useNarrativeTransaction.getState().getAllTransactions();
-    const stalledTransactions = transactions.filter(tx => 
-      tx.state === 'active' && (Date.now() - tx.startTime > 60000)
-    );
-    
-    // If no stalled transactions either, truly no recovery needed
-    if (stalledTransactions.length === 0) {
-      return null;
-    }
+  // If everything is valid, check for other issues
+  let shouldCreatePlan = !validationResult.isValid;
+  
+  // Check for stalled transactions
+  const transactions = useNarrativeTransaction.getState().getAllTransactions();
+  const stalledTransactions = transactions.filter(tx => 
+    tx.state === 'active' && (Date.now() - tx.startTime > 60000) // Stalled for over a minute
+  );
+  
+  if (stalledTransactions.length > 0) {
+    shouldCreatePlan = true;
+  }
+  
+  // Check for dialogue state/UI mismatch
+  const hasActiveDialogue = useDialogueStateMachine.getState().activeFlow !== null;
+  const dialogueIsVisible = useGameStore.getState().isInDialogue;
+  
+  if (hasActiveDialogue && !dialogueIsVisible) {
+    shouldCreatePlan = true;
+  }
+  
+  // If no issues detected, no plan needed
+  if (!shouldCreatePlan) {
+    return null;
   }
   
   // Start building recovery plan
   const plan: RecoveryPlan = {
-    requiredActions: []
+    requiredActions: [],
+    priority: 'medium',
+    reasoning: 'General state inconsistency detected'
   };
   
-  // Check for journal issues
+  // Check for journal issues - highest priority
   const { hasJournal } = useJournalStore.getState();
   const { currentDay } = useGameStore.getState();
   
@@ -140,6 +295,8 @@ export function createRecoveryPlan(): RecoveryPlan | null {
   if (currentDay >= 1 && !hasJournal) {
     plan.requiredActions.push('force_journal_acquisition');
     plan.characterId = 'kapoor'; // Journal always comes from Kapoor
+    plan.priority = 'high';
+    plan.reasoning = 'Journal is missing but required for progression';
   }
   
   // Check for specific failed checkpoints from validation
@@ -150,6 +307,8 @@ export function createRecoveryPlan(): RecoveryPlan | null {
           if (!plan.requiredActions.includes('force_journal_acquisition')) {
             plan.requiredActions.push('force_journal_acquisition');
             plan.characterId = 'kapoor';
+            plan.priority = 'high';
+            plan.reasoning = 'Journal acquisition checkpoint failed';
           }
           break;
           
@@ -158,6 +317,8 @@ export function createRecoveryPlan(): RecoveryPlan | null {
           plan.characterId = 'jesse';
           plan.requiredKnowledge = ['equipment_safety_protocol'];
           plan.nodeId = 'equipment-training';
+          plan.priority = 'medium';
+          plan.reasoning = 'Equipment safety training checkpoint failed';
           break;
           
         case 'quantum-theory-introduction':
@@ -165,11 +326,16 @@ export function createRecoveryPlan(): RecoveryPlan | null {
           plan.characterId = 'quinn';
           plan.requiredKnowledge = ['quantum_dosimetry_principles'];
           plan.nodeId = 'quantum-theory';
+          plan.priority = 'medium';
+          plan.reasoning = 'Quantum theory introduction checkpoint failed';
           break;
           
         case 'boss-preparation':
           plan.requiredActions.push('mark_node_completed');
           plan.nodeId = 'boss-preparation';
+          plan.priority = 'high';
+          plan.reasoning = 'Boss preparation checkpoint failed';
+          
           // Use character with highest relationship
           const characters = ['kapoor', 'jesse', 'quinn'];
           let highestRelationship = '';
@@ -185,31 +351,26 @@ export function createRecoveryPlan(): RecoveryPlan | null {
           
           plan.characterId = highestRelationship || 'kapoor';
           break;
+          
+        // Other checkpoint types can be added here
       }
     });
   }
   
   // Check for stalled dialogue transactions
-  const transactions = useNarrativeTransaction.getState().getAllTransactions();
-  const stalledTransactions = transactions.filter(tx => 
-    tx.state === 'active' && (Date.now() - tx.startTime > 60000)
-  );
-  
   if (stalledTransactions.length > 0) {
-    // Adding resume_dialogue might conflict with other critical paths
-    // Only add if there are no more important recovery actions
-    if (plan.requiredActions.length === 0) {
-      plan.requiredActions.push('resume_dialogue');
-      
-      // Use info from the most recent stalled transaction
-      const latestTransaction = stalledTransactions.reduce((latest, current) => 
-        latest.startTime > current.startTime ? latest : current
-      );
-      
-      plan.characterId = latestTransaction.character;
-      plan.nodeId = latestTransaction.nodeId;
-      plan.dialogueId = latestTransaction.id;
-    }
+    // Adding repair_transaction as our primary action
+    plan.requiredActions.push('repair_transaction');
+    
+    // Use info from the most recent stalled transaction
+    const latestTransaction = stalledTransactions.reduce((latest, current) => 
+      latest.startTime > current.startTime ? latest : current
+    );
+    
+    plan.characterId = latestTransaction.character;
+    plan.nodeId = latestTransaction.nodeId;
+    plan.dialogueId = latestTransaction.id;
+    plan.reasoning = `Stalled transaction detected: ${latestTransaction.id} for ${latestTransaction.type}`;
     
     // Always complete stalled transactions
     stalledTransactions.forEach(tx => {
@@ -218,9 +379,6 @@ export function createRecoveryPlan(): RecoveryPlan | null {
   }
   
   // If dialogue state machine has an active flow but UI isn't showing it
-  const hasActiveDialogue = useDialogueStateMachine.getState().activeFlow !== null;
-  const dialogueIsVisible = useGameStore.getState().isInDialogue; // Assuming this state exists
-  
   if (hasActiveDialogue && !dialogueIsVisible) {
     if (plan.requiredActions.length === 0) {
       // Only force resuming if no more important actions
@@ -232,6 +390,7 @@ export function createRecoveryPlan(): RecoveryPlan | null {
         plan.characterId = activeFlow.context?.characterId;
         plan.nodeId = activeFlow.context?.nodeId;
         plan.dialogueId = activeFlow.id;
+        plan.reasoning = 'Active dialogue detected but UI not showing it';
       }
     } else {
       // If we're doing other recovery, make sure to clean up the active dialogue
@@ -239,7 +398,131 @@ export function createRecoveryPlan(): RecoveryPlan | null {
     }
   }
   
-  return plan.requiredActions.length > 0 ? plan : null;
+  // Check for narrative discontinuity caused by missed story beats
+  const isNarrativeDiscontinuity = checkForNarrativeDiscontinuity();
+  if (isNarrativeDiscontinuity) {
+    plan.requiredActions.push('reinsert_dialogue_node');
+    plan.priority = 'high';
+    plan.reasoning = 'Critical narrative discontinuity detected';
+    
+    // Find the missing beat
+    const { missingBeat, character } = findMissingStoryBeat();
+    if (missingBeat) {
+      plan.criticalPathId = missingBeat;
+      plan.characterId = character;
+    }
+  }
+  
+  // Apply heuristics to determine priority and optimal approach
+  return optimizeRecoveryPlan(plan);
+}
+
+/**
+ * Checks for critical narrative discontinuity
+ * This occurs when later story beats exist without prerequisites
+ */
+function checkForNarrativeDiscontinuity(): boolean {
+  const { currentDay } = useGameStore.getState();
+  const completedNodes = useGameStore.getState().completedNodeIds;
+  
+  // Define story beat dependencies
+  const storyBeatDependencies = [
+    { beat: 'ionix-boss', requires: ['quantum-theory', 'equipment-safety'] },
+    { beat: 'quinn-theory', requires: ['journal-acquisition'] },
+    { beat: 'jesse-equipment', requires: ['journal-acquisition'] }
+  ];
+  
+  // Only check dependencies relevant to current day
+  const relevantDependencies = storyBeatDependencies.filter(dep => {
+    // Simple day-based filtering
+    if (dep.beat.includes('boss') && currentDay < 3) return false;
+    if (dep.beat.includes('theory') && currentDay < 2) return false;
+    return true;
+  });
+  
+  // Check if any beat exists without its prerequisites
+  for (const dependency of relevantDependencies) {
+    const beatCompleted = completedNodes.some(node => node.includes(dependency.beat));
+    
+    if (beatCompleted) {
+      // Check if all prerequisites are met
+      const missingPrerequisites = dependency.requires.filter(req => 
+        !completedNodes.some(node => node.includes(req))
+      );
+      
+      if (missingPrerequisites.length > 0) {
+        console.warn(`[ProgressionRecovery] Narrative discontinuity detected: ${dependency.beat} completed without prerequisites: ${missingPrerequisites.join(', ')}`);
+        return true;
+      }
+    }
+  }
+  
+  return false;
+}
+
+/**
+ * Finds the most critical missing story beat
+ */
+function findMissingStoryBeat(): { missingBeat: string | null, character: string | null } {
+  const { currentDay } = useGameStore.getState();
+  const hasJournal = useJournalStore.getState().hasJournal;
+  
+  // Check for journal first as it's the most critical
+  if (!hasJournal && currentDay >= 1) {
+    return { missingBeat: 'journal-presentation', character: 'kapoor' };
+  }
+  
+  // Check for knowledge prerequisites for ionix
+  if (currentDay >= 3) {
+    const knowledge = useKnowledgeStore.getState();
+    
+    if (!knowledge.hasMasteredConcept('quantum_dosimetry_principles', 5)) {
+      return { missingBeat: 'quantum-understanding', character: 'quinn' };
+    }
+    
+    if (!knowledge.hasMasteredConcept('equipment_safety_protocol', 5)) {
+      return { missingBeat: 'equipment-safety', character: 'jesse' };
+    }
+  }
+  
+  return { missingBeat: null, character: null };
+}
+
+/**
+ * Apply heuristics to optimize the recovery plan
+ */
+function optimizeRecoveryPlan(plan: RecoveryPlan): RecoveryPlan {
+  // Nothing to optimize if there are no actions
+  if (plan.requiredActions.length === 0) {
+    return plan;
+  }
+  
+  // Score each action across our heuristics
+  const actionScores: Record<string, number> = {};
+  
+  plan.requiredActions.forEach(action => {
+    // Combine scores from each approach, weighted by importance
+    actionScores[action] = 
+      RECOVERY_APPROACH_SCORES.CONTINUITY[action] * 1.0 +
+      RECOVERY_APPROACH_SCORES.DISRUPTION[action] * 1.5 +
+      RECOVERY_APPROACH_SCORES.COHERENCE[action] * 2.0;
+  });
+  
+  // Sort actions by score, highest first
+  const sortedActions = [...plan.requiredActions].sort((a, b) => 
+    (actionScores[b] || 0) - (actionScores[a] || 0)
+  );
+  
+  // Critical progression fixes always come first, regardless of score
+  if (sortedActions.includes('force_journal_acquisition')) {
+    sortedActions.splice(sortedActions.indexOf('force_journal_acquisition'), 1);
+    sortedActions.unshift('force_journal_acquisition');
+  }
+  
+  // Replace with optimized actions
+  plan.requiredActions = sortedActions;
+  
+  return plan;
 }
 
 /**
@@ -265,13 +548,17 @@ export function executeRecoveryPlan(plan: RecoveryPlan, interruptionType: Interr
     stateBeforeRecovery: {
       hasJournal: useJournalStore.getState().hasJournal,
       currentDay: useGameStore.getState().currentDay,
-      hasActiveDialogue: useDialogueStateMachine.getState().activeFlow !== null
+      completedNodes: useGameStore.getState().completedNodeIds.length,
+      hasActiveDialogue: useDialogueStateMachine.getState().activeFlow !== null,
+      knowledge: summarizeKnowledgeState()
     },
-    successful: false
+    successful: false,
+    gameDay: useGameStore.getState().currentDay,
+    gamePhase: useGameStore.getState().gamePhase
   };
   
   // Log recovery attempt
-  console.log(`[ProgressionRecovery] Executing recovery plan with ${plan.requiredActions.length} actions`, plan);
+  console.log(`[ProgressionRecovery] Executing recovery plan with ${plan.requiredActions.length} actions - ${plan.reasoning}`, plan);
   
   // Track for analytics
   eventBus.dispatch(GameEventType.UI_BUTTON_CLICKED, {
@@ -281,7 +568,9 @@ export function executeRecoveryPlan(plan: RecoveryPlan, interruptionType: Interr
       actions: plan.requiredActions,
       characterId: plan.characterId,
       nodeId: plan.nodeId,
-      interruptionType
+      interruptionType,
+      priority: plan.priority,
+      reasoning: plan.reasoning
     }
   });
   
@@ -371,6 +660,11 @@ export function executeRecoveryPlan(plan: RecoveryPlan, interruptionType: Interr
               relationshipChange: 1,
               forced: true
             });
+            
+            // Also mark in GameStateMachine
+            if (useGameStore.getState().markNodeCompleted) {
+              useGameStore.getState().markNodeCompleted(plan.nodeId);
+            }
           }
           break;
           
@@ -392,6 +686,29 @@ export function executeRecoveryPlan(plan: RecoveryPlan, interruptionType: Interr
                 nodeId: plan.nodeId,
                 dialogueId: plan.dialogueId,
                 source: 'progression_recovery'
+              }
+            });
+          }
+          break;
+          
+        case 'restart_dialogue':
+          if (plan.characterId && plan.nodeId) {
+            console.log(`[ProgressionRecovery] Restarting dialogue for ${plan.characterId} at ${plan.nodeId}`);
+            
+            // First ensure any active dialogue is properly closed
+            if (useDialogueStateMachine.getState().activeFlow) {
+              useDialogueStateMachine.getState().completeFlow();
+            }
+            
+            // Signal game to restart dialogue from beginning
+            eventBus.dispatch(GameEventType.UI_BUTTON_CLICKED, {
+              componentId: 'progressionRecovery',
+              action: 'startDialogue',
+              metadata: {
+                characterId: plan.characterId,
+                nodeId: plan.nodeId,
+                source: 'progression_recovery',
+                restartFromBeginning: true
               }
             });
           }
@@ -447,6 +764,79 @@ export function executeRecoveryPlan(plan: RecoveryPlan, interruptionType: Interr
           }
           break;
           
+        case 'repair_transaction':
+          // Already handled when detecting stalled transactions
+          console.log('[ProgressionRecovery] Transactions already repaired in detection phase');
+          break;
+          
+        case 'reinsert_dialogue_node':
+          if (plan.characterId && plan.criticalPathId) {
+            console.log(`[ProgressionRecovery] Reinserting critical dialogue node: ${plan.criticalPathId}`);
+            
+            // First identify the specific story beat to reinsert
+            const storyBeat = CRITICAL_STORY_BEATS.find(beat => 
+              beat.fallbackState === plan.criticalPathId || beat.id === plan.criticalPathId
+            );
+            
+            if (storyBeat) {
+              // Signal game to insert this dialogue node
+              eventBus.dispatch(GameEventType.UI_BUTTON_CLICKED, {
+                componentId: 'progressionRecovery',
+                action: 'insertCriticalNode',
+                metadata: {
+                  characterId: plan.characterId,
+                  nodeType: storyBeat.nodeType,
+                  stateId: storyBeat.fallbackState,
+                  source: 'progression_recovery',
+                  priority: 'critical'
+                }
+              });
+              
+              // Also add a transaction record for this insertion
+              useNarrativeTransaction.getState().startTransaction(
+                'character_introduction',
+                {
+                  nodeType: storyBeat.nodeType,
+                  stateId: storyBeat.fallbackState,
+                  source: 'progression_recovery',
+                  wasReinserted: true
+                },
+                plan.characterId
+              );
+            }
+          }
+          break;
+          
+        case 'grant_required_item':
+          if (plan.requiredItems && plan.requiredItems.length > 0) {
+            console.log(`[ProgressionRecovery] Granting required items: ${plan.requiredItems.join(', ')}`);
+            
+            // Add each required item to inventory
+            plan.requiredItems.forEach(itemId => {
+              // Add item to inventory if not already present
+              const hasItem = useGameStore.getState().inventory.some(item => item.id === itemId);
+              
+              if (!hasItem) {
+                // This is a simplified version - in reality, you'd need to retrieve the full item data
+                // before adding it to inventory
+                useGameStore.getState().addToInventory({
+                  id: itemId,
+                  name: getItemName(itemId),
+                  description: `Recovery system provided ${getItemName(itemId)}`,
+                  effects: []
+                });
+                
+                // Notify system
+                eventBus.dispatch(GameEventType.ITEM_ACQUIRED, {
+                  itemId,
+                  source: 'progression_recovery',
+                  forced: true
+                });
+              }
+            });
+          }
+          break;
+          
         default:
           console.warn(`[ProgressionRecovery] Unhandled recovery action: ${action}`);
       }
@@ -456,7 +846,9 @@ export function executeRecoveryPlan(plan: RecoveryPlan, interruptionType: Interr
     transaction.stateAfterRecovery = {
       hasJournal: useJournalStore.getState().hasJournal,
       currentDay: useGameStore.getState().currentDay,
-      hasActiveDialogue: useDialogueStateMachine.getState().activeFlow !== null
+      completedNodes: useGameStore.getState().completedNodeIds.length,
+      hasActiveDialogue: useDialogueStateMachine.getState().activeFlow !== null,
+      knowledge: summarizeKnowledgeState()
     };
     transaction.successful = true;
     
@@ -474,7 +866,11 @@ export function executeRecoveryPlan(plan: RecoveryPlan, interruptionType: Interr
         transactionId,
         actions: plan.requiredActions,
         characterId: plan.characterId,
-        nodeId: plan.nodeId
+        nodeId: plan.nodeId,
+        stateChange: compareStates(
+          transaction.stateBeforeRecovery, 
+          transaction.stateAfterRecovery
+        )
       }
     });
     
@@ -505,6 +901,60 @@ export function executeRecoveryPlan(plan: RecoveryPlan, interruptionType: Interr
     
     return false;
   }
+}
+
+/**
+ * Compare before and after states for telemetry
+ */
+function compareStates(before: any, after: any): Record<string, any> {
+  if (!before || !after) return { incomplete: true };
+  
+  const changes: Record<string, any> = {};
+  
+  // Compare journal state
+  if (before.hasJournal !== after.hasJournal) {
+    changes.journal = { before: before.hasJournal, after: after.hasJournal };
+  }
+  
+  // Compare completed nodes count
+  if (before.completedNodes !== after.completedNodes) {
+    changes.completedNodes = { before: before.completedNodes, after: after.completedNodes };
+  }
+  
+  // Compare active dialogue state
+  if (before.hasActiveDialogue !== after.hasActiveDialogue) {
+    changes.activeDialogue = { before: before.hasActiveDialogue, after: after.hasActiveDialogue };
+  }
+  
+  return changes;
+}
+
+/**
+ * Helper function to get item name from ID
+ */
+function getItemName(itemId: string): string {
+  switch (itemId) {
+    case 'journal': return 'Resident Journal';
+    case 'dosimeter': return 'Personal Dosimeter';
+    case 'calibration_tool': return 'Calibration Tool';
+    default: return itemId.split('_').map(word => 
+      word.charAt(0).toUpperCase() + word.slice(1)
+    ).join(' ');
+  }
+}
+
+/**
+ * Create a summary of knowledge state for telemetry
+ */
+function summarizeKnowledgeState(): Record<string, any> {
+  const knowledge = useKnowledgeStore.getState();
+  
+  return {
+    totalMastery: knowledge.totalMastery,
+    domainCount: Object.keys(knowledge.domainMastery).length,
+    discoveredConcepts: knowledge.nodes.filter(n => n.discovered).length,
+    totalConcepts: knowledge.nodes.length
+  };
 }
 
 /**
@@ -606,11 +1056,99 @@ export function setupProgressionRecovery(): () => void {
     }
   }, 60000); // Check every minute
   
+  // Check after node completion for sequence violations
+  cleanupFns.push(
+    eventBus.subscribe(
+      GameEventType.NODE_COMPLETED,
+      () => {
+        // Short delay to let state update
+        setTimeout(() => {
+          const sequenceViolation = checkForSequenceViolations();
+          if (sequenceViolation) {
+            console.log('[ProgressionRecovery] Sequence violation detected after node completion');
+            checkAndRepairProgression();
+          }
+        }, 500);
+      }
+    )
+  );
+  
   // Return cleanup function
   return () => {
     cleanupFns.forEach(cleanup => cleanup());
     clearInterval(intervalId);
   };
+}
+
+/**
+ * Manual check for specific narrative inconsistencies
+ * This can be exposed to debug systems or triggered by player reporting issues
+ */
+export function performDeepProgressionValidation(): Record<string, any> {
+  // Begin by running standard validation
+  const validationResult = validateNarrativeProgression();
+  
+  // Additional checks beyond standard validation
+  const results: Record<string, any> = {
+    standardValidation: validationResult.isValid,
+    failedCheckpoints: validationResult.failedCheckpoints,
+    additionalChecks: {}
+  };
+  
+  // Check for inconsistencies between knowledge and node completion
+  const knowledgeState = useKnowledgeStore.getState();
+  const gameState = useGameStore.getState();
+  
+  // Characters should have introduced core concepts related to their expertise
+  results.additionalChecks.characterKnowledgeConsistency = {
+    kapoor: gameState.hasCompletedNode('kapoor-calibration') && 
+            knowledgeState.hasMasteredConcept('electron_equilibrium_understood', 1),
+            
+    jesse: gameState.hasCompletedNode('jesse-equipment') &&
+            knowledgeState.hasMasteredConcept('equipment_safety_protocol', 1),
+            
+    quinn: gameState.hasCompletedNode('quinn-theory') &&
+            knowledgeState.hasMasteredConcept('quantum_dosimetry_principles', 1)
+  };
+  
+  // Journal state should be consistent with progression
+  results.additionalChecks.journalConsistency = 
+    gameState.hasCompletedNode('kapoor-calibration') === useJournalStore.getState().hasJournal;
+  
+  // Narrative transactions should be properly completed
+  const transactions = useNarrativeTransaction.getState().getAllTransactions();
+  results.additionalChecks.transactionHealth = {
+    totalTransactions: transactions.length,
+    activeTransactions: transactions.filter(t => t.state === 'active').length,
+    completedTransactions: transactions.filter(t => t.state === 'completed').length,
+    stalledTransactions: transactions.filter(t => 
+      t.state === 'active' && (Date.now() - t.startTime > 60000)
+    ).length
+  };
+  
+  // Overall health assessment
+  results.needsRepair = !validationResult.isValid || 
+                       !results.additionalChecks.journalConsistency ||
+                       results.additionalChecks.transactionHealth.stalledTransactions > 0 ||
+                       Object.values(results.additionalChecks.characterKnowledgeConsistency).includes(false);
+  
+  // If repairs needed, trigger them
+  if (results.needsRepair) {
+    const plan = createRecoveryPlan();
+    if (plan) {
+      results.recoveryPlanCreated = true;
+      results.recoveryPlan = {
+        actions: plan.requiredActions,
+        priority: plan.priority,
+        reasoning: plan.reasoning
+      };
+      
+      // Execute recovery (uncomment to auto-execute)
+      // results.recoveryExecuted = executeRecoveryPlan(plan, 'manual_request');
+    }
+  }
+  
+  return results;
 }
 
 export default {
@@ -619,5 +1157,6 @@ export default {
   executeRecoveryPlan,
   checkAndRepairProgression,
   setupProgressionRecovery,
+  performDeepProgressionValidation,
   getRecoveryHistory: () => recoveryHistory,
 };

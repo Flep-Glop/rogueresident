@@ -34,6 +34,10 @@ export interface ValidationResult {
   failedCheckpoints: string[];
   missingRequirements: Record<string, string[]>;
   requiredRepairs: string[];
+  timeStamp: number;
+  gameDay: number;
+  gamePhase: string;
+  narrativeState?: Record<string, any>;
 }
 
 /**
@@ -93,8 +97,89 @@ const NARRATIVE_CHECKPOINTS: NarrativeCheckpoint[] = [
       // Verify boss preparation status
       return useGameStore.getState().hasCompletedNode('boss-preparation');
     }
+  },
+  
+  // Ionix encounter introduction
+  {
+    id: 'ionix-introduction',
+    description: 'Introduction to the Ionix anomaly',
+    characterId: 'quinn',
+    nodeType: 'ionixTheory',
+    requiredItems: ['journal'],
+    requiredKnowledge: ['quantum_dosimetry_principles'],
+    verificationFunction: () => {
+      // Check if player has discovered the Ionix concept
+      return useKnowledgeStore.getState().hasMasteredConcept('ionix_anomaly', 1);
+    }
+  },
+  
+  // Character relationship milestones
+  {
+    id: 'character-relationship-kapoor',
+    description: 'Building relationship with Dr. Kapoor',
+    characterId: 'kapoor',
+    nodeType: 'characterDevelopment',
+    verificationFunction: () => {
+      // Check if relationship has reached minimum level
+      return useGameStore.getState().getRelationshipLevel('kapoor') >= 1;
+    }
+  },
+  
+  // Critical narrative branch point
+  {
+    id: 'calibration-approach-decision',
+    description: 'Critical decision on calibration approach',
+    characterId: 'kapoor',
+    nodeType: 'criticalChoice',
+    requiredKnowledge: ['electron_equilibrium_understood'],
+    verificationFunction: () => {
+      // Check if the critical choice transaction exists
+      const transactions = useNarrativeTransaction.getState().getAllTransactions();
+      return transactions.some(t => 
+        t.type === 'character_introduction' && 
+        t.metadata.nodeType === 'criticalChoice' &&
+        t.state === 'completed'
+      );
+    }
   }
 ];
+
+/**
+ * Registry of character relationships necessary for progression
+ * This helps the system understand which character interactions are critical
+ */
+const CRITICAL_CHARACTER_RELATIONSHIPS = [
+  {
+    characterId: 'kapoor',
+    minimumLevel: 1,
+    day: 1, 
+    nodeType: 'kapoorCalibration'
+  },
+  {
+    characterId: 'jesse',
+    minimumLevel: 1,
+    day: 2,
+    nodeType: 'jesseEquipment'
+  },
+  {
+    characterId: 'quinn',
+    minimumLevel: 1,
+    day: 3,
+    nodeType: 'quinnTheory'
+  }
+];
+
+/**
+ * Narrative graph defining proper narrative progression sequences
+ * This helps catch sequence errors (things happening out of order)
+ */
+const NARRATIVE_SEQUENCE_GRAPH = {
+  'journal-acquisition': ['equipment-safety-training', 'quantum-theory-introduction'],
+  'equipment-safety-training': ['boss-preparation'],
+  'quantum-theory-introduction': ['ionix-introduction', 'boss-preparation'],
+  'ionix-introduction': ['boss-defeated'],
+  'boss-preparation': ['boss-defeated']
+};
 
 /**
  * Validates the current narrative progression state
@@ -108,7 +193,10 @@ export function validateNarrativeProgression(): ValidationResult {
     isValid: true,
     failedCheckpoints: [],
     missingRequirements: {},
-    requiredRepairs: []
+    requiredRepairs: [],
+    timeStamp: Date.now(),
+    gameDay: gameStore.currentDay,
+    gamePhase: gameStore.gamePhase
   };
   
   // Get current game state
@@ -139,6 +227,25 @@ export function validateNarrativeProgression(): ValidationResult {
     // Boss preparation by day 3
     if (checkpoint.id === 'boss-preparation') {
       return currentDay >= 3;
+    }
+    
+    // Character relationship milestones - based on day
+    if (checkpoint.id.startsWith('character-relationship-')) {
+      const characterId = checkpoint.id.split('-').pop();
+      const relationshipInfo = CRITICAL_CHARACTER_RELATIONSHIPS.find(r => r.characterId === characterId);
+      return relationshipInfo ? currentDay >= relationshipInfo.day : false;
+    }
+    
+    // Ionix introduction by day 3
+    if (checkpoint.id === 'ionix-introduction') {
+      return currentDay >= 3;
+    }
+    
+    // Critical narrative branch points - depend on other checkpoints
+    if (checkpoint.id === 'calibration-approach-decision') {
+      // Only validate if journal has been acquired
+      const journalAcquired = NARRATIVE_CHECKPOINTS.find(cp => cp.id === 'journal-acquisition')?.verificationFunction() || false;
+      return journalAcquired && currentDay >= 2;
     }
     
     return false;
@@ -200,6 +307,21 @@ export function validateNarrativeProgression(): ValidationResult {
     }
   });
   
+  // Also validate sequence correctness
+  validateSequenceCorrectness(result);
+  
+  // Add current narrative state for debugging/telemetry
+  result.narrativeState = {
+    hasJournal: useJournalStore.getState().hasJournal,
+    completedNodes: gameStore.completedNodeIds,
+    relationships: {
+      kapoor: gameStore.getRelationshipLevel('kapoor'),
+      jesse: gameStore.getRelationshipLevel('jesse'),
+      quinn: gameStore.getRelationshipLevel('quinn')
+    },
+    knowledge: summarizeKnowledgeState()
+  };
+  
   // Log validation results
   console.log(`[NarrativeProgressionValidator] Day ${currentDay}, Phase ${gamePhase}`);
   console.log(`Validated ${checkpointsToValidate.length} checkpoints, ${result.failedCheckpoints.length} failed`);
@@ -208,7 +330,101 @@ export function validateNarrativeProgression(): ValidationResult {
     console.warn(`Failed checkpoints: ${result.failedCheckpoints.join(', ')}`);
   }
   
+  // Send telemetry about validation results
+  sendValidationTelemetry(result);
+  
   return result;
+}
+
+/**
+ * Validates that narrative events have occurred in the correct sequence
+ * Adds sequence-related issues to the validation result
+ */
+function validateSequenceCorrectness(result: ValidationResult): void {
+  // Get the set of completed checkpoints
+  const completedCheckpointIds = NARRATIVE_CHECKPOINTS
+    .filter(checkpoint => checkpoint.verificationFunction())
+    .map(checkpoint => checkpoint.id);
+  
+  // Check for sequence violations
+  Object.entries(NARRATIVE_SEQUENCE_GRAPH).forEach(([prerequisiteId, dependentIds]) => {
+    // If we've completed any dependent checkpoint
+    const completedDependents = dependentIds.filter(id => completedCheckpointIds.includes(id));
+    
+    if (completedDependents.length > 0 && !completedCheckpointIds.includes(prerequisiteId)) {
+      // We have a sequence violation - completed a dependent without its prerequisite
+      result.isValid = false;
+      
+      // Only add the prerequisite if not already in failed checkpoints
+      if (!result.failedCheckpoints.includes(prerequisiteId)) {
+        result.failedCheckpoints.push(prerequisiteId);
+      }
+      
+      // Add repair with high priority
+      if (!result.requiredRepairs.includes(prerequisiteId)) {
+        result.requiredRepairs.unshift(prerequisiteId); // Add at the beginning for priority
+      }
+      
+      // Add sequence issue to missing requirements
+      if (!result.missingRequirements[prerequisiteId]) {
+        result.missingRequirements[prerequisiteId] = [];
+      }
+      result.missingRequirements[prerequisiteId].push(
+        `sequence_violation: ${completedDependents.join(', ')} completed before ${prerequisiteId}`
+      );
+    }
+  });
+}
+
+/**
+ * Creates a summary of the player's knowledge state for telemetry
+ */
+function summarizeKnowledgeState(): Record<string, any> {
+  const knowledge = useKnowledgeStore.getState();
+  
+  // Get core concepts for each domain
+  const domains = Object.keys(knowledge.domainMastery);
+  
+  // Create a simplified view of domains and key concepts
+  const knowledgeSummary: Record<string, any> = {
+    totalMastery: knowledge.totalMastery,
+    domains: {}
+  };
+  
+  // Summarize each domain
+  domains.forEach(domain => {
+    knowledgeSummary.domains[domain] = {
+      mastery: knowledge.domainMastery[domain as any],
+      // Get top 5 concepts in this domain
+      keyConcepts: knowledge.nodes
+        .filter(node => node.domain === domain && node.discovered)
+        .sort((a, b) => b.mastery - a.mastery)
+        .slice(0, 5)
+        .map(node => ({
+          id: node.id,
+          name: node.name,
+          mastery: node.mastery
+        }))
+    };
+  });
+  
+  return knowledgeSummary;
+}
+
+/**
+ * Sends telemetry data about validation results
+ */
+function sendValidationTelemetry(result: ValidationResult): void {
+  useEventBus.getState().dispatch(GameEventType.UI_BUTTON_CLICKED, {
+    componentId: 'narrativeProgressionValidator',
+    action: result.isValid ? 'validationPassed' : 'validationFailed',
+    metadata: {
+      day: result.gameDay,
+      phase: result.gamePhase,
+      failedCheckpoints: result.failedCheckpoints,
+      requiredRepairs: result.requiredRepairs
+    }
+  });
 }
 
 /**
@@ -386,6 +602,77 @@ export function repairNarrativeProgression(result: ValidationResult): boolean {
           }
           break;
           
+        case 'ionix-introduction':
+          // Ensure ionix anomaly concept is introduced
+          if (!useKnowledgeStore.getState().hasMasteredConcept('ionix_anomaly', 1)) {
+            console.log('[NarrativeProgressionValidator] Forcing ionix anomaly introduction');
+            
+            // Grant minimal knowledge level
+            useKnowledgeStore.getState().updateMastery('ionix_anomaly', 5);
+            useKnowledgeStore.getState().discoverConcept('ionix_anomaly');
+            
+            // Create transaction record
+            useNarrativeTransaction.getState().startTransaction(
+              'knowledge_revelation',
+              { 
+                concept: 'ionix_anomaly',
+                domain: 'theoretical',
+                source: 'progression_repair' 
+              },
+              'quinn'
+            );
+          }
+          break;
+          
+        case 'character-relationship-kapoor':
+        case 'character-relationship-jesse':
+        case 'character-relationship-quinn':
+          // Extract character ID from checkpoint ID
+          const characterId = checkpointId.split('-').pop() || '';
+          
+          // Ensure minimal relationship level
+          if (useGameStore.getState().getRelationshipLevel(characterId) < 1) {
+            console.log(`[NarrativeProgressionValidator] Forcing minimal relationship with ${characterId}`);
+            
+            // Set relationship to minimal level
+            useGameStore.getState().setRelationship(characterId, 1);
+            
+            // Create transaction record
+            useNarrativeTransaction.getState().startTransaction(
+              'character_introduction',
+              { 
+                relationshipLevel: 1,
+                source: 'progression_repair' 
+              },
+              characterId
+            );
+          }
+          break;
+          
+        case 'calibration-approach-decision':
+          // Ensure the critical choice exists in transaction history
+          const transactions = useNarrativeTransaction.getState().getAllTransactions();
+          const hasCriticalChoice = transactions.some(t => 
+            t.type === 'character_introduction' && 
+            t.metadata.nodeType === 'criticalChoice'
+          );
+          
+          if (!hasCriticalChoice) {
+            console.log('[NarrativeProgressionValidator] Forcing calibration approach decision');
+            
+            // Create transaction record with default choice
+            useNarrativeTransaction.getState().startTransaction(
+              'character_introduction',
+              { 
+                nodeType: 'criticalChoice',
+                choice: 'standard_approach', // Default fallback choice
+                source: 'progression_repair' 
+              },
+              'kapoor'
+            );
+          }
+          break;
+          
         default:
           console.warn(`[NarrativeProgressionValidator] No repair strategy for ${checkpointId}`);
           repairsSuccessful = false;
@@ -428,14 +715,46 @@ export function validateAndRepairDialogue(characterId: string, nodeId: string): 
     console.warn(`- Missing paths: ${progressionStatus.missingPaths.join(', ')}`);
     console.warn(`- Potential issues: ${progressionStatus.potentialIssues.join(', ')}`);
     
+    // Send telemetry about dialogue validation
+    useEventBus.getState().dispatch(GameEventType.UI_BUTTON_CLICKED, {
+      componentId: 'narrativeProgressionValidator',
+      action: 'dialogueValidationFailed',
+      metadata: {
+        character: characterId,
+        nodeId,
+        missingPaths: progressionStatus.missingPaths,
+        potentialIssues: progressionStatus.potentialIssues
+      }
+    });
+    
     // Attempt repair
     const repaired = repairDialogueProgression(characterId, nodeId);
     
     // Log repair result
     if (repaired) {
       console.log(`[NarrativeProgressionValidator] Successfully repaired dialogue for ${characterId}`);
+      
+      // Send telemetry about successful repair
+      useEventBus.getState().dispatch(GameEventType.UI_BUTTON_CLICKED, {
+        componentId: 'narrativeProgressionValidator',
+        action: 'dialogueRepairSucceeded',
+        metadata: {
+          character: characterId,
+          nodeId
+        }
+      });
     } else {
       console.error(`[NarrativeProgressionValidator] Failed to repair dialogue for ${characterId}`);
+      
+      // Send telemetry about failed repair
+      useEventBus.getState().dispatch(GameEventType.UI_BUTTON_CLICKED, {
+        componentId: 'narrativeProgressionValidator',
+        action: 'dialogueRepairFailed',
+        metadata: {
+          character: characterId,
+          nodeId
+        }
+      });
     }
     
     return repaired;
@@ -443,6 +762,101 @@ export function validateAndRepairDialogue(characterId: string, nodeId: string): 
     console.error(`[NarrativeProgressionValidator] Error validating dialogue:`, error);
     return false;
   }
+}
+
+/**
+ * Validates character relationship progression
+ * Ensures relationships are developing appropriately for game progress
+ */
+export function validateCharacterRelationships(): boolean {
+  const gameStore = useGameStore.getState();
+  const { currentDay } = gameStore;
+  let isValid = true;
+  
+  // Check required relationships based on day
+  CRITICAL_CHARACTER_RELATIONSHIPS.forEach(relationship => {
+    // Only validate relationships required by current day
+    if (currentDay >= relationship.day) {
+      const level = gameStore.getRelationshipLevel(relationship.characterId);
+      if (level < relationship.minimumLevel) {
+        console.warn(`[NarrativeProgressionValidator] Character relationship issue: ${relationship.characterId} should be at least level ${relationship.minimumLevel} by day ${relationship.day}`);
+        isValid = false;
+        
+        // Send telemetry
+        useEventBus.getState().dispatch(GameEventType.UI_BUTTON_CLICKED, {
+          componentId: 'narrativeProgressionValidator',
+          action: 'relationshipValidationFailed',
+          metadata: {
+            character: relationship.characterId,
+            currentLevel: level,
+            requiredLevel: relationship.minimumLevel,
+            day: currentDay
+          }
+        });
+      }
+    }
+  });
+  
+  return isValid;
+}
+
+/**
+ * Validates overall narrative pacing
+ * Ensures progression milestones are appropriately distributed
+ */
+export function validateNarrativePacing(): Record<string, any> {
+  const gameStore = useGameStore.getState();
+  const { currentDay } = gameStore;
+  
+  // Track critical narrative moments completed by day
+  const narrativeMoments = NARRATIVE_CHECKPOINTS.filter(cp => cp.verificationFunction());
+  
+  // Group by character to detect character availability issues
+  const characterMoments: Record<string, number> = {};
+  
+  narrativeMoments.forEach(moment => {
+    if (moment.characterId !== 'any') {
+      characterMoments[moment.characterId] = (characterMoments[moment.characterId] || 0) + 1;
+    }
+  });
+  
+  // Check for character availability issues
+  const characters = ['kapoor', 'jesse', 'quinn'];
+  const missingCharacters = characters.filter(c => !characterMoments[c]);
+  
+  // Calculate pacing statistics
+  const result = {
+    day: currentDay,
+    totalMomentsCompleted: narrativeMoments.length,
+    characterMoments,
+    missingCharacters,
+    pacingStatus: 'on_track',
+    recommendations: []
+  };
+  
+  // Add pacing recommendations
+  if (currentDay >= 3 && narrativeMoments.length < 3) {
+    result.pacingStatus = 'behind';
+    result.recommendations.push('Player is behind on critical story beats - consider providing more narrative moments');
+  }
+  
+  if (missingCharacters.length > 0) {
+    result.recommendations.push(`Player hasn't engaged with: ${missingCharacters.join(', ')} - consider emphasizing these character nodes`);
+  }
+  
+  // Send telemetry
+  useEventBus.getState().dispatch(GameEventType.UI_BUTTON_CLICKED, {
+    componentId: 'narrativeProgressionValidator',
+    action: 'pacingValidation',
+    metadata: {
+      day: currentDay,
+      status: result.pacingStatus,
+      momentsCompleted: narrativeMoments.length,
+      characterCoverage: Object.keys(characterMoments).length / characters.length
+    }
+  });
+  
+  return result;
 }
 
 /**
@@ -466,6 +880,9 @@ export function setupNarrativeValidation(): () => void {
           console.warn('[NarrativeProgressionValidator] Issues detected, attempting repair');
           repairNarrativeProgression(result);
         }
+        
+        // Also check character relationships
+        validateCharacterRelationships();
       }
       
       // Validate when starting a new day
@@ -477,6 +894,38 @@ export function setupNarrativeValidation(): () => void {
           console.warn('[NarrativeProgressionValidator] Issues detected, attempting repair');
           repairNarrativeProgression(result);
         }
+        
+        // Check narrative pacing at day start
+        const pacingResult = validateNarrativePacing();
+        if (pacingResult.pacingStatus !== 'on_track') {
+          console.warn('[NarrativeProgressionValidator] Narrative pacing issues detected');
+          console.warn(pacingResult.recommendations.join('\n'));
+        }
+      }
+    }
+  );
+  
+  // Also validate on item acquisition, which might fulfill requirements
+  const unsubItemAcquired = eventBus.subscribe(
+    GameEventType.ITEM_ACQUIRED,
+    (event) => {
+      // Check if the acquired item might affect narrative progression
+      const journalItems = ['journal', 'annotated_journal', 'technical_journal'];
+      if (journalItems.includes(event.payload.itemId)) {
+        console.log('[NarrativeProgressionValidator] Journal acquired, validating progression');
+        validateNarrativeProgression();
+      }
+    }
+  );
+  
+  // Validate when knowledge is gained, which might fulfill requirements
+  const unsubKnowledgeGained = eventBus.subscribe(
+    GameEventType.KNOWLEDGE_GAINED,
+    (event) => {
+      // Only validate for significant knowledge gains
+      if (event.payload.amount >= 10) {
+        console.log('[NarrativeProgressionValidator] Significant knowledge gained, validating progression');
+        validateNarrativeProgression();
       }
     }
   );
@@ -484,6 +933,8 @@ export function setupNarrativeValidation(): () => void {
   // Return cleanup function
   return () => {
     unsubPhase();
+    unsubItemAcquired();
+    unsubKnowledgeGained();
   };
 }
 
@@ -491,5 +942,7 @@ export default {
   validateNarrativeProgression,
   repairNarrativeProgression,
   validateAndRepairDialogue,
+  validateCharacterRelationships,
+  validateNarrativePacing,
   setupNarrativeValidation
 };
