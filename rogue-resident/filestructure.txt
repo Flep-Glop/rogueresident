@@ -59,10 +59,15 @@
 │   │       └── NotificationManager.tsx
 │   ├── core
 │   │   ├── dialogue
+│   │   │   ├── CharacterMemorySystem.ts
+│   │   │   ├── DialogueAuthoringFormat.ts
 │   │   │   ├── DialogueController.ts
 │   │   │   ├── DialogueProgressionHelpers.ts
+│   │   │   ├── DialogueRuntimeValidator.ts
 │   │   │   ├── DialogueStateMachine.ts
-│   │   │   └── NarrativeTransaction.ts
+│   │   │   ├── NarrativeBranchingSystem.ts
+│   │   │   ├── NarrativeTransaction.ts
+│   │   │   └── WriterToolsIntegration.ts
 │   │   ├── events
 │   │   │   ├── CentralEventBus.ts
 │   │   │   ├── EventEffectsIntegration.ts
@@ -145,4 +150,4 @@
 │   └── testNodeAccessibility.js
 └── tsconfig.json
 
-22 directories, 123 files
+22 directories, 128 files
