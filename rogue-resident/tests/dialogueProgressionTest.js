@@ -10,7 +10,7 @@
  */
 
 const { createEventRecorder } = require('./eventRecorder');
-const assert = require('./assert');
+const { assert, assertEqual, assertIncludes } = require('./assert');
 
 // Import the necessary modules for testing
 const GameEventType = {

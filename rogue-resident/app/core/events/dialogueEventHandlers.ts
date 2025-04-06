@@ -16,6 +16,7 @@ import { useEventBus } from './CentralEventBus';
 import { useGameStore } from '../../store/gameStore';
 import { useKnowledgeStore } from '../../store/knowledgeStore';
 import { useGameStateMachine } from '../statemachine/GameStateMachine';
+import { useJournalStore } from '../../store/journalStore'; // Added import for journal store
 import { playSoundEffect, flashScreen } from './CentralEventBus';
 
 // Dialogue option selection payload
@@ -117,8 +118,9 @@ export function initializeDialogueEventHandlers() {
       (event) => {
         const { tier, character, source, nodeId } = event.payload;
         
-        // Add journal to player inventory
-        useGameStore.getState().addJournal(tier);
+        // Initialize journal using the proper method from journalStore
+        // FIXED: Use proper method from journalStore instead of non-existent addJournal
+        useJournalStore.getState().initializeJournal(tier);
         
         // Mark node as a journal acquisition if node ID provided
         if (nodeId) {
