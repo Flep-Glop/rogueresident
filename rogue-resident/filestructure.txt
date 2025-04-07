@@ -42,7 +42,8 @@
 │   │   │       ├── InteractiveFormat.tsx
 │   │   │       └── ProceduralFormat.tsx
 │   │   ├── debug
-│   │   │   └── DebugStatePanel.tsx
+│   │   │   ├── DebugStatePanel.tsx
+│   │   │   └── VerticalSliceDebugPanel.tsx
 │   │   ├── dialogue
 │   │   │   ├── DialogueSystem.tsx
 │   │   │   └── UnlockableDialogueOptions.tsx
@@ -53,12 +54,14 @@
 │   │   │   ├── JournalKnowledgePage.tsx
 │   │   │   ├── JournalNotesPage.tsx
 │   │   │   └── JournalReferencesPage.tsx
-│   │   └── knowledge
-│   │       ├── ConnectionSuggestions.tsx
-│   │       ├── ConstellationView.tsx
-│   │       ├── KnowledgeToast.tsx
-│   │       ├── KnowledgeUpdate.tsx
-│   │       └── NotificationManager.tsx
+│   │   ├── knowledge
+│   │   │   ├── ConnectionSuggestions.tsx
+│   │   │   ├── ConstellationView.tsx
+│   │   │   ├── KnowledgeToast.tsx
+│   │   │   ├── KnowledgeUpdate.tsx
+│   │   │   └── NotificationManager.tsx
+│   │   └── vs
+│   │       └── SimplifiedKapoorMap.tsx
 │   ├── core
 │   │   ├── dialogue
 │   │   │   ├── CharacterMemorySystem.ts
@@ -122,14 +125,16 @@
 │   │   ├── challenge.ts
 │   │   ├── encounterTypes.ts
 │   │   └── map.ts
-│   └── utils
-│       ├── CharacterTeachingStyles.ts
-│       ├── dialogueLoader.ts
-│       ├── improvedMapGenerator.ts
-│       ├── knowledgeRequirements.ts
-│       ├── mapGenerator.ts
-│       ├── seedUtils.ts
-│       └── telemetryService.ts
+│   ├── utils
+│   │   ├── CharacterTeachingStyles.ts
+│   │   ├── dialogueLoader.ts
+│   │   ├── improvedMapGenerator.ts
+│   │   ├── knowledgeRequirements.ts
+│   │   ├── mapGenerator.ts
+│   │   ├── seedUtils.ts
+│   │   └── telemetryService.ts
+│   └── vertical-slice
+│       └── page.tsx
 ├── eslint.config.mjs
 ├── filestructure.txt
 ├── jest-config.js
@@ -154,4 +159,4 @@
 │   └── testNodeAccessibility.js
 └── tsconfig.json
 
-23 directories, 131 files
+25 directories, 134 files
