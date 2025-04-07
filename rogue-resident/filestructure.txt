@@ -5,7 +5,6 @@
 │   │   ├── GameContainer.tsx
 │   │   ├── HillHomeScene.tsx
 │   │   ├── PlayerStats.tsx
-│   │   ├── audio
 │   │   ├── challenges
 │   │   │   ├── CalibrationChallenge.tsx
 │   │   │   └── formats
@@ -13,7 +12,6 @@
 │   │   ├── debug
 │   │   │   ├── DebugStatePanel.tsx
 │   │   │   └── VerticalSliceDebugPanel.tsx
-│   │   ├── dialogue
 │   │   ├── journal
 │   │   │   └── Journal.tsx
 │   │   ├── knowledge
@@ -42,12 +40,14 @@
 │   ├── favicon.ico
 │   ├── globals.css
 │   ├── hooks
-│   │   └── useDialogueFlow.ts
+│   │   ├── useDialogueFlow.ts
+│   │   └── useTypewriter.ts
 │   ├── layout.tsx
 │   ├── page.tsx
 │   ├── store
 │   │   ├── gameStore.ts
-│   │   └── journalStore.ts
+│   │   ├── journalStore.ts
+│   │   └── knowledgeStore.ts
 │   ├── styles
 │   ├── types
 │   └── utils
@@ -75,4 +75,4 @@
 │   └── testNodeAccessibility.js
 └── tsconfig.json
 
-24 directories, 51 files
+22 directories, 53 files
