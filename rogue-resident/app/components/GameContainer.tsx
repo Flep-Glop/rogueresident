@@ -63,6 +63,7 @@ export default function GameContainer({ mapSlotContent }: GameContainerProps = {
   const initRef = useRef<boolean>(false);
   const cleanupRef = useRef<(() => void) | null>(null);
   const componentMountedRef = useRef<boolean>(true);
+  const subscriptionsRef = useRef<Array<() => void>>([]);
   
   // Track render count for development diagnostics 
   useEffect(() => {
@@ -92,19 +93,73 @@ export default function GameContainer({ mapSlotContent }: GameContainerProps = {
       const cleanup = initializeSystems();
       cleanupRef.current = cleanup;
       
-      // Logging through event system to test connectivity
-      useEventBus.getState().dispatch(
-        GameEventType.UI_BUTTON_CLICKED,
-        {
-          componentId: 'gameContainer',
-          action: 'mounted',
-          metadata: { 
-            timestamp: Date.now(),
-            renderCount: containerState.renderCount 
+      // Subscribe to critical events with safe subscription tracking
+      const safeSubscribe = <T extends any>(
+        eventType: GameEventType, 
+        handler: (event: any) => void
+      ): (() => void) => {
+        try {
+          // Get event bus state
+          const eventBus = useEventBus.getState();
+          if (!eventBus || typeof eventBus.subscribe !== 'function') {
+            console.error(`Failed to subscribe to ${eventType} - event bus not available`);
+            return () => {}; // Return no-op
           }
-        },
-        'gameContainer:mount'
-      );
+          
+          // Create bound handler that checks component is still mounted
+          const boundHandler = (event: any) => {
+            if (componentMountedRef.current) {
+              handler(event);
+            }
+          };
+          
+          // Subscribe and store unsubscribe function
+          const unsubscribe = eventBus.subscribe(eventType, boundHandler);
+          
+          // Store unsubscribe function for cleanup
+          if (typeof unsubscribe === 'function') {
+            subscriptionsRef.current.push(unsubscribe);
+          } else {
+            console.warn(`Subscription to ${eventType} returned invalid unsubscribe function`);
+          }
+          
+          return unsubscribe;
+        } catch (error) {
+          console.error(`Error subscribing to ${eventType}:`, error);
+          return () => {}; // Return no-op on error
+        }
+      };
+      
+      // Set up event listeners for critical progression
+      safeSubscribe(GameEventType.DIALOGUE_CRITICAL_PATH, (event) => {
+        console.log("Critical path event received:", event);
+      });
+      
+      safeSubscribe(GameEventType.JOURNAL_ACQUIRED, (event) => {
+        console.log("Journal acquired event received:", event);
+      });
+      
+      safeSubscribe(GameEventType.GAME_PHASE_CHANGED, (event) => {
+        console.log("Game phase changed event received:", event);
+      });
+      
+      // Logging through event system to test connectivity
+      try {
+        useEventBus.getState().dispatch(
+          GameEventType.UI_BUTTON_CLICKED,
+          {
+            componentId: 'gameContainer',
+            action: 'mounted',
+            metadata: { 
+              timestamp: Date.now(),
+              renderCount: containerState.renderCount 
+            }
+          },
+          'gameContainer:mount'
+        );
+      } catch (error) {
+        console.error("Error dispatching mount event:", error);
+      }
       
       // Generate map if needed
       if (!map) {
@@ -144,7 +199,27 @@ export default function GameContainer({ mapSlotContent }: GameContainerProps = {
         status: 'unmounting'
       }));
       
-      // Run cleanup if we initialized
+      // First unsubscribe from all events
+      if (subscriptionsRef.current.length > 0) {
+        console.log(`Unsubscribing from ${subscriptionsRef.current.length} event listeners`);
+        
+        subscriptionsRef.current.forEach((unsubscribe, index) => {
+          try {
+            if (typeof unsubscribe === 'function') {
+              unsubscribe();
+            } else {
+              console.warn(`Unsubscribe function at index ${index} is not a function`);
+            }
+          } catch (error) {
+            console.error(`Error unsubscribing from event at index ${index}:`, error);
+          }
+        });
+        
+        // Clear subscriptions array
+        subscriptionsRef.current = [];
+      }
+      
+      // Then run system cleanup
       if (cleanupRef.current) {
         try {
           cleanupRef.current();
@@ -233,8 +308,8 @@ export default function GameContainer({ mapSlotContent }: GameContainerProps = {
               onClick={() => {
                 // Try emergency reset
                 try {
-                  if (window.__FORCE_REINITIALIZE__) {
-                    window.__FORCE_REINITIALIZE__();
+                  if ((window as any).__FORCE_REINITIALIZE__) {
+                    (window as any).__FORCE_REINITIALIZE__();
                   }
                   window.location.reload();
                 } catch (e) {
@@ -256,15 +331,18 @@ export default function GameContainer({ mapSlotContent }: GameContainerProps = {
           onComplete={() => {
             try {
               // Event first, then state transition
-              useEventBus.getState().dispatch(
-                GameEventType.UI_BUTTON_CLICKED,
-                {
-                  componentId: 'nightCompleteButton',
-                  action: 'click',
-                  metadata: { timestamp: Date.now() }
-                },
-                'hillHomeScene:complete'
-              );
+              const eventBus = useEventBus.getState();
+              if (eventBus && typeof eventBus.dispatch === 'function') {
+                eventBus.dispatch(
+                  GameEventType.UI_BUTTON_CLICKED,
+                  {
+                    componentId: 'nightCompleteButton',
+                    action: 'click',
+                    metadata: { timestamp: Date.now() }
+                  },
+                  'hillHomeScene:complete'
+                );
+              }
               completeNight();
             } catch (error) {
               console.error("Error completing night phase:", error);
@@ -353,18 +431,25 @@ export default function GameContainer({ mapSlotContent }: GameContainerProps = {
                   renderCount: prev.renderCount + 1
                 }));
                 
-                useEventBus.getState().dispatch(
-                  GameEventType.UI_BUTTON_CLICKED,
-                  {
-                    componentId: 'debugForceRerenderButton',
-                    action: 'click',
-                    metadata: { 
-                      renderCount: containerState.renderCount + 1,
-                      timestamp: Date.now() 
-                    }
-                  },
-                  'debug:forceRerender'
-                );
+                try {
+                  const eventBus = useEventBus.getState();
+                  if (eventBus && typeof eventBus.dispatch === 'function') {
+                    eventBus.dispatch(
+                      GameEventType.UI_BUTTON_CLICKED,
+                      {
+                        componentId: 'debugForceRerenderButton',
+                        action: 'click',
+                        metadata: { 
+                          renderCount: containerState.renderCount + 1,
+                          timestamp: Date.now() 
+                        }
+                      },
+                      'debug:forceRerender'
+                    );
+                  }
+                } catch (error) {
+                  console.error("Error dispatching rerender event:", error);
+                }
               }}
             >
               Force Rerender
@@ -373,15 +458,22 @@ export default function GameContainer({ mapSlotContent }: GameContainerProps = {
             <button 
               className="bg-blue-600 text-white text-xs px-2 py-1 rounded opacity-70 hover:opacity-100"
               onClick={() => {
-                useEventBus.getState().dispatch(
-                  GameEventType.UI_BUTTON_CLICKED,
-                  {
-                    componentId: 'debugClearStorageButton',
-                    action: 'click',
-                    metadata: { timestamp: Date.now() }
-                  },
-                  'debug:clearStorage'
-                );
+                try {
+                  const eventBus = useEventBus.getState();
+                  if (eventBus && typeof eventBus.dispatch === 'function') {
+                    eventBus.dispatch(
+                      GameEventType.UI_BUTTON_CLICKED,
+                      {
+                        componentId: 'debugClearStorageButton',
+                        action: 'click',
+                        metadata: { timestamp: Date.now() }
+                      },
+                      'debug:clearStorage'
+                    );
+                  }
+                } catch (error) {
+                  console.error("Error dispatching clear storage event:", error);
+                }
                 
                 localStorage.removeItem('rogue-resident-game');
                 window.location.reload();
@@ -393,8 +485,8 @@ export default function GameContainer({ mapSlotContent }: GameContainerProps = {
             <button 
               className="bg-purple-600 text-white text-xs px-2 py-1 rounded opacity-70 hover:opacity-100"
               onClick={() => {
-                if (window.__RESET_EVENT_SYSTEM__) {
-                  window.__RESET_EVENT_SYSTEM__();
+                if ((window as any).__RESET_EVENT_SYSTEM__) {
+                  (window as any).__RESET_EVENT_SYSTEM__();
                 }
               }}
             >

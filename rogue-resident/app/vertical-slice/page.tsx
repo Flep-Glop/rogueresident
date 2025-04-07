@@ -1,5 +1,6 @@
 // app/vertical-slice/page.tsx
 'use client';
+import '../core/events/InstallEmergencyHotfix';
 import { useEffect, useState } from 'react';
 import { initializeSystems } from '../core/init';
 import GameContainer from '../components/GameContainer';

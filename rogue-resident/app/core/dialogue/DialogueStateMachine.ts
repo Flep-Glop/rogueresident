@@ -14,7 +14,7 @@
  */
 
 // Import from our barrel file to prevent import cycles
-import { useEventBus, GameEventType } from '../events';
+import { useEventBus, GameEventType, safeDispatch } from '../events';
 import { useNarrativeTransaction } from './NarrativeTransaction';
 import { create } from 'zustand';
 import { immer } from 'zustand/middleware/immer';
@@ -122,6 +122,10 @@ interface DialogueStateMachineState {
   showBackstory: boolean;
   backstoryText: string;
   
+  // CRITICAL ADDITION: Add isActive property for easier state checks
+  isActive: boolean;
+  currentNodeId: string | null;
+  
   // Flow control with simplified transition model
   dispatch: (action: DialogueAction) => void;
   initializeFlow: (flow: DialogueFlow) => void;
@@ -143,9 +147,17 @@ interface DialogueStateMachineState {
   handleCriticalPathEvent: (stateId: string) => void;
 }
 
+/**
+ * Helper function to safely dispatch events
+ * This prevents errors from propagating and causing React render issues
+ */
+function safeEventDispatch(eventType: GameEventType, payload: any, source?: string) {
+  safeDispatch(eventType, payload, source || 'dialogueStateMachine');
+}
+
 // Helper function to dispatch journal acquired events
 function journalAcquired(tier: string, character: string, source: string) {
-  useEventBus.getState().dispatch(GameEventType.JOURNAL_ACQUIRED, {
+  safeEventDispatch(GameEventType.JOURNAL_ACQUIRED, {
     tier,
     character,
     source
@@ -161,7 +173,7 @@ function dialogueCriticalPath(
   playerScore: number,
   wasRepaired: boolean
 ) {
-  useEventBus.getState().dispatch(GameEventType.DIALOGUE_CRITICAL_PATH, {
+  safeEventDispatch(GameEventType.DIALOGUE_CRITICAL_PATH, {
     dialogueId,
     characterId,
     nodeId,
@@ -188,6 +200,27 @@ function canStateAutoAdvance(state: DialogueState): boolean {
   return !!state.nextStateId;
 }
 
+// Counter for unique transaction IDs
+let transactionCounter = 0;
+
+// CRITICAL ADDITION: Install global error handlers for emergency recovery
+if (typeof window !== 'undefined') {
+  (window as any).__REPAIR_DIALOGUE_FLOW__ = () => {
+    try {
+      const stateMachine = useDialogueStateMachine.getState();
+      if (stateMachine.isActive && stateMachine.context) {
+        console.log('[EMERGENCY] Attempting dialogue flow repair');
+        stateMachine.forceProgressionRepair();
+        return true;
+      }
+      return false;
+    } catch (e) {
+      console.error('[EMERGENCY] Repair dialogue flow failed:', e);
+      return false;
+    }
+  };
+}
+
 // Optimized state machine implementation with immer for immutable updates
 export const useDialogueStateMachine = create<DialogueStateMachineState>()(
   immer((set, get) => ({
@@ -200,686 +233,875 @@ export const useDialogueStateMachine = create<DialogueStateMachineState>()(
     showBackstory: false,
     backstoryText: '',
     
+    // CRITICAL ADDITION: Add computed properties for easier state checks
+    isActive: false,
+    currentNodeId: null,
+    
     // Unified dispatch function for state updates
     dispatch: (action: DialogueAction) => {
       console.log(`[DialogueMachine] Dispatching: ${action.type}`);
       
-      switch (action.type) {
-        case 'INITIALIZE_FLOW':
-          get().initializeFlow(action.flow);
-          break;
-        case 'SELECT_OPTION':
-          get().selectOption(action.optionId);
-          break;
-        case 'ADVANCE_STATE':
-          get().advanceState();
-          break;
-        case 'JUMP_TO_STATE':
-          get().jumpToState(action.stateId);
-          break;
-        case 'COMPLETE_FLOW':
-          get().completeFlow();
-          break;
-        case 'SET_RESPONSE_VISIBILITY':
-          set(state => {
-            state.showResponse = action.visible;
-            return state;
-          });
-          break;
-        case 'SET_BACKSTORY_VISIBILITY':
-          set(state => {
-            state.showBackstory = action.visible;
-            if (action.text !== undefined) {
-              state.backstoryText = action.text;
-            }
-            return state;
-          });
-          break;
-        case 'UPDATE_CONTEXT':
-          set(state => {
-            if (!state.context) return state;
-            
-            // Start with a base merge
-            state.context = { 
-              ...state.context, 
-              ...action.update 
-            };
-            
-            // Handle deep merges for complex objects
-            if (action.update.transactionIds) {
-              state.context.transactionIds = {
-                ...state.context.transactionIds,
-                ...action.update.transactionIds
+      try {
+        switch (action.type) {
+          case 'INITIALIZE_FLOW':
+            get().initializeFlow(action.flow);
+            break;
+          case 'SELECT_OPTION':
+            get().selectOption(action.optionId);
+            break;
+          case 'ADVANCE_STATE':
+            get().advanceState();
+            break;
+          case 'JUMP_TO_STATE':
+            get().jumpToState(action.stateId);
+            break;
+          case 'COMPLETE_FLOW':
+            get().completeFlow();
+            break;
+          case 'SET_RESPONSE_VISIBILITY':
+            set(state => {
+              state.showResponse = action.visible;
+              return state;
+            });
+            break;
+          case 'SET_BACKSTORY_VISIBILITY':
+            set(state => {
+              state.showBackstory = action.visible;
+              if (action.text !== undefined) {
+                state.backstoryText = action.text;
+              }
+              return state;
+            });
+            break;
+          case 'UPDATE_CONTEXT':
+            set(state => {
+              if (!state.context) return state;
+              
+              // Create a new merged context with careful handling of nested objects
+              state.context = {
+                ...state.context,
+                ...action.update,
+                // Carefully merge nested objects
+                transactionIds: {
+                  ...state.context.transactionIds,
+                  ...(action.update.transactionIds || {})
+                },
+                criticalPathProgress: {
+                  ...state.context.criticalPathProgress,
+                  ...(action.update.criticalPathProgress || {})
+                },
+                criticalChoices: {
+                  ...(state.context.criticalChoices || {}),
+                  ...(action.update.criticalChoices || {})
+                }
               };
-            }
-            
-            if (action.update.criticalPathProgress) {
-              state.context.criticalPathProgress = {
-                ...state.context.criticalPathProgress,
-                ...action.update.criticalPathProgress
-              };
-            }
-            
-            if (action.update.criticalChoices) {
-              state.context.criticalChoices = {
-                ...state.context.criticalChoices || {},
-                ...action.update.criticalChoices
-              };
-            }
-            
-            return state;
-          });
-          break;
+              
+              return state;
+            });
+            break;
+        }
+      } catch (error) {
+        console.error(`[DialogueMachine] Error in dispatch for action ${action.type}:`, error);
       }
     },
     
     initializeFlow: (flow: DialogueFlow) => {
-      // Find initial state
-      const initialState = flow.states[flow.initialStateId];
-      
-      if (!initialState) {
-        console.error(`Initial state ${flow.initialStateId} not found in flow ${flow.id}`);
-        return;
-      }
-      
-      // Process the dialogue state graph to mark all states with options 
-      // as noAutoAdvance if not explicitly specified
-      const processedStates = Object.fromEntries(
-        Object.entries(flow.states).map(([id, state]) => {
-          const hasOptions = state.options && state.options.length > 0;
-          const inferredType = state.type || (hasOptions ? 'question' : 'intro');
-          
-          return [
-            id,
-            { 
-              ...state, 
-              type: inferredType,
-              // Mark states with options to not auto-advance unless explicitly allowed
-              noAutoAdvance: hasOptions ? (state.noAutoAdvance ?? true) : !!state.noAutoAdvance
-            }
-          ];
-        })
-      );
-      
-      // Create a defensive copy of the context
-      const safeContext = {
-        ...flow.context,
-        visitedStateIds: [...(flow.context.visitedStateIds || []), flow.initialStateId],
-        criticalPathProgress: { ...(flow.context.criticalPathProgress || {}) },
-        transactionIds: { ...(flow.context.transactionIds || {}) }
-      };
-      
-      // Initialize the flow with processed states
-      set(state => {
-        state.activeFlow = {
-          ...flow,
-          context: safeContext,
-          states: processedStates
-        };
-        state.currentState = processedStates[flow.initialStateId];
-        state.context = safeContext;
-        state.selectedOption = null;
-        state.showResponse = false;
-        state.showBackstory = false;
-        return state;
-      });
-      
-      // Call onEnter for initial state
-      if (initialState.onEnter && flow.context) {
-        try {
-          initialState.onEnter(flow.context);
-        } catch (error) {
-          console.error(`[DialogueMachine] Error in onEnter for ${initialState.id}:`, error);
+      try {
+        // Find initial state
+        const initialState = flow.states[flow.initialStateId];
+        
+        if (!initialState) {
+          console.error(`Initial state ${flow.initialStateId} not found in flow ${flow.id}`);
+          return;
         }
+        
+        // Process the dialogue state graph to mark all states with options 
+        // as noAutoAdvance if not explicitly specified
+        const processedStates = Object.fromEntries(
+          Object.entries(flow.states).map(([id, state]) => {
+            const hasOptions = state.options && state.options.length > 0;
+            const inferredType = state.type || (hasOptions ? 'question' : 'intro');
+            
+            return [
+              id,
+              { 
+                ...state, 
+                type: inferredType,
+                // Mark states with options to not auto-advance unless explicitly allowed
+                noAutoAdvance: hasOptions ? (state.noAutoAdvance ?? true) : !!state.noAutoAdvance
+              }
+            ];
+          })
+        );
+        
+        // Create a defensive copy of the context
+        const safeContext = {
+          ...flow.context,
+          visitedStateIds: [...(flow.context.visitedStateIds || []), flow.initialStateId],
+          criticalPathProgress: { ...(flow.context.criticalPathProgress || {}) },
+          transactionIds: { ...(flow.context.transactionIds || {}) }
+        };
+        
+        // Initialize the flow with processed states
+        set(state => {
+          state.activeFlow = {
+            ...flow,
+            context: safeContext,
+            states: processedStates
+          };
+          state.currentState = processedStates[flow.initialStateId];
+          state.context = safeContext;
+          state.selectedOption = null;
+          state.showResponse = false;
+          state.showBackstory = false;
+          
+          // CRITICAL ADDITION: Update computed properties 
+          state.isActive = true;
+          state.currentNodeId = flow.initialStateId;
+          
+          return state;
+        });
+        
+        // Call onEnter for initial state
+        if (initialState.onEnter && flow.context) {
+          try {
+            initialState.onEnter(flow.context);
+          } catch (error) {
+            console.error(`[DialogueMachine] Error in onEnter for ${initialState.id}:`, error);
+          }
+        }
+        
+        // Log the start of this dialogue flow
+        safeEventDispatch(GameEventType.DIALOGUE_STARTED, {
+          flowId: flow.id,
+          character: flow.context.characterId,
+          initialState: initialState.id
+        });
+      } catch (error) {
+        console.error(`[DialogueMachine] Error initializing flow:`, error);
       }
-      
-      // Log the start of this dialogue flow
-      useEventBus.getState().dispatch(GameEventType.DIALOGUE_STARTED, {
-        flowId: flow.id,
-        character: flow.context.characterId,
-        initialState: initialState.id
-      });
     },
     
     selectOption: (optionId: string) => {
-      const { currentState, context, activeFlow } = get();
-      
-      if (!currentState || !context || !activeFlow) {
-        console.warn(`[DialogueMachine] Cannot select option without active flow`);
-        return;
-      }
-      
-      // Find the selected option in the current state's options
-      const option = currentState.options?.find(o => o.id === optionId);
-      
-      if (!option) {
-        console.error(`Option ${optionId} not found in state ${currentState.id}`);
+      try {
+        const { currentState, context, activeFlow } = get();
         
-        // Get all available options for debugging
-        const availableOptions = currentState.options?.map(o => o.id).join(', ');
-        console.log(`Available options: ${availableOptions || 'none'}`);
-        
-        return;
-      }
-      
-      // Create updated context with option effects
-      set(state => {
-        if (!state.context) return state;
-        
-        // Update player score if relationshipChange is defined
-        if (option.relationshipChange !== undefined) {
-          state.context.playerScore += option.relationshipChange;
+        if (!currentState || !context || !activeFlow) {
+          console.warn(`[DialogueMachine] Cannot select option without active flow`);
+          return;
         }
         
-        // Add option to selection history
-        state.context.selectedOptionIds.push(optionId);
+        // Find the selected option in the current state's options
+        const option = currentState.options?.find(o => o.id === optionId);
         
-        // Track critical path progress
-        if (option.isCriticalPath) {
-          state.context.criticalPathProgress[`option-${optionId}`] = true;
-        }
-        
-        // Apply knowledge gain if any
-        if (option.knowledgeGain) {
-          const { conceptId, amount } = option.knowledgeGain;
-          if (!state.context.knowledgeGained[conceptId]) {
-            state.context.knowledgeGained[conceptId] = 0;
-          }
-          state.context.knowledgeGained[conceptId] += amount;
-        }
-        
-        // Update UI state
-        state.selectedOption = option;
-        state.showResponse = Boolean(option.responseText);
-        state.showBackstory = Boolean(option.triggersBackstory && state.context.playerScore >= 2);
-        
-        // If this triggers backstory, prepare it
-        if (option.triggersBackstory && state.context.playerScore >= 2) {
-          // Find backstory state - typically named with a backstory prefix
-          const backstoryId = `backstory-${option.id.split('-')[1] || 'default'}`;
-          const backstoryState = Object.values(state.activeFlow?.states || {})
-            .find(s => s.id === backstoryId);
+        if (!option) {
+          console.error(`Option ${optionId} not found in state ${currentState.id}`);
           
-          if (backstoryState && backstoryState.text) {
-            state.backstoryText = backstoryState.text;
-          }
+          // Get all available options for debugging
+          const availableOptions = currentState.options?.map(o => o.id).join(', ');
+          console.log(`Available options: ${availableOptions || 'none'}`);
+          
+          return;
         }
         
-        return state;
-      });
-      
-      // Dispatch events outside of state update to prevent subscription loops
-      const updatedContext = get().context;
-      
-      // Log the option selection
-      useEventBus.getState().dispatch(GameEventType.DIALOGUE_OPTION_SELECTED, {
-        optionId,
-        flowId: activeFlow.id,
-        stageId: currentState.id,
-        character: context.characterId,
-        insightGain: option.insightGain || 0,
-        relationshipChange: option.relationshipChange || 0,
-        knowledgeGain: option.knowledgeGain,
-        isCriticalPath: option.isCriticalPath || false
-      });
-      
-      // Dispatch knowledge gain event if applicable
-      if (option.knowledgeGain) {
-        useEventBus.getState().dispatch(GameEventType.KNOWLEDGE_GAINED, {
-          conceptId: option.knowledgeGain.conceptId,
-          amount: option.knowledgeGain.amount,
-          domainId: option.knowledgeGain.domainId,
-          character: context.characterId
+        // Create updated context with option effects
+        set(state => {
+          if (!state.context) return state;
+          
+          // Update player score if relationshipChange is defined
+          if (option.relationshipChange !== undefined) {
+            state.context.playerScore += option.relationshipChange;
+          }
+          
+          // Add option to selection history
+          state.context.selectedOptionIds.push(optionId);
+          
+          // Track critical path progress
+          if (option.isCriticalPath) {
+            state.context.criticalPathProgress[`option-${optionId}`] = true;
+          }
+          
+          // Apply knowledge gain if any
+          if (option.knowledgeGain) {
+            const { conceptId, amount } = option.knowledgeGain;
+            if (!state.context.knowledgeGained[conceptId]) {
+              state.context.knowledgeGained[conceptId] = 0;
+            }
+            state.context.knowledgeGained[conceptId] += amount;
+          }
+          
+          // Update UI state
+          state.selectedOption = option;
+          state.showResponse = Boolean(option.responseText);
+          state.showBackstory = Boolean(option.triggersBackstory && state.context.playerScore >= 2);
+          
+          // If this triggers backstory, prepare it
+          if (option.triggersBackstory && state.context.playerScore >= 2) {
+            // Find backstory state - typically named with a backstory prefix
+            const backstoryId = `backstory-${option.id.split('-')[1] || 'default'}`;
+            const backstoryState = Object.values(state.activeFlow?.states || {})
+              .find(s => s.id === backstoryId);
+            
+            if (backstoryState && backstoryState.text) {
+              state.backstoryText = backstoryState.text;
+            }
+          }
+          
+          return state;
         });
+        
+        // Get updated context after the state changes
+        const updatedContext = get().context;
+        if (!updatedContext) return;
+        
+        // Log the option selection (safely)
+        try {
+          safeEventDispatch(GameEventType.DIALOGUE_OPTION_SELECTED, {
+            optionId,
+            flowId: activeFlow.id,
+            stageId: currentState.id,
+            character: updatedContext.characterId,
+            insightGain: option.insightGain || 0,
+            relationshipChange: option.relationshipChange || 0,
+            knowledgeGain: option.knowledgeGain,
+            isCriticalPath: option.isCriticalPath || false
+          });
+        } catch (err) {
+          console.warn('[DialogueMachine] Error dispatching option selection event');
+        }
+        
+        // Dispatch knowledge gain event if applicable
+        if (option.knowledgeGain) {
+          try {
+            safeEventDispatch(GameEventType.KNOWLEDGE_GAINED, {
+              conceptId: option.knowledgeGain.conceptId,
+              amount: option.knowledgeGain.amount,
+              domainId: option.knowledgeGain.domainId,
+              character: updatedContext.characterId
+            });
+          } catch (err) {
+            console.warn('[DialogueMachine] Error dispatching knowledge gain event');
+          }
+        }
+      } catch (error) {
+        console.error(`[DialogueMachine] Error selecting option:`, error);
       }
     },
     
     advanceState: () => {
-      const { currentState, context, activeFlow, selectedOption, showResponse, showBackstory } = get();
-      
-      if (!activeFlow || !currentState || !context) {
-        console.warn(`[DialogueMachine] Cannot advance state without active flow`);
-        return;
-      }
-      
-      // If showing response or backstory, clear it first but persist the selectedOption
-      if (showResponse || showBackstory) {
-        set(state => {
-          state.showResponse = false;
-          state.showBackstory = false;
-          // Don't reset selectedOption here - keep it for the next transition
-          return state;
-        });
+      try {
+        const { currentState, context, activeFlow, selectedOption, showResponse, showBackstory } = get();
         
-        // Add small delay before next state transition
-        setTimeout(() => {
-          if (get().activeFlow) {  // Verify flow still exists
-            get().advanceState();  // Continue the advance after UI update cycle
-          }
-        }, 50);
-        
-        return;
-      }
-      
-      // Determine next state
-      let nextStateId: string | undefined;
-      
-      // Priority: selected option > current state > conclusion
-      if (selectedOption?.nextStateId) {
-        nextStateId = selectedOption.nextStateId;
-      } else if (currentState.nextStateId && !currentState.noAutoAdvance) {
-        // Only use the currentState's nextStateId if not marked as noAutoAdvance
-        nextStateId = currentState.nextStateId;
-      }
-      
-      // If we have a next state, jump to it
-      if (nextStateId) {
-        get().jumpToState(nextStateId);
-      } 
-      // Otherwise, if at conclusion, complete the flow
-      else if (currentState.isConclusion) {
-        // Check for progression issues before completing
-        const progressionStatus = get().getProgressionStatus();
-        
-        if (!progressionStatus.criticalPathsCompleted) {
-          console.warn(`[DialogueMachine] Critical path incomplete before conclusion:`, progressionStatus);
-          
-          // Try to fix by finding important states we missed
-          get().forceProgressionRepair();
-        } else {
-          // All good, complete the flow
-          get().completeFlow();
+        if (!activeFlow || !currentState || !context) {
+          console.warn(`[DialogueMachine] Cannot advance state without active flow`);
+          return;
         }
-      } else {
-        console.warn(`[DialogueMachine] No next state defined for ${currentState.id}`);
+        
+        // If showing response or backstory, clear it first but persist the selectedOption
+        if (showResponse || showBackstory) {
+          set(state => {
+            state.showResponse = false;
+            state.showBackstory = false;
+            // Don't reset selectedOption here - keep it for the next transition
+            return state;
+          });
+          
+          // Add small delay before next state transition
+          setTimeout(() => {
+            if (get().activeFlow) {  // Verify flow still exists
+              get().advanceState();  // Continue the advance after UI update cycle
+            }
+          }, 50);
+          
+          return;
+        }
+        
+        // Determine next state
+        let nextStateId: string | undefined;
+        
+        // Priority: selected option > current state > conclusion
+        if (selectedOption?.nextStateId) {
+          nextStateId = selectedOption.nextStateId;
+        } else if (currentState.nextStateId && !currentState.noAutoAdvance) {
+          // Only use the currentState's nextStateId if not marked as noAutoAdvance
+          nextStateId = currentState.nextStateId;
+        }
+        
+        // If we have a next state, jump to it
+        if (nextStateId) {
+          get().jumpToState(nextStateId);
+        } 
+        // Otherwise, if at conclusion, complete the flow
+        else if (currentState.isConclusion) {
+          // Check for progression issues before completing
+          const progressionStatus = get().getProgressionStatus();
+          
+          if (!progressionStatus.criticalPathsCompleted) {
+            console.warn(`[DialogueMachine] Critical path incomplete before conclusion:`, progressionStatus);
+            
+            // Try to fix by finding important states we missed
+            get().forceProgressionRepair();
+          } else {
+            // All good, complete the flow
+            get().completeFlow();
+          }
+        } else {
+          console.warn(`[DialogueMachine] No next state defined for ${currentState.id}`);
+        }
+      } catch (error) {
+        console.error(`[DialogueMachine] Error advancing state:`, error);
       }
     },
     
     jumpToState: (stateId: string) => {
-      const { activeFlow, currentState, context } = get();
-      
-      if (!activeFlow || !context) {
-        console.warn(`[DialogueMachine] Cannot jump to state without active flow`);
-        return;
-      }
-      
-      // Find the target state
-      const targetState = activeFlow.states[stateId];
-      
-      if (!targetState) {
-        console.error(`Target state ${stateId} not found in flow ${activeFlow.id}`);
-        return;
-      }
-      
-      // Call onExit for current state if it exists
-      if (currentState?.onExit) {
-        try {
-          currentState.onExit(context);
-        } catch (error) {
-          console.error(`[DialogueMachine] Error in onExit for ${currentState.id}:`, error);
-        }
-      }
-      
-      // Update state visitation tracking and current state
-      set(state => {
-        if (!state.context) return state;
+      try {
+        const { activeFlow, currentState, context } = get();
         
-        // Update visited states
-        if (!state.context.visitedStateIds.includes(stateId)) {
-          state.context.visitedStateIds.push(stateId);
+        if (!activeFlow || !context) {
+          console.warn(`[DialogueMachine] Cannot jump to state without active flow`);
+          return;
         }
         
-        // Track critical path progress
+        // Find the target state
+        const targetState = activeFlow.states[stateId];
+        
+        if (!targetState) {
+          console.error(`Target state ${stateId} not found in flow ${activeFlow.id}`);
+          return;
+        }
+        
+        // Call onExit for current state if it exists
+        if (currentState?.onExit) {
+          try {
+            currentState.onExit(context);
+          } catch (error) {
+            console.error(`[DialogueMachine] Error in onExit for ${currentState.id}:`, error);
+          }
+        }
+        
+        // Update state visitation tracking and current state
+        set(state => {
+          if (!state.context) return state;
+          
+          // Update visited states
+          if (!state.context.visitedStateIds.includes(stateId)) {
+            state.context.visitedStateIds.push(stateId);
+          }
+          
+          // Track critical path progress
+          if (targetState.isCriticalPath) {
+            state.context.criticalPathProgress[`state-${stateId}`] = true;
+          }
+          
+          // Reset UI state
+          state.currentState = targetState;
+          state.selectedOption = null;
+          state.showResponse = false;
+          state.showBackstory = false;
+          
+          // CRITICAL ADDITION: Update computed properties
+          state.currentNodeId = stateId;
+          
+          return state;
+        });
+        
+        // Handle critical path events outside the state update
         if (targetState.isCriticalPath) {
-          state.context.criticalPathProgress[`state-${stateId}`] = true;
+          // Use setTimeout to ensure state updates are processed first
+          setTimeout(() => {
+            if (get().activeFlow) {  // Make sure the flow still exists
+              get().handleCriticalPathEvent(stateId);
+            }
+          }, 0);
         }
         
-        // Reset UI state
-        state.currentState = targetState;
-        state.selectedOption = null;
-        state.showResponse = false;
-        state.showBackstory = false;
+        // Call onEnter for new state
+        if (targetState.onEnter) {
+          try {
+            const currentContext = get().context;
+            if (currentContext) {
+              targetState.onEnter(currentContext);
+            }
+          } catch (error) {
+            console.error(`[DialogueMachine] Error in onEnter for ${targetState.id}:`, error);
+          }
+        }
         
-        return state;
-      });
-      
-      // Handle critical path events outside the state update
-      if (targetState.isCriticalPath) {
-        get().handleCriticalPathEvent(stateId);
-      }
-      
-      // Call onEnter for new state
-      if (targetState.onEnter) {
-        try {
-          targetState.onEnter(get().context!);
-        } catch (error) {
-          console.error(`[DialogueMachine] Error in onEnter for ${targetState.id}:`, error);
+        // Special case for conclusion states - check score and redirect if appropriate
+        if (targetState.isConclusion && context.playerScore !== undefined) {
+          // Performance-based conclusion selection
+          if (context.playerScore >= 3 && activeFlow.states['conclusion-excellence']) {
+            setTimeout(() => {
+              if (get().activeFlow) {  // Check flow still exists
+                get().jumpToState('conclusion-excellence');
+              }
+            }, 0);
+          } else if (context.playerScore < 0 && activeFlow.states['conclusion-needs-improvement']) {
+            setTimeout(() => {
+              if (get().activeFlow) {  // Check flow still exists
+                get().jumpToState('conclusion-needs-improvement');
+              }
+            }, 0);
+          }
         }
-      }
-      
-      // Special case for conclusion states - check score and redirect if appropriate
-      if (targetState.isConclusion && context.playerScore !== undefined) {
-        // Performance-based conclusion selection
-        if (context.playerScore >= 3 && activeFlow.states['conclusion-excellence']) {
-          setTimeout(() => get().jumpToState('conclusion-excellence'), 0);
-        } else if (context.playerScore < 0 && activeFlow.states['conclusion-needs-improvement']) {
-          setTimeout(() => get().jumpToState('conclusion-needs-improvement'), 0);
-        }
+      } catch (error) {
+        console.error(`[DialogueMachine] Error jumping to state:`, error);
       }
     },
     
     completeFlow: () => {
-      const { activeFlow, context } = get();
-      
-      if (!activeFlow || !context) {
-        console.warn(`[DialogueMachine] Cannot complete flow without active flow`);
-        return;
-      }
-      
-      // Complete any active transactions
-      if (context.transactionIds) {
-        Object.entries(context.transactionIds).forEach(([type, id]) => {
-          if (id) {
-            useNarrativeTransaction.getState().completeTransaction(id);
-          }
-        });
-      }
-      
-      // Call the onComplete callback if it exists
-      if (activeFlow.onComplete) {
+      try {
+        const { activeFlow, context } = get();
+        
+        if (!activeFlow || !context) {
+          console.warn(`[DialogueMachine] Cannot complete flow without active flow`);
+          return;
+        }
+        
+        // Complete any active transactions 
         try {
-          activeFlow.onComplete(context);
+          if (context.transactionIds) {
+            // Store transaction IDs in a separate array since we're modifying the context
+            const transactionPairs = Object.entries(context.transactionIds);
+            
+            for (const [type, id] of transactionPairs) {
+              if (id && useNarrativeTransaction) {
+                const narrativeTransaction = useNarrativeTransaction.getState();
+                if (narrativeTransaction && typeof narrativeTransaction.completeTransaction === 'function') {
+                  narrativeTransaction.completeTransaction(id);
+                }
+              }
+            }
+          }
         } catch (error) {
-          console.error(`[DialogueMachine] Error in flow completion callback:`, error);
+          console.error(`[DialogueMachine] Error completing transactions:`, error);
         }
+        
+        // Call the onComplete callback if it exists
+        if (activeFlow.onComplete) {
+          try {
+            activeFlow.onComplete(context);
+          } catch (error) {
+            console.error(`[DialogueMachine] Error in flow completion callback:`, error);
+          }
+        }
+        
+        // Log completion event
+        try {
+          safeEventDispatch(GameEventType.DIALOGUE_COMPLETED, {
+            flowId: activeFlow.id,
+            character: context.characterId,
+            completed: true,
+            result: {
+              playerScore: context.playerScore,
+              visitedStates: context.visitedStateIds,
+              selectedOptions: context.selectedOptionIds
+            }
+          });
+        } catch (error) {
+          console.error(`[DialogueMachine] Error dispatching dialogue completed event:`, error);
+        }
+        
+        // Reset state AFTER dispatching events (important for sequence)
+        set(state => {
+          state.activeFlow = null;
+          state.currentState = null;
+          state.context = null;
+          state.selectedOption = null;
+          state.showResponse = false;
+          state.showBackstory = false;
+          
+          // CRITICAL ADDITION: Update computed properties
+          state.isActive = false;
+          state.currentNodeId = null;
+          
+          return state;
+        });
+      } catch (error) {
+        console.error(`[DialogueMachine] Error completing flow:`, error);
       }
-      
-      // Log completion event
-      useEventBus.getState().dispatch(GameEventType.DIALOGUE_COMPLETED, {
-        flowId: activeFlow.id,
-        character: context.characterId,
-        completed: true,
-        result: {
-          playerScore: context.playerScore,
-          visitedStates: context.visitedStateIds,
-          selectedOptions: context.selectedOptionIds
-        }
-      });
-      
-      // Reset state
-      set(state => {
-        state.activeFlow = null;
-        state.currentState = null;
-        state.context = null;
-        state.selectedOption = null;
-        state.showResponse = false;
-        state.showBackstory = false;
-        return state;
-      });
     },
     
     getAvailableOptions: () => {
-      const { currentState, context } = get();
-      
-      if (!currentState?.options || !context) {
+      try {
+        const { currentState, context } = get();
+        
+        if (!currentState?.options || !context) {
+          return [];
+        }
+        
+        // Filter options based on conditions
+        return currentState.options.filter(option => {
+          if (!option.condition) return true;
+          try {
+            return option.condition(context);
+          } catch (error) {
+            console.error(`[DialogueMachine] Error evaluating option condition for ${option.id}:`, error);
+            return false;
+          }
+        });
+      } catch (error) {
+        console.error(`[DialogueMachine] Error getting available options:`, error);
         return [];
       }
-      
-      // Filter options based on conditions
-      return currentState.options.filter(option => {
-        if (!option.condition) return true;
-        return option.condition(context);
-      });
     },
     
     getCurrentText: () => {
-      const { currentState, selectedOption, showResponse } = get();
-      
-      if (!currentState) return '';
-      
-      if (showResponse && selectedOption?.responseText) {
-        return selectedOption.responseText;
+      try {
+        const { currentState, selectedOption, showResponse } = get();
+        
+        if (!currentState) return '';
+        
+        if (showResponse && selectedOption?.responseText) {
+          return selectedOption.responseText;
+        }
+        
+        return currentState.text || '';
+      } catch (error) {
+        console.error(`[DialogueMachine] Error getting current text:`, error);
+        return '';
       }
-      
-      return currentState.text || '';
     },
     
     isInCriticalState: () => {
-      const { currentState } = get();
-      return Boolean(currentState?.isCriticalPath);
+      try {
+        const { currentState } = get();
+        return Boolean(currentState?.isCriticalPath);
+      } catch (error) {
+        console.error(`[DialogueMachine] Error checking critical state:`, error);
+        return false;
+      }
     },
     
     getProgressionStatus: () => {
-      const { activeFlow, context } = get();
-      
-      // Default status
-      const defaultStatus: DialogueProgressionStatus = {
-        isComplete: false,
-        criticalPathsCompleted: false,
-        missingCheckpoints: [],
-        loopDetected: false
-      };
-      
-      if (!activeFlow || !context) return defaultStatus;
-      
-      // Identify critical paths that must be visited
-      const criticalStateIds = Object.entries(activeFlow.states)
-        .filter(([_, state]) => state.isCriticalPath)
-        .map(([id]) => id);
-      
-      // Check which critical states have been visited
-      const missingCriticalStates = criticalStateIds.filter(id => 
-        !context.visitedStateIds.includes(id)
-      );
-      
-      // Check if all checkpoints have been hit
-      const missingCheckpoints = activeFlow.progressionCheckpoints.filter(id => 
-        !context.visitedStateIds.includes(id)
-      );
-      
-      // Detect potential state loops
-      const stateVisits: Record<string, number> = {};
-      context.visitedStateIds.forEach(id => {
-        stateVisits[id] = (stateVisits[id] || 0) + 1;
-      });
-      
-      // Check if any state has been visited too many times
-      const maxVisits = 3; // Allow a reasonable number of repeat visits
-      const excessiveVisits = Object.entries(stateVisits)
-        .filter(([id, count]) => {
-          const state = activeFlow.states[id];
-          const stateMaxVisits = state?.maxVisits || maxVisits;
-          return count > stateMaxVisits;
+      try {
+        const { activeFlow, context } = get();
+        
+        // Default status
+        const defaultStatus: DialogueProgressionStatus = {
+          isComplete: false,
+          criticalPathsCompleted: false,
+          missingCheckpoints: [],
+          loopDetected: false
+        };
+        
+        if (!activeFlow || !context) return defaultStatus;
+        
+        // Identify critical paths that must be visited
+        const criticalStateIds = Object.entries(activeFlow.states)
+          .filter(([_, state]) => state.isCriticalPath)
+          .map(([id]) => id);
+        
+        // Check which critical states have been visited
+        const missingCriticalStates = criticalStateIds.filter(id => 
+          !context.visitedStateIds.includes(id)
+        );
+        
+        // Check if all checkpoints have been hit
+        const missingCheckpoints = activeFlow.progressionCheckpoints.filter(id => 
+          !context.visitedStateIds.includes(id)
+        );
+        
+        // Detect potential state loops
+        const stateVisits: Record<string, number> = {};
+        context.visitedStateIds.forEach(id => {
+          stateVisits[id] = (stateVisits[id] || 0) + 1;
         });
-      
-      const loopDetected = excessiveVisits.length > 0;
-      
-      // Determine potential blockers that would prevent completion
-      const potentialBlockers: string[] = [];
-      
-      // 1. Check for mandatory states that haven't been visited
-      const mandatoryStates = Object.entries(activeFlow.states)
-        .filter(([_, state]) => state.isMandatory)
-        .map(([id]) => id);
-      
-      const missedMandatory = mandatoryStates.filter(id => 
-        !context.visitedStateIds.includes(id)
-      );
-      
-      if (missedMandatory.length > 0) {
-        potentialBlockers.push(`Mandatory states not visited: ${missedMandatory.join(', ')}`);
+        
+        // Check if any state has been visited too many times
+        const maxVisits = 3; // Allow a reasonable number of repeat visits
+        const excessiveVisits = Object.entries(stateVisits)
+          .filter(([id, count]) => {
+            const state = activeFlow.states[id];
+            const stateMaxVisits = state?.maxVisits || maxVisits;
+            return count > stateMaxVisits;
+          });
+        
+        const loopDetected = excessiveVisits.length > 0;
+        
+        // Determine potential blockers that would prevent completion
+        const potentialBlockers: string[] = [];
+        
+        // 1. Check for mandatory states that haven't been visited
+        const mandatoryStates = Object.entries(activeFlow.states)
+          .filter(([_, state]) => state.isMandatory)
+          .map(([id]) => id);
+        
+        const missedMandatory = mandatoryStates.filter(id => 
+          !context.visitedStateIds.includes(id)
+        );
+        
+        if (missedMandatory.length > 0) {
+          potentialBlockers.push(`Mandatory states not visited: ${missedMandatory.join(', ')}`);
+        }
+        
+        // 2. Check for essential critical path options
+        const criticalPathOptions = Object.keys(context.criticalPathProgress || {})
+          .filter(key => key.startsWith('option-'));
+        
+        if (criticalPathOptions.length === 0 && criticalStateIds.length > 0) {
+          potentialBlockers.push('No critical path options selected');
+        }
+        
+        return {
+          isComplete: context.visitedStateIds.length > 0,
+          criticalPathsCompleted: missingCriticalStates.length === 0,
+          missingCheckpoints,
+          loopDetected,
+          lastVisitedStateId: context.visitedStateIds[context.visitedStateIds.length - 1],
+          potentialBlockers: potentialBlockers.length > 0 ? potentialBlockers : undefined
+        };
+      } catch (error) {
+        console.error(`[DialogueMachine] Error getting progression status:`, error);
+        return {
+          isComplete: false,
+          criticalPathsCompleted: false,
+          missingCheckpoints: [],
+          loopDetected: false,
+          potentialBlockers: ['Error evaluating progression status']
+        };
       }
-      
-      // 2. Check for essential critical path options
-      const criticalPathOptions = Object.keys(context.criticalPathProgress || {})
-        .filter(key => key.startsWith('option-'));
-      
-      if (criticalPathOptions.length === 0 && criticalStateIds.length > 0) {
-        potentialBlockers.push('No critical path options selected');
-      }
-      
-      return {
-        isComplete: context.visitedStateIds.length > 0,
-        criticalPathsCompleted: missingCriticalStates.length === 0,
-        missingCheckpoints,
-        loopDetected,
-        lastVisitedStateId: context.visitedStateIds[context.visitedStateIds.length - 1],
-        potentialBlockers: potentialBlockers.length > 0 ? potentialBlockers : undefined
-      };
     },
     
     forceProgressionRepair: (targetStateId?: string) => {
-      const { activeFlow, context } = get();
-      
-      if (!activeFlow || !context) {
-        console.warn(`[DialogueMachine] Cannot repair progression without active flow`);
-        return;
-      }
-      
-      console.warn(`[DialogueMachine] Forcing progression repair for ${context.characterId} dialogue`);
-      
-      // If target state is provided, jump directly to it
-      if (targetStateId && activeFlow.states[targetStateId]) {
-        console.log(`[DialogueMachine] Jumping directly to specified state: ${targetStateId}`);
-        get().jumpToState(targetStateId);
-        return;
-      }
-      
-      // Find critical states we need to visit
-      const criticalStates = Object.entries(activeFlow.states)
-        .filter(([_, state]) => state.isCriticalPath)
-        .map(([id]) => id);
-      
-      // Special case for Kapoor's journal presentation
-      if (context.characterId === 'kapoor') {
-        const journalState = criticalStates.find(id => id === 'journal-presentation');
+      try {
+        const { activeFlow, context } = get();
         
-        if (journalState && !context.visitedStateIds.includes('journal-presentation')) {
-          console.log(`[DialogueMachine] Forcing jump to journal presentation state`);
-          get().jumpToState('journal-presentation');
+        if (!activeFlow || !context) {
+          console.warn(`[DialogueMachine] Cannot repair progression without active flow`);
           return;
         }
-      }
-      
-      // Special case for Jesse's equipment safety
-      if (context.characterId === 'jesse') {
-        const safetyState = criticalStates.find(id => id === 'equipment-safety');
         
-        if (safetyState && !context.visitedStateIds.includes('equipment-safety')) {
-          console.log(`[DialogueMachine] Forcing jump to equipment safety state`);
-          get().jumpToState('equipment-safety');
+        console.warn(`[DialogueMachine] Forcing progression repair for ${context.characterId} dialogue`);
+        
+        // If target state is provided, jump directly to it
+        if (targetStateId && activeFlow.states[targetStateId]) {
+          console.log(`[DialogueMachine] Jumping directly to specified state: ${targetStateId}`);
+          get().jumpToState(targetStateId);
           return;
         }
-      }
-      
-      // If there's any critical state we haven't visited, go there
-      for (const stateId of criticalStates) {
-        if (!context.visitedStateIds.includes(stateId)) {
-          console.log(`[DialogueMachine] Forcing jump to critical state: ${stateId}`);
-          get().jumpToState(stateId);
-          return;
+        
+        // Find critical states we need to visit
+        const criticalStates = Object.entries(activeFlow.states)
+          .filter(([_, state]) => state.isCriticalPath)
+          .map(([id]) => id);
+        
+        // Special case for Kapoor's journal presentation
+        if (context.characterId === 'kapoor') {
+          const journalState = criticalStates.find(id => id === 'journal-presentation');
+          
+          if (journalState && !context.visitedStateIds.includes('journal-presentation')) {
+            console.log(`[DialogueMachine] Forcing jump to journal presentation state`);
+            get().jumpToState('journal-presentation');
+            return;
+          }
         }
-      }
-      
-      // If all else fails, try to go to a conclusion state
-      const conclusionStates = Object.entries(activeFlow.states)
-        .filter(([_, state]) => state.isConclusion)
-        .map(([id]) => id);
-      
-      if (conclusionStates.length > 0) {
-        console.log(`[DialogueMachine] Forcing jump to conclusion state: ${conclusionStates[0]}`);
-        get().jumpToState(conclusionStates[0]);
+        
+        // Special case for Jesse's equipment safety
+        if (context.characterId === 'jesse') {
+          const safetyState = criticalStates.find(id => id === 'equipment-safety');
+          
+          if (safetyState && !context.visitedStateIds.includes('equipment-safety')) {
+            console.log(`[DialogueMachine] Forcing jump to equipment safety state`);
+            get().jumpToState('equipment-safety');
+            return;
+          }
+        }
+        
+        // If there's any critical state we haven't visited, go there
+        for (const stateId of criticalStates) {
+          if (!context.visitedStateIds.includes(stateId)) {
+            console.log(`[DialogueMachine] Forcing jump to critical state: ${stateId}`);
+            get().jumpToState(stateId);
+            return;
+          }
+        }
+        
+        // If all else fails, try to go to a conclusion state
+        const conclusionStates = Object.entries(activeFlow.states)
+          .filter(([_, state]) => state.isConclusion)
+          .map(([id]) => id);
+        
+        if (conclusionStates.length > 0) {
+          console.log(`[DialogueMachine] Forcing jump to conclusion state: ${conclusionStates[0]}`);
+          get().jumpToState(conclusionStates[0]);
+        }
+      } catch (error) {
+        console.error(`[DialogueMachine] Error repairing progression:`, error);
+        // CRITICAL ADDITION: Forced flow completion after repair failure
+        try {
+          console.warn(`[DialogueMachine] Failed to repair, forcing clean completion`);
+          if (get().activeFlow) {
+            get().completeFlow();
+          }
+        } catch (finalError) {
+          console.error(`[DialogueMachine] Critical error in forced completion:`, finalError);
+        }
       }
     },
     
     // Handle critical path progression events (like journal acquisition)
     handleCriticalPathEvent: (stateId: string) => {
-      const { context, activeFlow } = get();
-      
-      if (!context || !activeFlow) return;
-      
-      // Specialized handling for journal presentation
-      if (stateId === 'journal-presentation' && context.characterId === 'kapoor') {
-        console.log('[CRITICAL PATH] Journal presentation state reached');
+      try {
+        const { context, activeFlow } = get();
         
-        // Determine journal tier based on performance
-        const journalTier = context.playerScore >= 3 ? 'annotated' : 
-                          context.playerScore >= 0 ? 'technical' : 'base';
+        if (!context || !activeFlow) return;
         
-        // Emit critical path event to analytics system
-        dialogueCriticalPath(
-          activeFlow.id,
-          context.characterId,
-          context.nodeId,
-          stateId,
-          context.playerScore,
-          false
-        );
-        
-        // Only create a transaction if one doesn't exist
-        if (!context.transactionIds?.journal_acquisition) {
-          const transaction = useNarrativeTransaction.getState();
+        // Specialized handling for journal presentation
+        if (stateId === 'journal-presentation' && context.characterId === 'kapoor') {
+          console.log('[CRITICAL PATH] Journal presentation state reached');
           
-          // Create a transaction and register it in context
-          const transactionId = transaction.startTransaction(
-            'journal_acquisition',
-            { journalTier, source: 'dialogue_state_machine' },
-            context.characterId,
-            context.nodeId
-          );
+          // Determine journal tier based on performance
+          const journalTier = context.playerScore >= 3 ? 'annotated' : 
+                            context.playerScore >= 0 ? 'technical' : 'base';
           
-          // Update transaction in context
-          set(state => {
-            if (state.context) {
-              state.context.transactionIds = {
-                ...state.context.transactionIds,
-                journal_acquisition: transactionId
-              };
+          // Emit critical path event to analytics system
+          try {
+            dialogueCriticalPath(
+              activeFlow.id,
+              context.characterId,
+              context.nodeId,
+              stateId,
+              context.playerScore,
+              false
+            );
+          } catch (error) {
+            console.error('[DialogueMachine] Error emitting critical path event:', error);
+          }
+          
+          // Only create a transaction if one doesn't exist
+          if (!context.transactionIds?.journal_acquisition) {
+            try {
+              const transaction = useNarrativeTransaction.getState();
+              
+              // Check if the transaction system is available
+              if (transaction && typeof transaction.startTransaction === 'function') {
+                // Generate a fallback transaction ID if the system fails
+                const fallbackId = `journal_${context.characterId}_${Date.now()}_${++transactionCounter}`;
+                
+                // Try to create a proper transaction
+                let transactionId;
+                try {
+                  transactionId = transaction.startTransaction(
+                    'journal_acquisition',
+                    { journalTier, source: 'dialogue_state_machine' },
+                    context.characterId,
+                    context.nodeId
+                  );
+                } catch (err) {
+                  console.warn('[DialogueMachine] Using fallback transaction ID due to error:', err);
+                  transactionId = fallbackId;
+                }
+                
+                // Update transaction in context
+                set(state => {
+                  if (state.context) {
+                    state.context.transactionIds = {
+                      ...state.context.transactionIds,
+                      journal_acquisition: transactionId
+                    };
+                  }
+                  return state;
+                });
+                
+                // Dispatch journal acquisition event
+                setTimeout(() => {
+                  try {
+                    journalAcquired(
+                      journalTier,
+                      context.characterId,
+                      'dialogue_state_machine'
+                    );
+                  } catch (err) {
+                    console.warn('[DialogueMachine] Error in journal acquisition event:', err);
+                    
+                    // CRITICAL ADDITION: Emergency direct journal acquisition on event failure
+                    try {
+                      console.warn('[EMERGENCY] Attempting direct journal code path');
+                      
+                      // Using dynamic import to avoid circular dependencies
+                      import('../../store/journalStore').then(journalStoreModule => {
+                        const journalStore = journalStoreModule.useJournalStore.getState();
+                        
+                        // Only initialize if journal doesn't exist yet
+                        if (!journalStore.hasJournal) {
+                          console.log('[EMERGENCY] Forcing journal initialization');
+                          journalStore.initializeJournal(journalTier);
+                        }
+                      }).catch(importError => {
+                        console.error('[EMERGENCY] Failed to import journal store:', importError);
+                      });
+                    } catch (emergencyError) {
+                      console.error('[EMERGENCY] Critical failure in journal fallback:', emergencyError);
+                    }
+                  }
+                }, 0);
+              }
+            } catch (error) {
+              console.error(`[DialogueMachine] Error starting journal transaction:`, error);
+              
+              // Emit journal acquisition anyway for reliability
+              try {
+                journalAcquired(
+                  journalTier,
+                  context.characterId,
+                  'dialogue_state_machine_fallback'
+                );
+              } catch (innerError) {
+                console.error('[DialogueMachine] Critical error in journal acquisition fallback:', innerError);
+                
+                // CRITICAL ADDITION: Last resort journal acquisition
+                try {
+                  console.warn('[EMERGENCY] Attempting last resort journal acquisition');
+                  import('../../store/journalStore').then(journalStoreModule => {
+                    const journalStore = journalStoreModule.useJournalStore.getState();
+                    if (!journalStore.hasJournal) {
+                      journalStore.initializeJournal(journalTier);
+                    }
+                  }).catch(e => console.error('[EMERGENCY] Final journal attempt failed'));
+                } catch (finalError) {
+                  // We've done everything we can at this point
+                }
+              }
             }
-            return state;
-          });
-          
-          // Dispatch journal acquisition event
-          journalAcquired(
-            journalTier,
-            context.characterId,
-            'dialogue_state_machine'
-          );
+          }
         }
-      }
-      
-      // Specialized handling for equipment safety presentation
-      if (stateId === 'equipment-safety' && context.characterId === 'jesse') {
-        console.log('[CRITICAL PATH] Equipment safety state reached');
         
-        // Emit critical path event to analytics system
-        dialogueCriticalPath(
-          activeFlow.id,
-          context.characterId,
-          context.nodeId,
-          stateId,
-          context.playerScore,
-          false
-        );
+        // Specialized handling for equipment safety presentation
+        if (stateId === 'equipment-safety' && context.characterId === 'jesse') {
+          console.log('[CRITICAL PATH] Equipment safety state reached');
+          
+          // Emit critical path event to analytics system
+          dialogueCriticalPath(
+            activeFlow.id,
+            context.characterId,
+            context.nodeId,
+            stateId,
+            context.playerScore,
+            false
+          );
+          
+          // Add specialized equipment safety logic here
+        }
         
-        // Add specialized equipment safety logic here
-      }
-      
-      // Specialized handling for theory revelation
-      if (stateId === 'quantum-understanding' && context.characterId === 'quinn') {
-        console.log('[CRITICAL PATH] Quantum understanding state reached');
-        
-        // Emit critical path event to analytics system
-        dialogueCriticalPath(
-          activeFlow.id,
-          context.characterId,
-          context.nodeId,
-          stateId,
-          context.playerScore,
-          false
-        );
-        
-        // Add specialized theory revelation logic here
+        // Specialized handling for theory revelation
+        if (stateId === 'quantum-understanding' && context.characterId === 'quinn') {
+          console.log('[CRITICAL PATH] Quantum understanding state reached');
+          
+          // Emit critical path event to analytics system
+          dialogueCriticalPath(
+            activeFlow.id,
+            context.characterId,
+            context.nodeId,
+            stateId,
+            context.playerScore,
+            false
+          );
+          
+          // Add specialized theory revelation logic here
+        }
+      } catch (error) {
+        console.error(`[DialogueMachine] Error handling critical path event:`, error);
       }
     }
   }))

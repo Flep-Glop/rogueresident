@@ -42,7 +42,21 @@ const INIT_STATE: InitializationState = {
 
 // Global reference for emergency debugging/recovery
 if (typeof window !== 'undefined') {
-  window.__GAME_INIT_STATE__ = INIT_STATE;
+  (window as any).__GAME_INIT_STATE__ = INIT_STATE;
+}
+
+/**
+ * Safely resets the event system with error handling
+ */
+function safeEventSystemReset() {
+  try {
+    resetEventSystem();
+    console.log('🧹 Event system reset to clean state');
+    return true;
+  } catch (error) {
+    console.error('⚠️ Failed to reset event system:', error);
+    return false;
+  }
 }
 
 /**
@@ -69,12 +83,7 @@ export function initializeSystems() {
   INIT_STATE.lastInitTime = Date.now();
   
   // Reset event system first to ensure clean state
-  try {
-    resetEventSystem();
-    console.log('🧹 Event system reset to clean state');
-  } catch (error) {
-    console.error('⚠️ Failed to reset event system:', error);
-  }
+  safeEventSystemReset();
   
   // System initialization functions with dependencies
   const systems = [
@@ -82,6 +91,7 @@ export function initializeSystems() {
       name: 'eventBus',
       fn: () => {
         console.log('📡 Initializing event system...');
+        // Just mark it as initialized since we've already reset it
         return true;
       },
       dependencies: []
@@ -174,6 +184,7 @@ export function initializeSystems() {
   
   // Create master cleanup function that runs in reverse initialization order
   const masterCleanup = () => {
+    // If already not initialized, just log and return
     if (!INIT_STATE.isInitialized) {
       console.log('🧹 Cleanup called, but systems were not initialized');
       return;
@@ -181,23 +192,31 @@ export function initializeSystems() {
     
     console.log('🧹 Running system cleanup...');
     
-    // Signal session end
+    // Signal session end - inside a try/catch to prevent cascading errors
     try {
-      useEventBus.getState().dispatch(
-        GameEventType.SESSION_ENDED,
-        { timestamp: Date.now() },
-        'init:sessionEnd'
-      );
+      const eventBus = useEventBus.getState();
+      if (eventBus && typeof eventBus.dispatch === 'function') {
+        eventBus.dispatch(
+          GameEventType.SESSION_ENDED,
+          { timestamp: Date.now() },
+          'init:sessionEnd'
+        );
+      }
     } catch (e) {
       console.error('Failed to dispatch session end event:', e);
     }
     
-    // Run cleanups in reverse order
+    // Run cleanups in reverse order with error isolation
     for (let i = cleanupFunctions.length - 1; i >= 0; i--) {
       try {
-        cleanupFunctions[i]();
+        if (typeof cleanupFunctions[i] === 'function') {
+          cleanupFunctions[i]();
+        } else {
+          console.warn(`Cleanup function at index ${i} is not a function`);
+        }
       } catch (error) {
-        console.error('Error during cleanup:', error);
+        console.error(`Error during cleanup of index ${i}:`, error);
+        // Continue with next cleanup despite errors
       }
     }
     
@@ -205,9 +224,9 @@ export function initializeSystems() {
     INIT_STATE.isInitialized = false;
     INIT_STATE.cleanupFn = null;
     
-    // Final event system cleanup
+    // Final event system cleanup - do this last and with isolated error handling
     try {
-      resetEventSystem();
+      safeEventSystemReset();
     } catch (e) {
       console.error('Failed final event system reset:', e);
     }
@@ -217,34 +236,31 @@ export function initializeSystems() {
   INIT_STATE.cleanupFn = masterCleanup;
   INIT_STATE.isInitialized = true;
   
-  // Signal session start
+  // Signal session start - inside try/catch to prevent initialization errors
   try {
-    useEventBus.getState().dispatch(
-      GameEventType.SESSION_STARTED,
-      { 
-        timestamp: Date.now(),
-        systems: Object.keys(INIT_STATE.systems).filter(k => INIT_STATE.systems[k])
-      },
-      'init:sessionStart'
-    );
+    const eventBus = useEventBus.getState();
+    if (eventBus && typeof eventBus.dispatch === 'function') {
+      eventBus.dispatch(
+        GameEventType.SESSION_STARTED,
+        { 
+          timestamp: Date.now(),
+          systems: Object.keys(INIT_STATE.systems).filter(k => INIT_STATE.systems[k])
+        },
+        'init:sessionStart'
+      );
+    }
   } catch (e) {
     console.error('Failed to dispatch session start event:', e);
+    // Continue initialization despite event error
   }
   
   // Add emergency reset function to window for recovery during development
   if (typeof window !== 'undefined' && process.env.NODE_ENV !== 'production') {
-    window.__RESET_EVENT_SYSTEM__ = () => {
-      try {
-        resetEventSystem();
-        console.log('🧹 Manual event system reset complete');
-        return true;
-      } catch (e) {
-        console.error('Manual event system reset failed:', e);
-        return false;
-      }
+    (window as any).__RESET_EVENT_SYSTEM__ = () => {
+      return safeEventSystemReset();
     };
     
-    window.__FORCE_REINITIALIZE__ = () => {
+    (window as any).__FORCE_REINITIALIZE__ = () => {
       try {
         // Force cleanup and reset state
         if (INIT_STATE.cleanupFn) {
@@ -272,7 +288,7 @@ export function initializeSystems() {
 
 // Add window global for debugging in dev mode
 if (typeof window !== 'undefined' && process.env.NODE_ENV !== 'production') {
-  window.__STATE_MACHINE_STORE__ = {};
+  (window as any).__STATE_MACHINE_STORE__ = {};
 }
 
 // Add hot module reloading protection
