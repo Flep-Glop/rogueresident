@@ -41,6 +41,8 @@
 │   │   │       ├── ConversationFormat.tsx
 │   │   │       ├── InteractiveFormat.tsx
 │   │   │       └── ProceduralFormat.tsx
+│   │   ├── debug
+│   │   │   └── DebugStatePanel.tsx
 │   │   ├── dialogue
 │   │   │   ├── DialogueSystem.tsx
 │   │   │   └── UnlockableDialogueOptions.tsx
@@ -62,6 +64,7 @@
 │   │   │   ├── CharacterMemorySystem.ts
 │   │   │   ├── DialogueAuthoringFormat.ts
 │   │   │   ├── DialogueController.ts
+│   │   │   ├── DialogueConverter.ts
 │   │   │   ├── DialogueProgressionHelpers.ts
 │   │   │   ├── DialogueRuntimeValidator.ts
 │   │   │   ├── DialogueStateMachine.ts
@@ -76,6 +79,7 @@
 │   │   │   ├── baseHandlers.ts
 │   │   │   ├── compat.ts
 │   │   │   ├── dialogueEventHandlers.ts
+│   │   │   ├── index.ts
 │   │   │   ├── journalEventHandlers.ts
 │   │   │   └── uiHandlers.ts
 │   │   ├── init.ts
@@ -150,4 +154,4 @@
 │   └── testNodeAccessibility.js
 └── tsconfig.json
 
-22 directories, 128 files
+23 directories, 131 files

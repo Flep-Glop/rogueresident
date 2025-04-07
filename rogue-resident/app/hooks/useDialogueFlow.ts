@@ -1,38 +1,40 @@
 // app/hooks/useDialogueFlow.ts
 /**
- * Enhanced useDialogueFlow hook
+ * Simplified Dialogue Flow Hook
  * 
- * A refined implementation that separates UI concerns from state management,
- * following the pattern used in narrative-driven roguelikes where dialogue
- * state is centralized but UI interactions remain flexible.
+ * Stripped down to absolute essentials to establish the core architecture
+ * before layering in more sophisticated features.
  */
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { useEventBus, GameEventType } from '../core/events';
-import { 
-  useDialogueStateMachine, 
-  DialogueContext,
-  DialogueOption as StateMachineOption 
-} from '../core/dialogue/DialogueStateMachine';
+import { useDialogueStateMachine } from '../core/dialogue/DialogueStateMachine';
+import { useEventBus } from '../core/events/CentralEventBus';
+import { createKapoorCalibrationFlow } from '../core/dialogue/DialogueConverter';
 
-// Define types that were previously imported
+// Legacy stage definition for backward compatibility
 export interface DialogueStage {
   id: string;
   text: string;
+  contextNote?: string;
+  equipment?: {
+    itemId: string;
+    description?: string;
+    alt?: string;
+  };
   options?: DialogueOption[];
   nextStageId?: string;
-  isConclusion?: boolean;
-  isCriticalPath?: boolean;
-  isMandatory?: boolean;
   type?: string;
-  onEnter?: (context: DialogueContext) => void;
-  onExit?: (context: DialogueContext) => void;
+  isCriticalPath?: boolean;
+  isConclusion?: boolean;
+  isMandatory?: boolean;
 }
 
+// Option structure
 export interface DialogueOption {
   id: string;
   text: string;
   responseText?: string;
+  approach?: 'humble' | 'precision' | 'confidence';
   nextStageId?: string;
   insightGain?: number;
   relationshipChange?: number;
@@ -41,328 +43,191 @@ export interface DialogueOption {
     domainId: string;
     amount: number;
   };
-  triggersBackstory?: boolean;
   isCriticalPath?: boolean;
-  condition?: (context: DialogueContext) => boolean;
+  triggersBackstory?: boolean;
 }
 
-// Interface for hook properties
-interface UseDialogueFlowProps {
-  stages: DialogueStage[];
-  onOptionSelected?: (option: DialogueOption, stageId: string) => void;
-  onStageChange?: (newStageId: string, prevStageId: string) => void;
+// View model for dialogue option
+export interface DialogueOptionView extends DialogueOption {}
+
+// Props for dialogue flow hook
+export interface UseDialogueFlowProps {
+  stages?: DialogueStage[];
   characterId: string;
   nodeId?: string;
-}
-
-// Interface for hook return value
-interface UseDialogueFlowReturn {
-  // Current state
-  currentStage: DialogueStage;
-  currentStageId: string;
-  selectedOption: StateMachineOption | null;
-  showResponse: boolean;
-  showBackstory: boolean;
-  backstoryText: string;
-  
-  // Actions
-  handleOptionSelect: (option: DialogueOption) => void;
-  handleContinue: () => void;
-  jumpToStage: (stageId: string) => void;
-  
-  // Helpers
-  isProgressionValid: boolean;
-  dialogueStateMachine: {
-    dispatch: (action: any) => void;
-    getAvailableOptions: () => any[];
-    getProgressionStatus: () => any;
-  };
+  dialogueId?: string;
+  onComplete?: (results: any) => void;
+  onOptionSelected?: (option: DialogueOptionView, stageId: string) => void;
+  onStageChange?: (newStageId: string, prevStageId: string) => void;
+  enableMemory?: boolean;
+  enableTelemetry?: boolean;
 }
 
 /**
- * Enhanced hook for dialogue system integration
- * 
- * This hook creates a bridge between your UI dialogue flow and the
- * centralized state management system, with optimized subscriptions
- * that prevent unnecessary re-renders.
+ * Minimal dialogue flow hook to establish architecture without triggering React loops
  */
 export function useDialogueFlow({
   stages,
+  characterId,
+  nodeId = 'unknown',
+  dialogueId,
+  onComplete,
   onOptionSelected,
   onStageChange,
-  characterId,
-  nodeId = 'unknown'
-}: UseDialogueFlowProps): UseDialogueFlowReturn {
-  // Validate input
-  if (!stages || stages.length === 0) {
-    throw new Error('useDialogueFlow requires dialogue stages');
-  }
+  enableMemory = true,
+  enableTelemetry = true
+}: UseDialogueFlowProps) {
+  // Core state
+  const [currentStageId, setCurrentStageId] = useState<string>('');
+  const [currentStage, setCurrentStage] = useState<DialogueStage>({ id: 'loading', text: 'Loading...' });
+  const [showResponse, setShowResponse] = useState(false);
+  const [showBackstory, setShowBackstory] = useState(false);
+  const [backstoryText, setBackstoryText] = useState('');
+  const [hasInitialized, setHasInitialized] = useState(false);
+
+  // Memoized values and refs
+  const flowIdRef = useRef<string>(dialogueId || `dialogue-${characterId}-${Date.now()}`);
+  const visitedStageIdsRef = useRef<string[]>([]);
+  const selectedOptionRef = useRef<DialogueOption | null>(null);
+  const prevStageIdRef = useRef<string>('');
   
-  // Get event bus singleton
-  const eventBus = useEventBus.getState();
-  
-  // Create internal dialogue flow ID for tracking
-  const dialogueFlowIdRef = useRef(`dialogue-${characterId}-${Date.now()}`);
-  const initializedRef = useRef(false);
-  
-  // Get state machine functions without creating a new object each time
-  // We separate the functions from the state to avoid infinite loops
+  // Get state machine API - minimal approach to avoid selector issues
   const stateMachine = useDialogueStateMachine.getState();
   
-  // Get current state using individual selectors for each piece of state
-  // This is the KEY FIX to prevent infinite loops - individual selectors 
-  // rather than one object selector
-  const currentState = useDialogueStateMachine(state => state.currentState);
-  const context = useDialogueStateMachine(state => state.context);
-  const selectedOption = useDialogueStateMachine(state => state.selectedOption);
-  const showResponse = useDialogueStateMachine(state => state.showResponse);
-  const showBackstory = useDialogueStateMachine(state => state.showBackstory);
-  const backstoryText = useDialogueStateMachine(state => state.backstoryText);
-  
-  // Map stages to their IDs for lookup - memoize to prevent needless updates
-  const stageMapRef = useRef<Record<string, DialogueStage>>({});
+  // Initialize flow once
   useEffect(() => {
-    const stageMap: Record<string, DialogueStage> = {};
-    stages.forEach(stage => { 
-      stageMap[stage.id] = stage; 
-    });
-    stageMapRef.current = stageMap;
-  }, [stages]);
+    if (hasInitialized) return;
+    
+    // Create Kapoor flow for simplicity - just to get basic dialogue working
+    if (characterId === 'kapoor' && nodeId) {
+      try {
+        const flow = createKapoorCalibrationFlow(nodeId);
+        stateMachine.initializeFlow(flow);
+        setHasInitialized(true);
+        console.log(`[DialogueFlow] Initialized Kapoor flow`);
+      } catch (err) {
+        console.error(`[DialogueFlow] Error initializing flow:`, err);
+      }
+    }
+  }, [characterId, nodeId, hasInitialized]);
   
-  // Track current stage state
-  const initialStageId = stages[0]?.id || 'intro';
-  const [currentStageId, setCurrentStageId] = useState(initialStageId);
-  const prevStageIdRef = useRef('');
-  
-  // Current stage based on mapping
-  const currentStage = stageMapRef.current[currentStageId] || stages[0];
-  
-  // Initialize dialogue flow
+  // Update state based on state machine
   useEffect(() => {
-    if (initializedRef.current) return;
-    
-    console.log(`[DialogueFlow] Initializing flow for ${characterId}`);
-    
-    // Convert our stages to state machine format
-    const states: Record<string, any> = {};
-    const criticalPathIds: string[] = [];
-    
-    stages.forEach(stage => {
-      const stateType = stage.type || 
-                       (stage.options && stage.options.length > 0 ? 'question' : 'intro');
+    const checkState = () => {
+      const currentState = stateMachine.currentState;
+      if (!currentState) return;
       
-      // Track critical path IDs
-      if (stage.isCriticalPath) {
-        criticalPathIds.push(stage.id);
-      }
-      
-      // Create state definition
-      states[stage.id] = {
-        id: stage.id,
-        type: stateType,
-        text: stage.text,
-        options: stage.options?.map(option => ({
-          id: option.id,
-          text: option.text,
-          responseText: option.responseText,
-          nextStateId: option.nextStageId,
-          insightGain: option.insightGain,
-          relationshipChange: option.relationshipChange,
-          knowledgeGain: option.knowledgeGain,
-          triggersBackstory: option.triggersBackstory,
-          isCriticalPath: option.isCriticalPath
-        })),
-        nextStateId: stage.nextStageId,
-        isConclusion: stage.isConclusion,
-        isCriticalPath: stage.isCriticalPath,
-        isMandatory: stage.isMandatory
-      };
-    });
-    
-    // Create initial context
-    const initialContext: DialogueContext = {
-      characterId,
-      nodeId,
-      playerScore: 0,
-      selectedOptionIds: [],
-      knowledgeGained: {},
-      visitedStateIds: [initialStageId],
-      criticalPathProgress: {},
-      transactionIds: {}
-    };
-    
-    // Initialize in state machine
-    stateMachine.initializeFlow({
-      id: dialogueFlowIdRef.current,
-      initialStateId: initialStageId,
-      states,
-      context: initialContext,
-      progressionCheckpoints: criticalPathIds,
-      onComplete: (finalContext) => {
-        console.log(`Dialogue flow completed with score: ${finalContext.playerScore}`);
-      }
-    });
-    
-    // Mark as initialized
-    initializedRef.current = true;
-    
-    // Dispatch dialogue started event
-    eventBus.dispatch(GameEventType.DIALOGUE_STARTED, {
-      flowId: dialogueFlowIdRef.current,
-      initialStageId,
-      stages,
-      characterId,
-      nodeId
-    });
-    
-    // Cleanup on unmount
-    return () => {
-      // Only dispatch completion if we initialized
-      if (initializedRef.current) {
-        eventBus.dispatch(GameEventType.DIALOGUE_COMPLETED, {
-          flowId: dialogueFlowIdRef.current,
-          completed: false,
-          reason: 'component_unmounted',
-          character: characterId,
-          nodeId
-        });
-      }
-    };
-  }, [
-    stateMachine, eventBus, stages, characterId, nodeId, 
-    initialStageId
-  ]);
-  
-  // Subscribe to state changes and handle state ID updates
-  useEffect(() => {
-    // Set up the subscription to just the state ID, not the whole state
-    const unsubStateId = useDialogueStateMachine.subscribe(
-      state => state.currentState?.id,
-      (stateId) => {
-        if (stateId && stateId !== currentStageId) {
-          // Keep previous state ID for transitions
-          prevStageIdRef.current = currentStageId;
-          setCurrentStageId(stateId);
-          
-          // Call onStageChange if provided
-          if (onStageChange) {
-            onStageChange(stateId, prevStageIdRef.current);
-          }
+      // Update current stage ID if changed
+      if (currentState.id !== currentStageId) {
+        prevStageIdRef.current = currentStageId;
+        setCurrentStageId(currentState.id);
+        
+        // Track visited stages
+        if (!visitedStageIdsRef.current.includes(currentState.id)) {
+          visitedStageIdsRef.current.push(currentState.id);
+        }
+        
+        // Call stage change callback
+        if (onStageChange && prevStageIdRef.current) {
+          onStageChange(currentState.id, prevStageIdRef.current);
         }
       }
-    );
-    
-    return () => {
-      unsubStateId();
+      
+      // Update current stage
+      setCurrentStage({
+        id: currentState.id,
+        text: currentState.text || '',
+        contextNote: currentState.contextNote,
+        equipment: currentState.equipment,
+        options: currentState.options,
+        isConclusion: currentState.isConclusion,
+        isCriticalPath: currentState.isCriticalPath
+      });
+      
+      // Update UI state
+      setShowResponse(stateMachine.showResponse);
+      setShowBackstory(stateMachine.showBackstory);
+      setBackstoryText(stateMachine.backstoryText);
+      
+      // Update selected option
+      selectedOptionRef.current = stateMachine.selectedOption;
     };
-  }, [currentStageId, onStageChange]);
-  
-  // Memoize handlers to prevent unnecessary recreations
+    
+    // Check initial state
+    checkState();
+    
+    // Set up interval to periodically check state
+    // This is a fallback approach to avoid direct selector issues
+    const intervalId = setInterval(checkState, 500);
+    
+    return () => clearInterval(intervalId);
+  }, [currentStageId, onStageChange, stateMachine]);
   
   // Handle option selection
-  const handleOptionSelect = useCallback((option: DialogueOption) => {
-    // Dispatch UI event first
-    eventBus.dispatch(GameEventType.UI_DIALOGUE_ADVANCED, {
-      componentId: 'dialogueFlow',
-      action: 'option-selected',
-      metadata: {
-        optionId: option.id,
-        stageId: currentStageId,
-        insightGain: option.insightGain,
-        relationshipChange: option.relationshipChange,
-        character: characterId
+  const handleOptionSelect = useCallback((option: DialogueOptionView) => {
+    try {
+      stateMachine.selectOption(option.id);
+      
+      // Call option selected callback
+      if (onOptionSelected) {
+        onOptionSelected(option, currentStageId);
       }
-    });
-    
-    // Select option in state machine
-    stateMachine.selectOption(option.id);
-    
-    // Call callback if provided
-    if (onOptionSelected) {
-      onOptionSelected(option, currentStageId);
+    } catch (err) {
+      console.error(`[DialogueFlow] Error selecting option:`, err);
     }
-    
-    // Dispatch detailed event with full context
-    eventBus.dispatch(GameEventType.DIALOGUE_OPTION_SELECTED, {
-      optionId: option.id,
-      stageId: currentStageId,
-      character: characterId,
-      flowId: dialogueFlowIdRef.current,
-      insightGain: option.insightGain,
-      relationshipChange: option.relationshipChange,
-      knowledgeGain: option.knowledgeGain,
-      isCriticalPath: option.isCriticalPath
-    });
-  }, [
-    eventBus, stateMachine, currentStageId, characterId, 
-    onOptionSelected
-  ]);
+  }, [currentStageId, onOptionSelected, stateMachine]);
   
   // Handle continue button
   const handleContinue = useCallback(() => {
-    // Dispatch UI event
-    eventBus.dispatch(GameEventType.UI_DIALOGUE_ADVANCED, {
-      componentId: 'dialogueFlow',
-      action: 'continue',
-      metadata: {
-        stageId: currentStageId,
-        character: characterId
-      }
-    });
-    
-    // Advance state in state machine
-    stateMachine.advanceState();
-  }, [eventBus, stateMachine, currentStageId, characterId]);
-  
-  // Jump to a specific stage
-  const jumpToStage = useCallback((stageId: string) => {
-    if (!stageMapRef.current[stageId]) {
-      console.error(`Cannot jump to unknown stage: ${stageId}`);
-      return;
+    try {
+      stateMachine.advanceState();
+    } catch (err) {
+      console.error(`[DialogueFlow] Error advancing state:`, err);
     }
-    
-    // Dispatch UI event
-    eventBus.dispatch(GameEventType.UI_DIALOGUE_ADVANCED, {
-      componentId: 'dialogueFlow',
-      action: 'jump-to-stage',
-      metadata: {
-        fromStageId: currentStageId,
-        toStageId: stageId,
-        character: characterId
+  }, [stateMachine]);
+  
+  // Jump to specific stage
+  const jumpToStage = useCallback((stageId: string) => {
+    try {
+      stateMachine.jumpToState(stageId);
+    } catch (err) {
+      console.error(`[DialogueFlow] Error jumping to state:`, err);
+    }
+  }, [stateMachine]);
+  
+  // Complete dialogue flow
+  const completeDialogue = useCallback(() => {
+    try {
+      stateMachine.completeFlow();
+      
+      // Call complete callback
+      if (onComplete) {
+        onComplete({
+          insightGained: 0,
+          relationshipChange: 0,
+          knowledgeGained: {},
+          visitedStates: [...visitedStageIdsRef.current]
+        });
       }
-    });
-    
-    // Jump to state in state machine
-    stateMachine.jumpToState(stageId);
-  }, [eventBus, stateMachine, currentStageId, characterId]);
+    } catch (err) {
+      console.error(`[DialogueFlow] Error completing flow:`, err);
+    }
+  }, [onComplete, stateMachine]);
   
-  // Calculate progression status without triggering a new render
-  const getProgressionStatus = stateMachine.getProgressionStatus;
-  const progressionStatus = getProgressionStatus();
-  const isProgressionValid = progressionStatus.criticalPathsCompleted;
-  
-  // Get a stable reference to the state machine API
-  const stateMachineAPI = useRef({
-    dispatch: stateMachine.dispatch,
-    getAvailableOptions: stateMachine.getAvailableOptions,
-    getProgressionStatus: stateMachine.getProgressionStatus
-  }).current;
-  
-  // Return needed state and methods
+  // Return minimal interface
   return {
     currentStage,
     currentStageId,
-    selectedOption,
+    selectedOption: selectedOptionRef.current,
     showResponse,
     showBackstory,
     backstoryText,
-    
     handleOptionSelect,
     handleContinue,
     jumpToStage,
-    
-    isProgressionValid,
-    dialogueStateMachine: stateMachineAPI
+    isProgressionValid: true, // Simplified
+    completeDialogue,
+    visitedStageIds: visitedStageIdsRef.current
   };
 }
 
