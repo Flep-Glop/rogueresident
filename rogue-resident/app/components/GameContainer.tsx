@@ -13,9 +13,24 @@ import { SoundEffect } from '../types/audio';
 import { useGameState } from '../core/statemachine/GameStateMachine';
 import { useEventBus, playSoundEffect } from '../core/events/CentralEventBus';
 import { GameEventType } from '../core/events/EventTypes';
+import { initializeSystems } from '../core/init';
 
-export default function GameContainer() {
-  // Use the new state machine for game phase management
+// Component props to support the vertical slice mode
+interface GameContainerProps {
+  mapSlotContent?: React.ReactNode;
+}
+
+/**
+ * GameContainer - Main game experience container
+ * 
+ * This component uses a React-safe initialization pattern that:
+ * 1. Uses refs to track initialization across renders/remounts
+ * 2. Prevents duplicate initializations in Strict Mode or during development
+ * 3. Properly handles cleanup when the component unmounts
+ * 4. Provides clear state transitions with error boundaries
+ */
+export default function GameContainer({ mapSlotContent }: GameContainerProps = {}) {
+  // Game state references
   const { 
     gamePhase, 
     isDay,
@@ -23,15 +38,7 @@ export default function GameContainer() {
     completeNight
   } = useGameState();
   
-  // Track component initialization state
-  const [isInitialized, setIsInitialized] = useState(false);
-  const [renderCount, setRenderCount] = useState(0);
-  const [forceRerender, setForceRerender] = useState(0);
-  const [debugInfo, setDebugInfo] = useState<any>({});
-  const mapRef = useRef<HTMLDivElement>(null);
-  const initTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  
-  // Maintain compatibility with the old store during migration
+  // Store access
   const { 
     currentNodeId, 
     map,
@@ -39,220 +46,168 @@ export default function GameContainer() {
   } = useGameStore();
   
   const { currentChallenge, resetChallenge } = useChallengeStore();
-  
-  // Keep compatibility with sound system during migration
   const { playSound } = useGameEffects();
   
-  // Increment render counter once on mount only for debugging
+  // React state with simplified FSM approach for container state
+  const [containerState, setContainerState] = useState<{
+    status: 'initializing' | 'ready' | 'error' | 'unmounting';
+    error: string | null;
+    renderCount: number;
+  }>({
+    status: 'initializing',
+    error: null,
+    renderCount: 0
+  });
+  
+  // Refs to handle React's lifecycle safely
+  const initRef = useRef<boolean>(false);
+  const cleanupRef = useRef<(() => void) | null>(null);
+  const componentMountedRef = useRef<boolean>(true);
+  
+  // Track render count for development diagnostics 
   useEffect(() => {
-    setRenderCount(prev => prev + 1);
-    
-    // Log component mount through the event system
-    useEventBus.getState().dispatch(
-      GameEventType.UI_BUTTON_CLICKED,
-      {
-        componentId: 'gameContainer',
-        action: 'mounted',
-        metadata: {
-          renderCount: renderCount + 1,
-          timestamp: Date.now()
-        }
-      }
-    );
+    // Only update counter, no other side effects
+    if (componentMountedRef.current) {
+      setContainerState(prev => ({
+        ...prev,
+        renderCount: prev.renderCount + 1
+      }));
+    }
   }, []);
   
-  // Stable logging helper that won't cause render loops
-  const logGameState = () => {
-    const state = {
-      isInitialized,
-      renderCount,
-      gamePhase,
-      currentNodeId,
-      hasMap: !!map,
-      mapNodeCount: map?.nodes?.length || 0,
-      hasChallenge: !!currentChallenge
-    };
-    
-    // Only log when important values change
-    const stateKey = JSON.stringify(state);
-    if (stateKey !== debugInfo.lastLogKey) {
-      console.log(`🎮 GameContainer state:`, state);
-      setDebugInfo(prev => ({ ...prev, lastLogKey: stateKey }));
-    }
-    
-    return state;
-  };
-  
-  // Enhanced game initialization - FIXED to avoid render loops
+  // Core initialization - uses refs to ensure it only runs once
+  // even through React's development remounts/strict mode
   useEffect(() => {
-    let mounted = true;
-    
-    // Clear any existing timeout to prevent memory leaks
-    if (initTimeoutRef.current) {
-      clearTimeout(initTimeoutRef.current);
+    // Skip if already initialized (prevents strict mode double-init)
+    if (initRef.current) {
+      console.log("⏩ GameContainer already initialized, skipping");
+      return;
     }
     
-    // Only initialize once and avoid re-triggering on hot reloads
-    if (!isInitialized) {
-      console.log("🎮 Component mounted, checking game state", {
-        hasMap: !!map,
-        renderCount,
-        gamePhase,
-        timestamp: new Date().toISOString()
-      });
-      
-      // Force map generation if needed
-      if (!map) {
-        console.log("🗺️ No map detected, initializing game state");
-        
-        // Dispatch the event through CentralEventBus
-        useEventBus.getState().dispatch(
-          GameEventType.UI_BUTTON_CLICKED,
-          {
-            componentId: 'gameContainer',
-            action: 'initializeGame',
-            metadata: {
-              reason: 'map_missing',
-              timestamp: Date.now()
-            }
-          }
-        );
-        
-        startGame();
-        
-        // Give time for state to propagate before continuing
-        initTimeoutRef.current = setTimeout(() => {
-          if (mounted) {
-            console.log("✅ Initialization complete");
-            setIsInitialized(true);
-            
-            // Log initialization completion through the event system
-            useEventBus.getState().dispatch(
-              GameEventType.UI_BUTTON_CLICKED,
-              {
-                componentId: 'gameContainer',
-                action: 'initializationComplete',
-                metadata: {
-                  mapNodeCount: useGameStore.getState().map?.nodes?.length || 0,
-                  timestamp: Date.now()
-                }
-              }
-            );
-          }
-        }, 500); // Increased timeout for stability
-      } else {
-        console.log("🗺️ Map already exists, proceeding to initialization");
-        setIsInitialized(true);
-      }
-    }
+    console.log("🎮 GameContainer mounted, initializing core systems...");
+    initRef.current = true;
     
-    // Force initialization after several renders if not already initialized
-    if (renderCount > 3 && !isInitialized && map) {
-      console.log("⚠️ Forcing initialization after multiple renders");
-      setIsInitialized(true);
+    try {
+      // Initialize core systems with singleton pattern
+      const cleanup = initializeSystems();
+      cleanupRef.current = cleanup;
       
-      // Log forced initialization through the event system
+      // Logging through event system to test connectivity
       useEventBus.getState().dispatch(
         GameEventType.UI_BUTTON_CLICKED,
         {
           componentId: 'gameContainer',
-          action: 'forcedInitialization',
-          metadata: {
-            renderCount,
-            timestamp: Date.now()
+          action: 'mounted',
+          metadata: { 
+            timestamp: Date.now(),
+            renderCount: containerState.renderCount 
           }
-        }
+        },
+        'gameContainer:mount'
       );
+      
+      // Generate map if needed
+      if (!map) {
+        console.log("🗺️ No map detected, initializing game state");
+        startGame();
+      }
+      
+      // Update container state safely
+      if (componentMountedRef.current) {
+        setContainerState(prev => ({
+          ...prev,
+          status: 'ready'
+        }));
+      }
+    } catch (error) {
+      // Handle initialization errors
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      console.error("🚨 GameContainer initialization error:", error);
+      
+      if (componentMountedRef.current) {
+        setContainerState(prev => ({
+          ...prev,
+          status: 'error',
+          error: errorMsg
+        }));
+      }
     }
     
+    // Cleanup function ensures we don't have memory leaks or stale state
     return () => {
-      mounted = false;
-      if (initTimeoutRef.current) {
-        clearTimeout(initTimeoutRef.current);
+      console.log("🧹 GameContainer unmounting...");
+      componentMountedRef.current = false;
+      
+      // Update state before removing
+      setContainerState(prev => ({
+        ...prev,
+        status: 'unmounting'
+      }));
+      
+      // Run cleanup if we initialized
+      if (cleanupRef.current) {
+        try {
+          cleanupRef.current();
+          console.log("✅ GameContainer cleanup complete");
+        } catch (error) {
+          console.error("❌ Error during GameContainer cleanup:", error);
+        }
       }
     };
-  }, [map, startGame, isInitialized, renderCount, gamePhase]); 
+  }, [containerState.renderCount, map, startGame]);
   
-  // Separate effect for forcing rerender after delay
+  // Handle sound effects on phase transitions
   useEffect(() => {
-    if (isInitialized && !currentNodeId && map && renderCount < 5) {
-      const forceTimer = setTimeout(() => {
-        if (!mapRef.current || !mapRef.current.querySelector('.starfield-bg')) {
-          console.log("🔄 Forcing rerender to help display map");
-          setForceRerender(prev => prev + 1);
-          
-          // Log forced rerender through the event system
-          useEventBus.getState().dispatch(
-            GameEventType.UI_BUTTON_CLICKED,
-            {
-              componentId: 'gameContainer',
-              action: 'forcedRerender',
-              metadata: {
-                renderCount,
-                forceRerender: forceRerender + 1,
-                timestamp: Date.now()
-              }
-            }
-          );
-        }
-      }, 2000);
-      
-      return () => clearTimeout(forceTimer);
-    }
-  }, [isInitialized, currentNodeId, map, renderCount]);
-  
-  // Handle phase transition sounds with error catching
-  useEffect(() => {
-    if (isInitialized) {
+    // Only play sounds when ready
+    if (containerState.status !== 'ready') return;
+    
+    const playPhaseSound = () => {
       try {
-        // Use new sound system
+        // Use both systems for compatibility during transition
         if (isDay) {
-          playSoundEffect('click', 1.0, false);
+          playSoundEffect('click', 0.8, false);
+          playSound?.('day-start' as SoundEffect);
         } else if (isNight) {
-          playSoundEffect('success', 1.0, false);
-        }
-        
-        // Fallback to old system
-        if (playSound) {
-          if (isDay) {
-            playSound('day-start' as SoundEffect);
-          } else if (isNight) {
-            playSound('night-start' as SoundEffect);
-          }
+          playSoundEffect('success', 0.8, false);
+          playSound?.('night-start' as SoundEffect);
         }
       } catch (error) {
-        console.warn("Sound effect failed to play, continuing without audio");
+        console.warn("Sound effect failed, continuing without audio");
       }
-    }
-  }, [isDay, isNight, playSound, isInitialized]);
+    };
+    
+    // Slight delay to avoid race conditions
+    const timer = setTimeout(playPhaseSound, 50);
+    return () => clearTimeout(timer);
+  }, [isDay, isNight, playSound, containerState.status]);
   
   // Clean up challenge state when returning to map
   useEffect(() => {
+    if (containerState.status !== 'ready') return;
+    
     if (!currentNodeId && currentChallenge) {
       resetChallenge();
-      
-      // Log challenge reset through the event system
-      useEventBus.getState().dispatch(
-        GameEventType.UI_BUTTON_CLICKED,
-        {
-          componentId: 'gameContainer',
-          action: 'resetChallenge',
-          metadata: {
-            previousChallengeId: currentChallenge.id,
-            timestamp: Date.now()
-          }
-        }
-      );
     }
-  }, [currentNodeId, currentChallenge, resetChallenge]);
+  }, [currentNodeId, currentChallenge, resetChallenge, containerState.status]);
   
-  // Content router with fallback states for stability
+  // Error boundary fallback component
+  const ErrorFallback = ({ error, resetFn }: { error: string, resetFn: () => void }) => (
+    <div className="p-4 bg-red-900/20 rounded m-4">
+      <h3 className="text-xl mb-2">Component Error</h3>
+      <p className="mb-2">{error}</p>
+      <button 
+        className="mt-4 px-3 py-1 bg-blue-700 text-white rounded"
+        onClick={resetFn}
+      >
+        Try to Recover
+      </button>
+    </div>
+  );
+  
+  // Content router with enhanced error boundaries
   const renderGameContent = () => {
-    // Log the current state for debug purposes
-    const state = logGameState();
-    
-    // Display a stable loading state while initializing
-    if (!isInitialized) {
+    // Show loading/error states as needed
+    if (containerState.status === 'initializing') {
       return (
         <div className="h-full w-full flex items-center justify-center bg-background">
           <div className="text-center p-4">
@@ -260,161 +215,202 @@ export default function GameContainer() {
             <div className="w-64 h-2 bg-gray-700 rounded-full mx-auto overflow-hidden">
               <div className="h-full bg-blue-500 animate-pulse-slow" style={{width: '60%'}}></div>
             </div>
-            <p className="mt-2 text-sm text-gray-400">
-              Render count: {renderCount} | Map nodes: {map?.nodes?.length || 0}
-            </p>
           </div>
         </div>
       );
     }
     
-    // Night phase takes precedence
+    if (containerState.status === 'error') {
+      return (
+        <div className="h-full w-full flex items-center justify-center bg-red-900/10">
+          <div className="text-center p-4 max-w-md">
+            <h2 className="text-xl mb-2 text-red-500">System Initialization Error</h2>
+            <div className="bg-red-900/20 p-4 rounded mb-4 text-sm">
+              {containerState.error || 'Unknown error during initialization'}
+            </div>
+            <button
+              className="px-4 py-2 bg-blue-600 text-white rounded"
+              onClick={() => {
+                // Try emergency reset
+                try {
+                  if (window.__FORCE_REINITIALIZE__) {
+                    window.__FORCE_REINITIALIZE__();
+                  }
+                  window.location.reload();
+                } catch (e) {
+                  window.location.reload();
+                }
+              }}
+            >
+              Reset & Reload
+            </button>
+          </div>
+        </div>
+      );
+    }
+    
+    // Night phase (reflective mode)
     if (isNight) {
       return (
         <HillHomeScene 
           onComplete={() => {
-            // Dispatch night completion through the event system
-            useEventBus.getState().dispatch(
-              GameEventType.UI_BUTTON_CLICKED,
-              {
-                componentId: 'nightCompleteButton',
-                action: 'click',
-                metadata: {
-                  timestamp: Date.now()
-                }
-              }
-            );
-            
-            // Also call the state machine action directly for migration
-            completeNight();
+            try {
+              // Event first, then state transition
+              useEventBus.getState().dispatch(
+                GameEventType.UI_BUTTON_CLICKED,
+                {
+                  componentId: 'nightCompleteButton',
+                  action: 'click',
+                  metadata: { timestamp: Date.now() }
+                },
+                'hillHomeScene:complete'
+              );
+              completeNight();
+            } catch (error) {
+              console.error("Error completing night phase:", error);
+              // Force transition as fallback
+              completeNight();
+            }
           }} 
         />
       );
     }
     
-    // Map view (main navigation hub)
-    if (!currentNodeId || !map) {
+    // Map view (main navigation)
+    if (!currentNodeId) {
+      // Support vertical slice custom map
+      if (mapSlotContent) {
+        return mapSlotContent;
+      }
+      
+      // Regular map view
       return (
-        <div 
-          ref={mapRef} 
-          className="h-full w-full" 
-          data-rerender-key={forceRerender}
-        >
-          {!currentNodeId && (
-          <div className="h-full w-full">
-            <EnhancedMap />
-          </div>
-        )}
+        <div className="h-full w-full">
+          <EnhancedMap />
         </div>
       );
     }
     
     // Challenge view
-    return <ChallengeRouter />;
-  };
-  
-  // Render emergency help button during development
-  const renderDebugHelpers = () => {
-    if (process.env.NODE_ENV !== 'production') {
+    try {
+      return <ChallengeRouter />;
+    } catch (error) {
       return (
-        <div className="fixed top-20 right-2 z-50 flex flex-col gap-1">
-          <button 
-            className="bg-red-600 text-white text-xs px-2 py-1 rounded opacity-70 hover:opacity-100"
-            onClick={() => {
-              setForceRerender(prev => prev + 1);
-              
-              // Log debug action through the event system
-              useEventBus.getState().dispatch(
-                GameEventType.UI_BUTTON_CLICKED,
-                {
-                  componentId: 'debugForceRerenderButton',
-                  action: 'click',
-                  metadata: {
-                    renderCount,
-                    timestamp: Date.now()
-                  }
-                }
-              );
-            }}
-          >
-            Force Rerender
-          </button>
-          <button 
-            className="bg-blue-600 text-white text-xs px-2 py-1 rounded opacity-70 hover:opacity-100"
-            onClick={() => {
-              // Log action through the event system before clearing storage
-              useEventBus.getState().dispatch(
-                GameEventType.UI_BUTTON_CLICKED,
-                {
-                  componentId: 'debugClearStorageButton',
-                  action: 'click',
-                  metadata: {
-                    timestamp: Date.now()
-                  }
-                }
-              );
-              
-              localStorage.removeItem('rogue-resident-game');
-              window.location.reload();
-            }}
-          >
-            Clear Storage & Reload
-          </button>
-        </div>
+        <ErrorFallback 
+          error={error instanceof Error ? error.message : String(error)}
+          resetFn={() => {
+            resetChallenge();
+            // Force return to map
+            useGameStore.getState().selectNode(null);
+          }}
+        />
       );
     }
-    return null;
   };
   
+  // Main render with simplified layout
   return (
     <div 
       className="relative h-screen w-full bg-background flex flex-col" 
       data-game-container
       data-phase={gamePhase}
-      data-initialized={isInitialized}
+      data-status={containerState.status}
     >
-      {/* Top section - Game title bar, can be uncommented if needed */}
-      {/* <div className="h-12 w-full bg-surface-dark flex items-center px-4 border-b border-gray-800">
-        <h1 className="text-xl font-pixel-heading text-text-primary">Rogue Resident</h1>
-      </div> */}
-      
-      {/* Main content area with modified layout pattern */}
+      {/* Main content layout */}
       <div className="flex-grow flex overflow-hidden">
-        {/* Left sidebar - Fixed width with internal scroll */}
+        {/* Left sidebar */}
         <div className="w-64 flex-shrink-0 border-r border-gray-800 overflow-hidden flex flex-col">
-          {isInitialized && (
+          {containerState.status === 'ready' && (
             <div className="flex-1 overflow-y-auto overflow-x-hidden">
               <PlayerStats />
             </div>
           )}
         </div>
         
-        {/* Main gameplay area with perfect containment */}
+        {/* Main gameplay area */}
         <div className="flex-grow relative overflow-hidden">
           <div className="absolute inset-0 overflow-auto">
             {renderGameContent()}
           </div>
         </div>
 
-        {/* Right sidebar - reserved for future expansion */}
+        {/* Right sidebar */}
         <div className="w-64 flex-shrink-0 border-l border-gray-800 bg-surface-dark/50 overflow-hidden">
-          {/* Right panel content */}
+          {/* Reserved for future expansion */}
         </div>
       </div>
       
-      {/* Debug helpers when needed */}
-      {renderDebugHelpers()}
-      
-      {/* Enhanced debug panel for development */}
+      {/* Debug helpers in development */}
       {process.env.NODE_ENV !== 'production' && (
-        <div className="fixed bottom-2 left-2 bg-black/70 text-white text-xs p-2 z-50 font-pixel">
-          Init: {isInitialized ? '✓' : '...'} | 
-          Phase: {gamePhase} | 
-          Node: {currentNodeId || 'none'} | 
-          Map: {map ? `${map.nodes.length} nodes` : 'none'} |
-          Challenge: {currentChallenge ? 'active' : 'none'} |
-          Renders: {renderCount}
-        </div>
+        <>
+          <div className="fixed top-20 right-2 z-50 flex flex-col gap-1">
+            <button 
+              className="bg-red-600 text-white text-xs px-2 py-1 rounded opacity-70 hover:opacity-100"
+              onClick={() => {
+                // Force a refresh of the container state
+                setContainerState(prev => ({
+                  ...prev,
+                  renderCount: prev.renderCount + 1
+                }));
+                
+                useEventBus.getState().dispatch(
+                  GameEventType.UI_BUTTON_CLICKED,
+                  {
+                    componentId: 'debugForceRerenderButton',
+                    action: 'click',
+                    metadata: { 
+                      renderCount: containerState.renderCount + 1,
+                      timestamp: Date.now() 
+                    }
+                  },
+                  'debug:forceRerender'
+                );
+              }}
+            >
+              Force Rerender
+            </button>
+            
+            <button 
+              className="bg-blue-600 text-white text-xs px-2 py-1 rounded opacity-70 hover:opacity-100"
+              onClick={() => {
+                useEventBus.getState().dispatch(
+                  GameEventType.UI_BUTTON_CLICKED,
+                  {
+                    componentId: 'debugClearStorageButton',
+                    action: 'click',
+                    metadata: { timestamp: Date.now() }
+                  },
+                  'debug:clearStorage'
+                );
+                
+                localStorage.removeItem('rogue-resident-game');
+                window.location.reload();
+              }}
+            >
+              Clear Storage & Reload
+            </button>
+            
+            <button 
+              className="bg-purple-600 text-white text-xs px-2 py-1 rounded opacity-70 hover:opacity-100"
+              onClick={() => {
+                if (window.__RESET_EVENT_SYSTEM__) {
+                  window.__RESET_EVENT_SYSTEM__();
+                }
+              }}
+            >
+              Reset Event System
+            </button>
+          </div>
+          
+          <div className="fixed bottom-2 left-2 bg-black/70 text-white text-xs p-2 z-50 font-pixel">
+            Status: {containerState.status} | 
+            Phase: {gamePhase} | 
+            Node: {currentNodeId || 'none'} | 
+            Map: {map ? `${map.nodes.length} nodes` : 'none'} |
+            Challenge: {currentChallenge ? 'active' : 'none'} |
+            Renders: {containerState.renderCount}
+          </div>
+        </>
       )}
     </div>
   );
