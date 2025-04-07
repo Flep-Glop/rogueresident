@@ -1,140 +1,56 @@
 .
 ├── README.md
 ├── app
-│   ├── architectural-migration-checklist.md
 │   ├── components
-│   │   ├── EnhancedMap.tsx
-│   │   ├── EnhancedNode.tsx
-│   │   ├── EquipmentDisplay.tsx
-│   │   ├── FontLoadingContainer.tsx
 │   │   ├── GameContainer.tsx
-│   │   ├── GameEffects.tsx
-│   │   ├── GameOver.tsx
-│   │   ├── GameSprite.tsx
 │   │   ├── HillHomeScene.tsx
-│   │   ├── Inventory.tsx
-│   │   ├── ItemSprite.tsx
-│   │   ├── NodeComponent.tsx
-│   │   ├── PhaseTransition.tsx
-│   │   ├── PixelHealthBar.tsx
-│   │   ├── PixelSprite.tsx
-│   │   ├── PixelThemeProvider.tsx
-│   │   ├── PixelUIElements.tsx
 │   │   ├── PlayerStats.tsx
-│   │   ├── SeedDebugPanel.tsx
-│   │   ├── SimplifiedMap.tsx
-│   │   ├── SpriteFromSheet.tsx
-│   │   ├── StartScreen.tsx
-│   │   ├── VictoryScreen.tsx
 │   │   ├── audio
-│   │   │   └── SoundManager.tsx
 │   │   ├── challenges
-│   │   │   ├── BossNode.tsx
 │   │   │   ├── CalibrationChallenge.tsx
-│   │   │   ├── ChallengeRouter.tsx
-│   │   │   ├── EquipmentInteractiveChallenge.tsx
-│   │   │   ├── EquipmentQAChallenge.tsx
-│   │   │   ├── PatientCaseChallenge.tsx
-│   │   │   ├── QAProcedureChallenge.tsx
-│   │   │   ├── StorageCloset.tsx
 │   │   │   └── formats
-│   │   │       ├── ConversationFormat.tsx
-│   │   │       ├── InteractiveFormat.tsx
-│   │   │       └── ProceduralFormat.tsx
+│   │   │       └── ConversationFormat.tsx
 │   │   ├── debug
 │   │   │   ├── DebugStatePanel.tsx
 │   │   │   └── VerticalSliceDebugPanel.tsx
 │   │   ├── dialogue
-│   │   │   ├── DialogueSystem.tsx
-│   │   │   └── UnlockableDialogueOptions.tsx
 │   │   ├── journal
-│   │   │   ├── Journal.tsx
-│   │   │   ├── JournalCharactersPage.tsx
-│   │   │   ├── JournalIcon.tsx
-│   │   │   ├── JournalKnowledgePage.tsx
-│   │   │   ├── JournalNotesPage.tsx
-│   │   │   └── JournalReferencesPage.tsx
+│   │   │   └── Journal.tsx
 │   │   ├── knowledge
-│   │   │   ├── ConnectionSuggestions.tsx
 │   │   │   ├── ConstellationView.tsx
-│   │   │   ├── KnowledgeToast.tsx
-│   │   │   ├── KnowledgeUpdate.tsx
-│   │   │   └── NotificationManager.tsx
+│   │   │   └── KnowledgeUpdate.tsx
 │   │   └── vs
 │   │       └── SimplifiedKapoorMap.tsx
 │   ├── core
 │   │   ├── dialogue
-│   │   │   ├── CharacterMemorySystem.ts
-│   │   │   ├── DialogueAuthoringFormat.ts
-│   │   │   ├── DialogueController.ts
-│   │   │   ├── DialogueConverter.ts
-│   │   │   ├── DialogueProgressionHelpers.ts
-│   │   │   ├── DialogueRuntimeValidator.ts
 │   │   │   ├── DialogueStateMachine.ts
-│   │   │   ├── NarrativeBranchingSystem.ts
-│   │   │   ├── NarrativeTransaction.ts
-│   │   │   └── WriterToolsIntegration.ts
+│   │   │   └── NarrativeTransaction.ts
 │   │   ├── events
 │   │   │   ├── CentralEventBus.ts
-│   │   │   ├── EventEffectsIntegration.ts
+│   │   │   ├── EventSubscriptionHooks.ts
 │   │   │   ├── EventTypes.ts
-│   │   │   ├── GameEvents.ts
-│   │   │   ├── baseHandlers.ts
-│   │   │   ├── compat.ts
-│   │   │   ├── dialogueEventHandlers.ts
-│   │   │   ├── index.ts
-│   │   │   ├── journalEventHandlers.ts
-│   │   │   └── uiHandlers.ts
+│   │   │   └── InstallEmergencyHotfix.ts
 │   │   ├── init.ts
 │   │   ├── progression
-│   │   │   ├── NarrativeProgressionValidator.ts
-│   │   │   ├── ProgressionGuarantee.ts
-│   │   │   ├── ProgressionRecoverySystem.ts
 │   │   │   └── ProgressionService.ts
 │   │   └── statemachine
-│   │       ├── GameStateBridge.ts
 │   │       └── GameStateMachine.ts
 │   ├── data
-│   │   ├── clinicalChallenges.ts
-│   │   ├── dialogues
-│   │   │   ├── calibrations
-│   │   │   │   ├── jesse-equipment.ts
-│   │   │   │   ├── kapoor-calibration.ts
-│   │   │   │   └── quinn-theory.ts
-│   │   │   └── index.ts
-│   │   ├── items.ts
-│   │   └── spriteMapping.ts
+│   │   └── dialogues
+│   │       └── calibrations
+│   │           └── kapoor-calibration.ts
 │   ├── favicon.ico
 │   ├── globals.css
 │   ├── hooks
-│   │   ├── useCharacterInteraction.ts
-│   │   ├── useDialogueFlow.ts
-│   │   └── useTypewriter.ts
+│   │   └── useDialogueFlow.ts
 │   ├── layout.tsx
 │   ├── page.tsx
 │   ├── store
-│   │   ├── challengeStore.ts
 │   │   ├── gameStore.ts
-│   │   ├── journalStore.ts
-│   │   └── knowledgeStore.ts
+│   │   └── journalStore.ts
 │   ├── styles
-│   │   ├── map-visibility-fix.css
-│   │   └── pixel-assets.css
 │   ├── types
-│   │   ├── audio.ts
-│   │   ├── challenge.ts
-│   │   ├── encounterTypes.ts
-│   │   └── map.ts
-│   ├── utils
-│   │   ├── CharacterTeachingStyles.ts
-│   │   ├── dialogueLoader.ts
-│   │   ├── improvedMapGenerator.ts
-│   │   ├── knowledgeRequirements.ts
-│   │   ├── mapGenerator.ts
-│   │   ├── seedUtils.ts
-│   │   └── telemetryService.ts
-│   └── vertical-slice
-│       └── page.tsx
+│   └── utils
 ├── eslint.config.mjs
 ├── filestructure.txt
 ├── jest-config.js
@@ -159,4 +75,4 @@
 │   └── testNodeAccessibility.js
 └── tsconfig.json
 
-25 directories, 134 files
+24 directories, 51 files
