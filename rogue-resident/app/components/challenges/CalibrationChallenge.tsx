@@ -9,11 +9,10 @@ import { DialogueStage } from '../../hooks/useDialogueFlow';
 import { CharacterId } from '../../types/challenge';
 import { 
   useEventBus, 
-  GameEventType, 
   journalAcquired, 
   knowledgeGained
 } from '../../core/events/CentralEventBus';
-
+import { GameEventType } from '../../core/events/EventTypes';
 // Import the dialogue loader to access centralized dialogue content
 import { loadDialogueContent } from '../../utils/dialogueLoader';
 import telemetryService from '../../utils/telemetryService';

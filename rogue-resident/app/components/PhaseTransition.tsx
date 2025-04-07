@@ -4,7 +4,8 @@ import { useState, useEffect, useRef } from 'react';
 import { PixelText } from './PixelThemeProvider';
 import { useGameStore } from '../store/gameStore';
 import { useGameEffects } from './GameEffects';
-import { useEventBus, GameEventType, playSoundEffect } from '../core/events/CentralEventBus';
+import { useEventBus, playSoundEffect } from '../core/events/CentralEventBus';
+import { GameEventType } from '../core/events/EventTypes';
 
 interface PhaseTransitionProps {
   fromPhase: 'day' | 'night';

@@ -1,7 +1,8 @@
 // app/hooks/useCharacterInteraction.ts
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { DialogueOption } from './useDialogueFlow';
-import { useEventBus, GameEventType } from '../core/events/CentralEventBus';
+import { useEventBus } from '../core/events/CentralEventBus';
+import { GameEventType } from '../core/events/EventTypes';
 
 interface KnowledgeGainEvent {
   conceptName: string;

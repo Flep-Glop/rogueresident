@@ -7,11 +7,13 @@
  * state is centralized but UI interactions remain flexible.
  */
 
-import { useState, useEffect, useRef } from 'react';
-import { useEventBus } from '../core/events/CentralEventBus';
-import { GameEventType } from '../core/events/EventTypes';
-import { useDialogueStateMachine, DialogueContext } from '../core/dialogue/DialogueStateMachine';
-import { shallow } from 'zustand/shallow';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { useEventBus, GameEventType } from '../core/events';
+import { 
+  useDialogueStateMachine, 
+  DialogueContext,
+  DialogueOption as StateMachineOption 
+} from '../core/dialogue/DialogueStateMachine';
 
 // Define types that were previously imported
 export interface DialogueStage {
@@ -58,7 +60,7 @@ interface UseDialogueFlowReturn {
   // Current state
   currentStage: DialogueStage;
   currentStageId: string;
-  selectedOption: DialogueOption | null;
+  selectedOption: StateMachineOption | null;
   showResponse: boolean;
   showBackstory: boolean;
   backstoryText: string;
@@ -96,40 +98,36 @@ export function useDialogueFlow({
     throw new Error('useDialogueFlow requires dialogue stages');
   }
   
-  // Get event bus and state machine singletons
+  // Get event bus singleton
   const eventBus = useEventBus.getState();
-  const stateMachine = useDialogueStateMachine.getState();
   
   // Create internal dialogue flow ID for tracking
   const dialogueFlowIdRef = useRef(`dialogue-${characterId}-${Date.now()}`);
   const initializedRef = useRef(false);
   
-  // Get current state using Zustand's selector pattern for performance
-  // This is the key part of the Zustand subscription pattern - only subscribing
-  // to specific pieces of state to minimize re-renders
-  const {
-    currentState,
-    context,
-    selectedOption,
-    showResponse,
-    showBackstory,
-    backstoryText
-  } = useDialogueStateMachine(state => ({
-    currentState: state.currentState,
-    context: state.context,
-    selectedOption: state.selectedOption,
-    showResponse: state.showResponse,
-    showBackstory: state.showBackstory,
-    backstoryText: state.backstoryText
-  }), shallow); // Using shallow equality to prevent unnecessary re-renders
+  // Get state machine functions without creating a new object each time
+  // We separate the functions from the state to avoid infinite loops
+  const stateMachine = useDialogueStateMachine.getState();
   
-  // Map stages to their IDs for lookup
+  // Get current state using individual selectors for each piece of state
+  // This is the KEY FIX to prevent infinite loops - individual selectors 
+  // rather than one object selector
+  const currentState = useDialogueStateMachine(state => state.currentState);
+  const context = useDialogueStateMachine(state => state.context);
+  const selectedOption = useDialogueStateMachine(state => state.selectedOption);
+  const showResponse = useDialogueStateMachine(state => state.showResponse);
+  const showBackstory = useDialogueStateMachine(state => state.showBackstory);
+  const backstoryText = useDialogueStateMachine(state => state.backstoryText);
+  
+  // Map stages to their IDs for lookup - memoize to prevent needless updates
   const stageMapRef = useRef<Record<string, DialogueStage>>({});
-  if (Object.keys(stageMapRef.current).length === 0) {
+  useEffect(() => {
+    const stageMap: Record<string, DialogueStage> = {};
     stages.forEach(stage => { 
-      stageMapRef.current[stage.id] = stage; 
+      stageMap[stage.id] = stage; 
     });
-  }
+    stageMapRef.current = stageMap;
+  }, [stages]);
   
   // Track current stage state
   const initialStageId = stages[0]?.id || 'intro';
@@ -142,6 +140,8 @@ export function useDialogueFlow({
   // Initialize dialogue flow
   useEffect(() => {
     if (initializedRef.current) return;
+    
+    console.log(`[DialogueFlow] Initializing flow for ${characterId}`);
     
     // Convert our stages to state machine format
     const states: Record<string, any> = {};
@@ -233,13 +233,10 @@ export function useDialogueFlow({
     initialStageId
   ]);
   
-  // Subscribe to state changes - properly typed subscription with cleanup
+  // Subscribe to state changes and handle state ID updates
   useEffect(() => {
-    // This is the key part of the subscription pattern:
-    // 1. We use a typed selector to only get the state ID
-    // 2. We provide a typed callback to handle changes
-    // 3. We store the unsubscribe function to clean up properly
-    const unsubState = useDialogueStateMachine.subscribe(
+    // Set up the subscription to just the state ID, not the whole state
+    const unsubStateId = useDialogueStateMachine.subscribe(
       state => state.currentState?.id,
       (stateId) => {
         if (stateId && stateId !== currentStageId) {
@@ -255,15 +252,15 @@ export function useDialogueFlow({
       }
     );
     
-    // Clean up subscription when the component unmounts
-    // This prevents memory leaks and stale callbacks
     return () => {
-      unsubState();
+      unsubStateId();
     };
   }, [currentStageId, onStageChange]);
   
+  // Memoize handlers to prevent unnecessary recreations
+  
   // Handle option selection
-  const handleOptionSelect = (option: DialogueOption) => {
+  const handleOptionSelect = useCallback((option: DialogueOption) => {
     // Dispatch UI event first
     eventBus.dispatch(GameEventType.UI_DIALOGUE_ADVANCED, {
       componentId: 'dialogueFlow',
@@ -296,10 +293,13 @@ export function useDialogueFlow({
       knowledgeGain: option.knowledgeGain,
       isCriticalPath: option.isCriticalPath
     });
-  };
+  }, [
+    eventBus, stateMachine, currentStageId, characterId, 
+    onOptionSelected
+  ]);
   
   // Handle continue button
-  const handleContinue = () => {
+  const handleContinue = useCallback(() => {
     // Dispatch UI event
     eventBus.dispatch(GameEventType.UI_DIALOGUE_ADVANCED, {
       componentId: 'dialogueFlow',
@@ -312,10 +312,10 @@ export function useDialogueFlow({
     
     // Advance state in state machine
     stateMachine.advanceState();
-  };
+  }, [eventBus, stateMachine, currentStageId, characterId]);
   
   // Jump to a specific stage
-  const jumpToStage = (stageId: string) => {
+  const jumpToStage = useCallback((stageId: string) => {
     if (!stageMapRef.current[stageId]) {
       console.error(`Cannot jump to unknown stage: ${stageId}`);
       return;
@@ -334,11 +334,19 @@ export function useDialogueFlow({
     
     // Jump to state in state machine
     stateMachine.jumpToState(stageId);
-  };
+  }, [eventBus, stateMachine, currentStageId, characterId]);
   
-  // Get validation status for progression
-  const progressionStatus = stateMachine.getProgressionStatus();
+  // Calculate progression status without triggering a new render
+  const getProgressionStatus = stateMachine.getProgressionStatus;
+  const progressionStatus = getProgressionStatus();
   const isProgressionValid = progressionStatus.criticalPathsCompleted;
+  
+  // Get a stable reference to the state machine API
+  const stateMachineAPI = useRef({
+    dispatch: stateMachine.dispatch,
+    getAvailableOptions: stateMachine.getAvailableOptions,
+    getProgressionStatus: stateMachine.getProgressionStatus
+  }).current;
   
   // Return needed state and methods
   return {
@@ -354,11 +362,7 @@ export function useDialogueFlow({
     jumpToStage,
     
     isProgressionValid,
-    dialogueStateMachine: {
-      dispatch: stateMachine.dispatch,
-      getAvailableOptions: stateMachine.getAvailableOptions,
-      getProgressionStatus: stateMachine.getProgressionStatus
-    }
+    dialogueStateMachine: stateMachineAPI
   };
 }
 

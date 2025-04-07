@@ -10,7 +10,7 @@
  * (pending → active → completed) with repair logic separated from the core flow.
  */
 
-import { useEventBus, GameEventType } from '../events/CentralEventBus';
+import { useEventBus, GameEventType } from '../events';
 import { create } from 'zustand';
 
 // Simplified transaction states - reduced from 5 to 3 for clarity

@@ -25,7 +25,6 @@ export function initializeSystems() {
   
   // 2. Set up state machine (depends on event bus)
   console.log('🔄 Initializing state machine...');
-  const stateMachineCleanup = setupGameStateMachine();
   
   // 3. Set up state bridge (depends on event bus and state machine)
   console.log('🌉 Initializing state bridge...');
@@ -47,7 +46,6 @@ export function initializeSystems() {
     // Clean up in reverse order
     progressionCleanup();
     bridgeCleanup();
-    stateMachineCleanup();
     eventCleanup();
     
     // Signal session end

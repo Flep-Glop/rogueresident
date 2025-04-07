@@ -13,9 +13,8 @@
  * to the player's history without sacrificing narrative reliability.
  */
 
-// Properly import types from EventTypes
-import { useEventBus } from '../events/CentralEventBus';
-import { GameEventType } from '../events/EventTypes';
+// Import from our barrel file to prevent import cycles
+import { useEventBus, GameEventType } from '../events';
 import { useNarrativeTransaction } from './NarrativeTransaction';
 import { create } from 'zustand';
 import { immer } from 'zustand/middleware/immer';
@@ -41,6 +40,7 @@ export interface DialogueState {
   isCriticalPath?: boolean;
   isMandatory?: boolean;
   maxVisits?: number;
+  noAutoAdvance?: boolean; // Flag to prevent auto-advancement for player choice moments
   onEnter?: (context: DialogueContext) => void;
   onExit?: (context: DialogueContext) => void;
 }
@@ -171,6 +171,23 @@ function dialogueCriticalPath(
   });
 }
 
+// Helper to determine if a state can auto-advance
+function canStateAutoAdvance(state: DialogueState): boolean {
+  // States with player options should not auto-advance (unless explicitly allowed)
+  if (state.noAutoAdvance) {
+    return false;
+  }
+  
+  // States with options shouldn't auto-advance (they need player input)
+  const hasOptions = state.options && state.options.length > 0;
+  if (hasOptions) {
+    return false;
+  }
+  
+  // States with nextStateId that aren't explicitly marked can auto-advance
+  return !!state.nextStateId;
+}
+
 // Optimized state machine implementation with immer for immutable updates
 export const useDialogueStateMachine = create<DialogueStateMachineState>()(
   immer((set, get) => ({
@@ -265,11 +282,24 @@ export const useDialogueStateMachine = create<DialogueStateMachineState>()(
         return;
       }
       
-      // Apply consistent state type if not specified
-      const stateWithType = {
-        ...initialState,
-        type: initialState.type || 'intro'
-      };
+      // Process the dialogue state graph to mark all states with options 
+      // as noAutoAdvance if not explicitly specified
+      const processedStates = Object.fromEntries(
+        Object.entries(flow.states).map(([id, state]) => {
+          const hasOptions = state.options && state.options.length > 0;
+          const inferredType = state.type || (hasOptions ? 'question' : 'intro');
+          
+          return [
+            id,
+            { 
+              ...state, 
+              type: inferredType,
+              // Mark states with options to not auto-advance unless explicitly allowed
+              noAutoAdvance: hasOptions ? (state.noAutoAdvance ?? true) : !!state.noAutoAdvance
+            }
+          ];
+        })
+      );
       
       // Create a defensive copy of the context
       const safeContext = {
@@ -279,19 +309,14 @@ export const useDialogueStateMachine = create<DialogueStateMachineState>()(
         transactionIds: { ...(flow.context.transactionIds || {}) }
       };
       
-      // Initialize the flow
+      // Initialize the flow with processed states
       set(state => {
         state.activeFlow = {
           ...flow,
           context: safeContext,
-          states: Object.fromEntries(
-            Object.entries(flow.states).map(([id, state]) => [
-              id,
-              { ...state, type: state.type || 'question' }
-            ])
-          )
+          states: processedStates
         };
-        state.currentState = stateWithType;
+        state.currentState = processedStates[flow.initialStateId];
         state.context = safeContext;
         state.selectedOption = null;
         state.showResponse = false;
@@ -324,11 +349,16 @@ export const useDialogueStateMachine = create<DialogueStateMachineState>()(
         return;
       }
       
-      // Find the selected option
+      // Find the selected option in the current state's options
       const option = currentState.options?.find(o => o.id === optionId);
       
       if (!option) {
         console.error(`Option ${optionId} not found in state ${currentState.id}`);
+        
+        // Get all available options for debugging
+        const availableOptions = currentState.options?.map(o => o.id).join(', ');
+        console.log(`Available options: ${availableOptions || 'none'}`);
+        
         return;
       }
       
@@ -437,7 +467,8 @@ export const useDialogueStateMachine = create<DialogueStateMachineState>()(
       // Priority: selected option > current state > conclusion
       if (selectedOption?.nextStateId) {
         nextStateId = selectedOption.nextStateId;
-      } else if (currentState.nextStateId) {
+      } else if (currentState.nextStateId && !currentState.noAutoAdvance) {
+        // Only use the currentState's nextStateId if not marked as noAutoAdvance
         nextStateId = currentState.nextStateId;
       }
       
@@ -882,10 +913,25 @@ export function createDialogueFlow(
     .filter(([_, state]) => state.isCriticalPath)
     .map(([id]) => id);
   
+  // Process states to infer auto-advance settings
+  const processedStates: Record<string, DialogueState> = {};
+  
+  Object.entries(states).forEach(([id, state]) => {
+    const hasOptions = state.options && state.options.length > 0;
+    
+    // States with options should default to noAutoAdvance=true
+    const inferredNoAutoAdvance = hasOptions ? (state.noAutoAdvance ?? true) : !!state.noAutoAdvance;
+    
+    processedStates[id] = {
+      ...state,
+      noAutoAdvance: inferredNoAutoAdvance
+    };
+  });
+  
   return {
     id,
     initialStateId,
-    states,
+    states: processedStates,
     context: defaultContext,
     progressionCheckpoints,
     onComplete
@@ -935,7 +981,31 @@ export function createKapoorCalibrationFlow(nodeId: string) {
             relationshipChange: -1
           }
         ],
-        nextStateId: 'basics' // Default transition if options fail
+        // No auto-advance for states with options (handled by processing)
+        nextStateId: 'basics' // Will be ignored because noAutoAdvance will be true
+      },
+      
+      // Add a 'basics' state to receive transitions from intro
+      'basics': {
+        id: 'basics',
+        type: 'question',
+        text: "Let's begin by verifying the calibration constants. Accuracy in measurement is the foundation of patient safety.",
+        options: [
+          {
+            id: "protocol-question",
+            text: "Could you walk me through the protocol?",
+            nextStateId: 'journal-presentation',
+            responseText: "Certainly. First, we must understand how to properly document our findings.",
+            relationshipChange: 1
+          },
+          {
+            id: "confident-approach",
+            text: "I'd like to try the calibration myself.",
+            nextStateId: 'journal-presentation',
+            responseText: "Enthusiasm is commendable, but proper documentation must precede action.",
+            relationshipChange: 0
+          }
+        ]
       },
       
       // Critical journal presentation state
@@ -980,7 +1050,31 @@ export function createJesseEquipmentFlow(nodeId: string) {
             relationshipChange: 0
           }
         ],
-        nextStateId: 'safety'
+        // No auto-advance for states with options (handled by processing)
+        nextStateId: 'safety' // Will be ignored because noAutoAdvance will be true
+      },
+      
+      // Add a 'safety' state to receive transitions
+      'safety': {
+        id: 'safety',
+        type: 'question',
+        text: "First rule of the lab: always verify the equipment is powered down before making any adjustments. Second rule: calibration certificates are sacred - never operate equipment without valid documentation.",
+        options: [
+          {
+            id: "understood",
+            text: "Makes sense. Patient safety comes first.",
+            nextStateId: 'equipment-safety',
+            responseText: "Exactly! You're catching on quick.",
+            relationshipChange: 1
+          },
+          {
+            id: "seems-excessive",
+            text: "Isn't that being a bit over-cautious?",
+            nextStateId: 'equipment-safety',
+            responseText: "Not when a calibration error could result in a treatment error. This is why these protocols exist.",
+            relationshipChange: -1
+          }
+        ]
       },
       
       // Critical safety state
@@ -997,10 +1091,22 @@ export function createJesseEquipmentFlow(nodeId: string) {
   );
 }
 
+// Proper cleanup function for the setup - will address missing state machine cleanup issue
+export function setupDialogueStateMachine() {
+  console.log('Setting up dialogue state machine...');
+  
+  // Return a cleanup function
+  return () => {
+    console.log('Cleaning up dialogue state machine...');
+    // Additional cleanup logic if needed
+  };
+}
+
 export default {
   useDialogueStateMachine,
   createDialogueFlow,
   createKapoorCalibrationFlow,
   createJesseEquipmentFlow,
-  determineJournalTier
+  determineJournalTier,
+  setupDialogueStateMachine
 };

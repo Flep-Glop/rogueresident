@@ -9,10 +9,10 @@ import { useGameEffects } from '../../GameEffects';
 import KnowledgeUpdate from '../../knowledge/KnowledgeUpdate';
 import { EquipmentDisplay } from '../../ItemSprite';
 import { 
-  useEventBus, 
-  GameEventType,
+  useEventBus,
   journalAcquired
 } from '../../../core/events/CentralEventBus';
+import { GameEventType } from '../../../core/events/EventTypes';
 import { useJournalStore } from '../../../store/journalStore';
 import { checkTransactionIntegrity } from '../../../core/dialogue/NarrativeTransaction';
 import telemetryService from '../../../utils/telemetryService';

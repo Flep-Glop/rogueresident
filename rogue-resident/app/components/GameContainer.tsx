@@ -11,7 +11,8 @@ import HillHomeScene from './HillHomeScene';
 import PlayerStats from './PlayerStats';
 import { SoundEffect } from '../types/audio';
 import { useGameState } from '../core/statemachine/GameStateMachine';
-import { useEventBus, GameEventType, playSoundEffect } from '../core/events/CentralEventBus';
+import { useEventBus, playSoundEffect } from '../core/events/CentralEventBus';
+import { GameEventType } from '../core/events/EventTypes';
 
 export default function GameContainer() {
   // Use the new state machine for game phase management
