@@ -10,11 +10,10 @@ import { useEventBus } from '../core/events/CentralEventBus';
 import { GameEventType } from '../core/events/EventTypes';
 
 /**
- * HillHomeScene - Night phase component with integrated constellation visualization
+ * HillHomeScene - Enhanced night phase component
  * 
  * This scene represents the player's hill home during the night phase,
- * where they can view their knowledge constellation and reflect on what
- * they've learned during the day.
+ * with improved initialization and error handling to ensure consistent rendering.
  */
 export default function HillHomeScene({ onComplete }: { onComplete: () => void }) {
   // Core game state
@@ -44,6 +43,16 @@ export default function HillHomeScene({ onComplete }: { onComplete: () => void }
   const [insightTransferred, setInsightTransferred] = useState(false);
   const [fadeIn, setFadeIn] = useState(false);
   const [showTransferEffect, setShowTransferEffect] = useState(false);
+  const [initializeStarted, setInitializeStarted] = useState(false);
+  const [initializeComplete, setInitializeComplete] = useState(false);
+  const [initialRender, setInitialRender] = useState(true);
+  
+  // Error handling state
+  const [hasError, setHasError] = useState(false);
+  const [errorDetails, setErrorDetails] = useState<string | null>(null);
+  
+  // Render count for debugging
+  const renderCount = useRef(0);
   
   // Track component mounted state for cleanup
   const componentMounted = useRef(true);
@@ -63,22 +72,59 @@ export default function HillHomeScene({ onComplete }: { onComplete: () => void }
     }
   }, [resetNewlyDiscovered, newlyDiscovered]);
   
+  // Track render count for debugging
+  useEffect(() => {
+    renderCount.current += 1;
+    console.log(`[HillHomeScene] Render #${renderCount.current}`);
+  });
+  
   // Create and manage audio on mount
   useEffect(() => {
-    // Create audio elements if we want ambient audio
-    try {
-      nightAmbienceRef.current = new Audio('/audio/night_ambience.mp3');
-      if (nightAmbienceRef.current) {
-        nightAmbienceRef.current.volume = 0.3;
-        nightAmbienceRef.current.loop = true;
+    // Initialize component
+    if (!initializeStarted) {
+      setInitializeStarted(true);
+      
+      // Log critical mount event with full state
+      console.log('[HillHomeScene] MOUNTING - Game Phase:', gamePhase);
+      console.log('[HillHomeScene] Pending insights:', pendingInsights);
+      console.log('[HillHomeScene] Newly discovered:', newlyDiscovered);
+      
+      // Validate initialization state
+      if (gamePhase !== 'night') {
+        console.warn(`[HillHomeScene] Mounting with incorrect phase: ${gamePhase}, expected 'night'`);
+        
+        // Optionally attempt auto-repair through state machine
+        try {
+          if (typeof window !== 'undefined' && (window as any).__GAME_STATE_MACHINE_DEBUG__) {
+            console.log('[HillHomeScene] Attempting to auto-repair game phase');
+            (window as any).__GAME_STATE_MACHINE_DEBUG__.forceTransition('night', 'hill_home_auto_repair');
+          }
+        } catch (e) {
+          console.error('[HillHomeScene] Auto-repair failed:', e);
+        }
       }
       
-      insightSoundRef.current = new Audio('/audio/insight_transfer.mp3');
-      if (insightSoundRef.current) {
-        insightSoundRef.current.volume = 0.5;
+      // Create audio elements if we want ambient audio
+      try {
+        nightAmbienceRef.current = new Audio('/audio/night_ambience.mp3');
+        if (nightAmbienceRef.current) {
+          nightAmbienceRef.current.volume = 0.3;
+          nightAmbienceRef.current.loop = true;
+        }
+        
+        insightSoundRef.current = new Audio('/audio/insight_transfer.mp3');
+        if (insightSoundRef.current) {
+          insightSoundRef.current.volume = 0.5;
+        }
+      } catch (e) {
+        console.log('Audio creation failed, continuing without sound');
       }
-    } catch (e) {
-      console.log('Audio creation failed, continuing without sound');
+      
+      // Mark initialization as complete
+      setInitializeComplete(true);
+      
+      // Log initialization success
+      console.log('[HillHomeScene] Initialization complete');
     }
     
     return () => {
@@ -96,10 +142,12 @@ export default function HillHomeScene({ onComplete }: { onComplete: () => void }
         console.log('Audio cleanup failed');
       }
     };
-  }, []);
+  }, [gamePhase, initializeStarted, pendingInsights]);
   
   // Play ambience when component mounts
   useEffect(() => {
+    if (!initializeComplete) return;
+    
     try {
       if (nightAmbienceRef.current) {
         nightAmbienceRef.current.play().catch(e => {
@@ -109,10 +157,12 @@ export default function HillHomeScene({ onComplete }: { onComplete: () => void }
     } catch (e) {
       console.log('Playing ambience failed');
     }
-  }, []);
+  }, [initializeComplete]);
   
   // Fade in effect on mount
   useEffect(() => {
+    if (!initializeComplete) return;
+    
     // Set mounted state on mount
     componentMounted.current = true;
     didResetNewlyDiscovered.current = false;
@@ -121,6 +171,7 @@ export default function HillHomeScene({ onComplete }: { onComplete: () => void }
     setTimeout(() => {
       if (componentMounted.current) {
         setFadeIn(true);
+        setInitialRender(false);
       }
     }, 100);
     
@@ -129,7 +180,7 @@ export default function HillHomeScene({ onComplete }: { onComplete: () => void }
       eventBus.dispatch(
         GameEventType.GAME_PHASE_CHANGED,
         {
-          from: 'day',
+          from: 'transition_to_night',
           to: 'night',
           reason: 'player_returned_home'
         },
@@ -144,14 +195,18 @@ export default function HillHomeScene({ onComplete }: { onComplete: () => void }
       // Mark as unmounted first
       componentMounted.current = false;
     };
-  }, []);
+  }, [initializeComplete, eventBus]);
   
   // Automatically transfer insights after a delay
   useEffect(() => {
+    if (!initializeComplete || initialRender) return;
+    
     if (!insightTransferred && pendingInsights.length > 0) {
       // Wait 3 seconds then show transfer effect
       const transferTimer = setTimeout(() => {
-        if (componentMounted.current) {
+        if (!componentMounted.current) return;
+        
+        try {
           setShowTransferEffect(true);
           
           // Play insight sound
@@ -175,7 +230,9 @@ export default function HillHomeScene({ onComplete }: { onComplete: () => void }
           
           // Wait 2 more seconds then complete the transfer
           setTimeout(() => {
-            if (componentMounted.current) {
+            if (!componentMounted.current) return;
+            
+            try {
               transferInsights();
               setInsightTransferred(true);
               setShowTransferEffect(false);
@@ -194,8 +251,24 @@ export default function HillHomeScene({ onComplete }: { onComplete: () => void }
               } catch (e) {
                 console.log('Event dispatch failed, continuing');
               }
+            } catch (error) {
+              console.error('Error during insight transfer:', error);
+              setHasError(true);
+              setErrorDetails(`Failed to transfer insights: ${error}`);
             }
           }, 2000);
+        } catch (error) {
+          console.error('Error setting transfer effect:', error);
+          setHasError(true);
+          setErrorDetails(`Failed to show transfer effect: ${error}`);
+          
+          // Still attempt to transfer insights
+          try {
+            transferInsights();
+            setInsightTransferred(true);
+          } catch (fallbackError) {
+            console.error('Even fallback transfer failed:', fallbackError);
+          }
         }
       }, 3000);
       
@@ -203,10 +276,12 @@ export default function HillHomeScene({ onComplete }: { onComplete: () => void }
         clearTimeout(transferTimer);
       };
     }
-  }, [insightTransferred, pendingInsights, transferInsights, updateInsight, eventBus]);
+  }, [insightTransferred, pendingInsights, transferInsights, updateInsight, eventBus, initializeComplete, initialRender]);
   
   // Open constellation automatically after insights transfer
   useEffect(() => {
+    if (!initializeComplete || initialRender) return;
+    
     if (insightTransferred && !showConstellation && newlyDiscovered.length > 0) {
       // Wait 1 second then open constellation
       const constellationTimer = setTimeout(() => {
@@ -219,28 +294,32 @@ export default function HillHomeScene({ onComplete }: { onComplete: () => void }
         clearTimeout(constellationTimer);
       };
     }
-  }, [insightTransferred, showConstellation, newlyDiscovered]);
+  }, [insightTransferred, showConstellation, newlyDiscovered, initializeComplete, initialRender]);
 
   // Handle starting the next day
-  const handleStartDay = () => {
+  const handleStartDay = useCallback(() => {
     // Ensure insights are transferred first
     if (!insightTransferred && pendingInsights.length > 0) {
-      transferInsights();
-      setInsightTransferred(true);
-      
-      // Log forced insight transfer
       try {
-        eventBus.dispatch(
-          GameEventType.KNOWLEDGE_TRANSFERRED,
-          {
-            conceptIds: pendingInsights.map(insight => insight.conceptId),
-            source: 'forced_before_day',
-            successful: true
-          },
-          'HillHomeScene'
-        );
-      } catch (e) {
-        console.log('Event dispatch failed, continuing');
+        transferInsights();
+        setInsightTransferred(true);
+        
+        // Log forced insight transfer
+        try {
+          eventBus.dispatch(
+            GameEventType.KNOWLEDGE_TRANSFERRED,
+            {
+              conceptIds: pendingInsights.map(insight => insight.conceptId),
+              source: 'forced_before_day',
+              successful: true
+            },
+            'HillHomeScene'
+          );
+        } catch (e) {
+          console.log('Event dispatch failed, continuing');
+        }
+      } catch (error) {
+        console.error('Error during forced insight transfer:', error);
       }
     }
     
@@ -252,9 +331,67 @@ export default function HillHomeScene({ onComplete }: { onComplete: () => void }
       resetNewlyDiscoveredSafe();
     }
     
+    // Log button click
+    try {
+      eventBus.dispatch(
+        GameEventType.UI_BUTTON_CLICKED,
+        {
+          componentId: 'startDayButton',
+          action: 'click',
+          metadata: { currentDay }
+        },
+        'HillHomeScene'
+      );
+    } catch (error) {
+      console.warn('Failed to log button click:', error);
+    }
+    
     // Call onComplete to transition to day phase
     onComplete();
-  };
+  }, [
+    insightTransferred, 
+    pendingInsights, 
+    transferInsights, 
+    newlyDiscovered, 
+    resetNewlyDiscoveredSafe, 
+    onComplete, 
+    eventBus,
+    currentDay
+  ]);
+  
+  // Error fallback UI
+  if (hasError) {
+    return (
+      <div className="h-full w-full flex items-center justify-center bg-black text-white">
+        <div className="max-w-md text-center p-8">
+          <h2 className="text-2xl mb-4 text-red-500">Error in Night Phase</h2>
+          <div className="mb-8 p-4 bg-gray-900 rounded text-sm">
+            {errorDetails || "An unknown error occurred in the night phase."}
+          </div>
+          <button
+            className="px-6 py-3 bg-blue-600 hover:bg-blue-500 text-white rounded"
+            onClick={handleStartDay}
+          >
+            Continue to Next Day
+          </button>
+        </div>
+      </div>
+    );
+  }
+  
+  // Initial loading state
+  if (!initializeComplete || initialRender) {
+    return (
+      <div className="h-full w-full flex items-center justify-center bg-black text-white">
+        <div className="text-center">
+          <h2 className="text-2xl mb-4 text-blue-300">Preparing Night View...</h2>
+          <div className="w-32 h-1 bg-blue-900 mx-auto overflow-hidden rounded-full">
+            <div className="h-full bg-blue-500 animate-pulse-flow"></div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div 
@@ -418,6 +555,19 @@ export default function HillHomeScene({ onComplete }: { onComplete: () => void }
         </div>
       )}
       
+      {/* Debug information */}
+      {process.env.NODE_ENV !== 'production' && (
+        <div className="fixed bottom-4 left-4 bg-black/80 text-white p-2 rounded text-xs font-mono z-50">
+          <div>Game Phase: {gamePhase}</div>
+          <div>Day: {currentDay}</div>
+          <div>Initialize: {initializeComplete ? 'Complete' : 'Pending'}</div>
+          <div>Transfer: {insightTransferred ? 'Complete' : 'Pending'}</div>
+          <div>Insights: {pendingInsights.length}</div>
+          <div>New Concepts: {newlyDiscovered.length}</div>
+          <div>Renders: {renderCount.current}</div>
+        </div>
+      )}
+      
       {/* CSS animations for insight transfer */}
       <style jsx>{`
         @keyframes floatUp {
@@ -433,6 +583,16 @@ export default function HillHomeScene({ onComplete }: { onComplete: () => void }
         
         .animate-float-up {
           animation: floatUp 3s forwards ease-out;
+        }
+        
+        @keyframes pulseFlow {
+          0% { width: 0%; }
+          50% { width: 100%; }
+          100% { width: 0%; }
+        }
+        
+        .animate-pulse-flow {
+          animation: pulseFlow 2s ease-in-out infinite;
         }
         
         .stars-bg {
