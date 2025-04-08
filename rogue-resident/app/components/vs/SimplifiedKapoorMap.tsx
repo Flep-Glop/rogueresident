@@ -31,7 +31,8 @@ export default function SimplifiedKapoorMap() {
     currentNodeId, 
     setCurrentNode, 
     completedNodeIds, 
-    startGame 
+    startGame,
+    currentDay 
   } = useGameStore();
   
   const { completeDay } = useGameState();
@@ -39,7 +40,7 @@ export default function SimplifiedKapoorMap() {
   
   const [kapoorNodeId, setKapoorNodeId] = useState<string | null>(null);
   const [isMapReady, setIsMapReady] = useState(false);
-  const [hasAutoSelected, setHasAutoSelected] = useState(false);
+  const [autoSelectDisabled, setAutoSelectDisabled] = useState(false);
   const [revealEffectPlayed, setRevealEffectPlayed] = useState(false);
   
   const mapContainerRef = useRef<HTMLDivElement>(null);
@@ -148,15 +149,30 @@ export default function SimplifiedKapoorMap() {
     }
   }, [map, kapoorNodeId]);
   
-  // Auto-select the node once we have everything ready
+  // Check if we should disable auto-select based on completion state or day
   useEffect(() => {
-    if (isMapReady && kapoorNodeId && !currentNodeId && !hasAutoSelected) {
+    // Don't auto-select if:
+    // 1. The node has already been completed
+    // 2. We're past day 1 (returning to map after night phase)
+    if (
+      (kapoorNodeId && completedNodeIds.includes(kapoorNodeId)) || 
+      currentDay > 1 || 
+      journalStore.hasJournal
+    ) {
+      setAutoSelectDisabled(true);
+    }
+  }, [kapoorNodeId, completedNodeIds, currentDay, journalStore.hasJournal]);
+  
+  // Modified auto-select logic - Only for first-time experience
+  useEffect(() => {
+    // Only auto-select if all conditions are met AND auto-select isn't disabled
+    if (isMapReady && kapoorNodeId && !currentNodeId && !autoSelectDisabled) {
       // Add slight delay for visual impact
       const timer = setTimeout(() => {
         try {
           console.log('🎯 Auto-selecting Kapoor node:', kapoorNodeId);
           setCurrentNode(kapoorNodeId);
-          setHasAutoSelected(true);
+          setAutoSelectDisabled(true); // Disable after first use
           
           // Log event
           try {
@@ -182,7 +198,7 @@ export default function SimplifiedKapoorMap() {
       
       return () => clearTimeout(timer);
     }
-  }, [isMapReady, kapoorNodeId, currentNodeId, hasAutoSelected, setCurrentNode]);
+  }, [isMapReady, kapoorNodeId, currentNodeId, autoSelectDisabled, setCurrentNode]);
   
   // Handle node click
   const handleNodeClick = () => {
@@ -318,6 +334,9 @@ export default function SimplifiedKapoorMap() {
       </div>
     );
   }
+
+  // Get node completion state for styling
+  const isNodeCompleted = kapoorNodeId && completedNodeIds.includes(kapoorNodeId);
   
   return (
     <div 
@@ -340,7 +359,8 @@ export default function SimplifiedKapoorMap() {
       <div className="relative w-full max-w-md h-64 flex items-center justify-center">
         <div 
           ref={nodeRef}
-          className={`w-80 h-36 relative cursor-pointer transition-all duration-300 transform hover:scale-105 ${currentNodeId ? 'opacity-75' : 'animate-pulse-slow'}`}
+          className={`w-80 h-36 relative cursor-pointer transition-all duration-300 transform hover:scale-105 
+            ${currentNodeId ? 'opacity-75' : isNodeCompleted ? 'opacity-80' : 'animate-pulse-slow'}`}
           onClick={handleNodeClick}
           style={{
             perspective: '800px'
@@ -360,7 +380,7 @@ export default function SimplifiedKapoorMap() {
               className="absolute inset-0"
               style={{ 
                 background: 'linear-gradient(135deg, rgba(59, 130, 246, 0.1) 0%, transparent 50%, rgba(59, 130, 246, 0.05) 100%)',
-                opacity: currentNodeId ? 0.5 : 0.8
+                opacity: currentNodeId ? 0.5 : isNodeCompleted ? 0.4 : 0.8
               }}
             ></div>
           </div>
@@ -391,12 +411,25 @@ export default function SimplifiedKapoorMap() {
             <div className="flex items-center text-xs">
               <div className="w-2 h-2 rounded-full bg-blue-500 mr-2"></div>
               <span className="text-gray-400">Clinical Training</span>
-              <span className="ml-auto text-blue-400">+10 Insight</span>
+              {isNodeCompleted ? (
+                <span className="ml-auto text-green-400">Completed</span>
+              ) : (
+                <span className="ml-auto text-blue-400">+10 Insight</span>
+              )}
             </div>
           </div>
           
-          {/* Pulse indicator */}
-          <div className="absolute -top-1 -right-1 w-3 h-3 rounded-full bg-blue-500 animate-ping"></div>
+          {/* Pulse indicator - only show if not completed */}
+          {!isNodeCompleted && (
+            <div className="absolute -top-1 -right-1 w-3 h-3 rounded-full bg-blue-500 animate-ping"></div>
+          )}
+          
+          {/* Completion indicator */}
+          {isNodeCompleted && (
+            <div className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-green-500 flex items-center justify-center text-xs text-white">
+              ✓
+            </div>
+          )}
         </div>
       </div>
       
@@ -438,6 +471,11 @@ export default function SimplifiedKapoorMap() {
         )}
       </div>
       
+      {/* Day indicator */}
+      <div className="absolute top-4 left-4 bg-blue-600/70 text-white px-3 py-1 text-sm rounded-md">
+        Day {currentDay}
+      </div>
+      
       {/* Vertical slice indicator */}
       <div className="absolute top-4 right-4 bg-blue-600 text-white px-3 py-1 text-sm rounded-md z-40">
         Vertical Slice Mode
@@ -452,6 +490,7 @@ export default function SimplifiedKapoorMap() {
           <div>Current Node: {currentNodeId ? currentNodeId.slice(0, 10) + '...' : 'none'}</div>
           <div>Completed: {completedNodeIds.length}</div>
           <div>Journal: {journalStore.hasJournal ? `${journalStore.currentUpgrade}` : 'none'}</div>
+          <div>Auto-Select: {autoSelectDisabled ? 'Disabled' : 'Enabled'}</div>
         </div>
       )}
       
