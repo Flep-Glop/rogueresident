@@ -2,6 +2,7 @@
 ├── README.md
 ├── app
 │   ├── components
+│   │   ├── DayNightTransition.tsx
 │   │   ├── GameContainer.tsx
 │   │   ├── HillHomeScene.tsx
 │   │   ├── PixelThemeProvider.tsx
@@ -12,8 +13,12 @@
 │   │   │       └── ConversationFormat.tsx
 │   │   ├── debug
 │   │   │   └── VerticalSliceDebugPanel.tsx
+│   │   ├── gameplay
+│   │   │   ├── InsightMeter.tsx
+│   │   │   └── MomentumCounter.tsx
 │   │   ├── journal
-│   │   │   └── Journal.tsx
+│   │   │   ├── Journal.tsx
+│   │   │   └── JournalAcquisitionAnimation.tsx
 │   │   ├── knowledge
 │   │   │   ├── ConstellationView.tsx
 │   │   │   └── KnowledgeUpdate.tsx
@@ -31,7 +36,8 @@
 │   │   ├── progression
 │   │   │   └── ProgressionResolver.ts
 │   │   └── statemachine
-│   │       └── GameStateMachine.ts
+│   │       ├── GameStateMachine.ts
+│   │       └── TransitionGuarantor.ts
 │   ├── data
 │   │   ├── dialogues
 │   │   │   └── calibrations
@@ -41,6 +47,7 @@
 │   ├── globals.css
 │   ├── hooks
 │   │   ├── useDialogueFlow.ts
+│   │   ├── useGameplayEffects.ts
 │   │   └── useTypewriter.ts
 │   ├── layout.tsx
 │   ├── page.tsx
@@ -51,8 +58,6 @@
 │   ├── styles
 │   ├── types
 │   └── utils
-├── deprecated_events.txt
-├── deprecated_services.txt
 ├── eslint.config.mjs
 ├── filestructure.txt
 ├── jest-config.js
@@ -64,17 +69,9 @@
 ├── tailwind.config.js
 ├── tests
 │   ├── assert.js
-│   ├── dialogueProgressionTest.js
 │   ├── eventRecorder.js
-│   ├── progressionTests.js
 │   ├── simpleRunner.js
-│   ├── testCharacterTeachingStyles.js
-│   ├── testDayNightCycle.js
-│   ├── testGameStateMachine.js
-│   ├── testItemEffectSystem.js
-│   ├── testKnowledgeAcquisition.js
-│   ├── testKnowledgeDecay.js
-│   └── testNodeAccessibility.js
+│   └── verticalSliceIntegrationTest.js
 └── tsconfig.json
 
-22 directories, 55 files
+23 directories, 51 files
