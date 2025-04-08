@@ -50,6 +50,7 @@ export default function ConstellationView({
   const pendingInsights = useKnowledgeStore(useCallback(state => state.pendingInsights, []));
   const newlyDiscovered = useKnowledgeStore(useCallback(state => state.newlyDiscovered, []));
   const journalEntries = useKnowledgeStore(useCallback(state => state.journalEntries, []));
+  const resetNewlyDiscovered = useKnowledgeStore(useCallback(state => state.resetNewlyDiscovered, []));
 
   // STATE MANAGEMENT
   const [activeNode, setActiveNode] = useState<ConceptNode | null>(null);
@@ -126,6 +127,14 @@ export default function ConstellationView({
     connections.filter(conn => conn.discovered), 
     [connections]
   );
+  
+  // Create a safer version of resetNewlyDiscovered that won't cause update loops
+  const safeResetNewlyDiscovered = useCallback(() => {
+    // Only call if there are actually newly discovered nodes to reset
+    if (newlyDiscovered.length > 0) {
+      resetNewlyDiscovered();
+    }
+  }, [newlyDiscovered, resetNewlyDiscovered]);
 
   // Track component mounted state for cleanup
   useEffect(() => {
@@ -891,9 +900,8 @@ export default function ConstellationView({
     setActiveNode(null);
     setPendingConnection(null);
     
-    // Clean up newly discovered highlights
-    useKnowledgeStore.getState().resetNewlyDiscovered();
-    
+    // Let the parent component handle this reset to avoid
+    // causing update loops during unmount
     onClose();
   }, [onClose]);
   

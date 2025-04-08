@@ -101,23 +101,29 @@ export default function GameContainer() {
       
       // Simulate transition animation
       const timer = setTimeout(() => {
-        setIsTransitioning(false);
-        
-        // Advance to next phase
-        if (gamePhase === 'transition_to_night') {
-          transitionToPhase('night', 'animation_complete');
-        } else if (gamePhase === 'transition_to_day') {
-          transitionToPhase('day', 'animation_complete');
+        // Check if component is still mounted before updating state
+        if (componentMountedRef.current) {
+          setIsTransitioning(false);
+          
+          // Advance to next phase
+          if (gamePhase === 'transition_to_night') {
+            transitionToPhase('night', 'animation_complete');
+          } else if (gamePhase === 'transition_to_day') {
+            transitionToPhase('day', 'animation_complete');
+          }
         }
       }, 1500); // 1.5 second transition
       
-      return () => clearTimeout(timer);
+      return () => {
+        clearTimeout(timer);
+      };
     }
   }, [gamePhase, transitionToPhase]);
   
   // Handle night phase completion (for returning to day)
   const handleCompleteNight = () => {
     try {
+      // Dispatch event first
       eventBus.dispatch(
         GameEventType.UI_BUTTON_CLICKED,
         {
@@ -127,6 +133,8 @@ export default function GameContainer() {
         },
         'gameContainer'
       );
+      
+      // Then complete the night phase
       completeNight();
     } catch (error) {
       console.error("Error transitioning from night:", error);
@@ -229,6 +237,14 @@ export default function GameContainer() {
       </div>
     );
   };
+  
+  // Track component mounted state
+  useEffect(() => {
+    componentMountedRef.current = true;
+    return () => {
+      componentMountedRef.current = false;
+    };
+  }, []);
   
   // Main render
   return (

@@ -871,7 +871,15 @@ export const useKnowledgeStore = create<KnowledgeState>((set, get) => {
     
     // Reset newly discovered tracking after animations complete
     resetNewlyDiscovered: () => {
-      set({ newlyDiscovered: [] });
+      // FIX: Only update state if there are actually newly discovered items
+      // This prevents unnecessary state updates that can trigger re-renders
+      set(state => {
+        // If array is already empty, don't trigger a state update
+        if (state.newlyDiscovered.length === 0) {
+          return state; // Return the current state unchanged
+        }
+        return { newlyDiscovered: [] };
+      });
     },
     
     // Import knowledge data (for development/testing)

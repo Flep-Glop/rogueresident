@@ -1,6 +1,6 @@
 // app/components/HillHomeScene.tsx
 'use client';
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useGameStore } from '../store/gameStore';
 import { useKnowledgeStore } from '../store/knowledgeStore';
 import { PixelText, PixelButton } from './PixelThemeProvider';
@@ -47,11 +47,21 @@ export default function HillHomeScene({ onComplete }: { onComplete: () => void }
   
   // Track component mounted state for cleanup
   const componentMounted = useRef(true);
+  const didResetNewlyDiscovered = useRef(false);
   const eventBus = useEventBus.getState();
   
   // Audio elements for night phase ambience (optional)
   const nightAmbienceRef = useRef<HTMLAudioElement | null>(null);
   const insightSoundRef = useRef<HTMLAudioElement | null>(null);
+  
+  // Memoize resetNewlyDiscovered to maintain reference stability
+  const resetNewlyDiscoveredSafe = useCallback(() => {
+    // Only reset if not already reset and component is still mounted
+    if (componentMounted.current && !didResetNewlyDiscovered.current && newlyDiscovered.length > 0) {
+      resetNewlyDiscovered();
+      didResetNewlyDiscovered.current = true;
+    }
+  }, [resetNewlyDiscovered, newlyDiscovered]);
   
   // Create and manage audio on mount
   useEffect(() => {
@@ -103,7 +113,9 @@ export default function HillHomeScene({ onComplete }: { onComplete: () => void }
   
   // Fade in effect on mount
   useEffect(() => {
+    // Set mounted state on mount
     componentMounted.current = true;
+    didResetNewlyDiscovered.current = false;
     
     // Trigger fade-in effect
     setTimeout(() => {
@@ -127,12 +139,12 @@ export default function HillHomeScene({ onComplete }: { onComplete: () => void }
       console.log('Event dispatch failed, continuing');
     }
     
-    // Reset newlyDiscovered when returning to day phase
+    // Cleanup function
     return () => {
+      // Mark as unmounted first
       componentMounted.current = false;
-      resetNewlyDiscovered();
     };
-  }, [resetNewlyDiscovered, eventBus]);
+  }, []);
   
   // Automatically transfer insights after a delay
   useEffect(() => {
@@ -208,7 +220,7 @@ export default function HillHomeScene({ onComplete }: { onComplete: () => void }
       };
     }
   }, [insightTransferred, showConstellation, newlyDiscovered]);
-  
+
   // Handle starting the next day
   const handleStartDay = () => {
     // Ensure insights are transferred first
@@ -235,8 +247,10 @@ export default function HillHomeScene({ onComplete }: { onComplete: () => void }
     // Close constellation view if open
     setShowConstellation(false);
     
-    // Reset newlyDiscovered on exit
-    resetNewlyDiscovered();
+    // Reset newlyDiscovered on exit if needed
+    if (newlyDiscovered.length > 0) {
+      resetNewlyDiscoveredSafe();
+    }
     
     // Call onComplete to transition to day phase
     onComplete();
@@ -396,7 +410,10 @@ export default function HillHomeScene({ onComplete }: { onComplete: () => void }
             showLabels={true}
             interactive={true}
             activeNodes={newlyDiscovered}
-            onClose={() => setShowConstellation(false)}
+            onClose={() => {
+              setShowConstellation(false);
+              // Don't reset here - we'll let the user see newly discovered nodes until they leave
+            }}
           />
         </div>
       )}
