@@ -11,6 +11,7 @@ import HillHomeScene from './HillHomeScene';
 import PlayerStats from './PlayerStats';
 import VerticalSliceDebugPanel from './debug/VerticalSliceDebugPanel';
 import ChallengeRouter from './challenges/ChallengeRouter';
+import { ErrorBoundary } from 'react-error-boundary';
 
 // Constants for transition timing - these create the rhythm of the experience
 const TRANSITION_FADE_DURATION = 700;      // Time to fade to black (ms)
@@ -370,8 +371,57 @@ export default function GameContainer() {
       setRecoveryAttempted(false);
     }
   }, [gamePhase, transitionToPhase, recoveryAttempted]);
+
+  // SafeHillHomeScene - Error boundary wrapper for HillHomeScene
+  function SafeHillHomeScene({ onComplete }) {
+    const [hasError, setHasError] = useState(false);
+    
+    if (hasError) {
+      return (
+        <div className="h-full w-full flex items-center justify-center bg-black">
+          <div className="text-center p-6 bg-gray-900 rounded-lg max-w-md">
+            <h2 className="text-xl mb-2 text-red-500">Hill Home Error</h2>
+            <p className="mb-4 text-gray-300">There was a problem loading the night phase.</p>
+            <button
+              className="px-4 py-2 bg-purple-600 text-white rounded"
+              onClick={onComplete}
+            >
+              Skip to Next Day
+            </button>
+          </div>
+        </div>
+      );
+    }
+    
+    return (
+      <ErrorBoundary
+        FallbackComponent={({ error }) => (
+          <div className="h-full w-full flex items-center justify-center bg-black">
+            <div className="text-center p-6 bg-gray-900 rounded-lg max-w-md">
+              <h2 className="text-xl mb-2 text-red-500">Error</h2>
+              <div className="mb-4 p-3 bg-gray-800 rounded text-left text-sm">
+                <p>{error.message}</p>
+              </div>
+              <button
+                className="px-4 py-2 bg-purple-600 text-white rounded"
+                onClick={onComplete}
+              >
+                Skip to Next Day
+              </button>
+            </div>
+          </div>
+        )}
+        onError={(error) => {
+          console.error('[HillHomeScene] Caught error:', error);
+          setHasError(true);
+        }}
+      >
+        <HillHomeScene onComplete={onComplete} />
+      </ErrorBoundary>
+    );
+  }
   
-  // Content router based on game phase
+  // Content router based on game phase - UPDATED
   const renderGameContent = () => {
     // Show loading/error states
     if (!isInitialized) {
@@ -447,23 +497,25 @@ export default function GameContainer() {
       );
     }
     
-    // Night phase (constellation visualization)
+    // Night phase (constellation visualization) - IMPROVED RENDERING
     if (gamePhase === 'night') {
-      console.log('%c[RENDERING] HillHomeScene component', 'color: green; font-weight: bold');
+      console.log('%c[RENDERING] HillHomeScene component with SafeHillHomeScene wrapper', 'color: green; font-weight: bold');
+      
+      // Use the SafeHillHomeScene wrapper to handle errors
       return (
-        <HillHomeScene 
-          onComplete={handleCompleteNight}
-        />
+        <div className="w-full h-full">
+          <SafeHillHomeScene onComplete={handleCompleteNight} />
+        </div>
       );
     }
     
     // Map view (day phase navigation)
-    if (isDay && !currentNodeId) {
+    if (gamePhase === 'day' && !currentNodeId) {
       return <SimplifiedKapoorMap />;
     }
     
     // Challenge view (conversation with Dr. Kapoor)
-    if (isDay && currentNodeId) {
+    if (gamePhase === 'day' && currentNodeId) {
       return <ChallengeRouter />;
     }
     

@@ -1,6 +1,5 @@
-// app/components/HillHomeScene.tsx
 'use client';
-import { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useGameStore } from '../store/gameStore';
 import { useKnowledgeStore } from '../store/knowledgeStore';
 import { PixelText, PixelButton } from './PixelThemeProvider';
@@ -10,215 +9,82 @@ import { useEventBus } from '../core/events/CentralEventBus';
 import { GameEventType } from '../core/events/EventTypes';
 
 /**
- * HillHomeScene - Enhanced night phase component
+ * HillHomeScene - Simplified night phase component
  * 
- * This scene represents the player's hill home during the night phase,
- * with improved initialization and error handling to ensure consistent rendering.
+ * A more straightforward implementation with better error handling
+ * and visual feedback to ensure users can always progress.
  */
-export default function HillHomeScene({ onComplete }: { onComplete: () => void }) {
+export default function HillHomeScene({ onComplete }) {
   // Core game state
-  const { 
-    player, 
-    completedNodeIds, 
-    inventory, 
-    currentDay,
-    updateInsight
-  } = useGameStore();
-  
+  const { player, inventory, currentDay, updateInsight } = useGameStore();
   const { gamePhase } = useGameState();
   
   // Knowledge state
-  const { 
-    pendingInsights, 
-    totalMastery, 
-    domainMastery,
-    transferInsights,
-    resetNewlyDiscovered,
-    newlyDiscovered
-  } = useKnowledgeStore();
+  const { pendingInsights, totalMastery, domainMastery, transferInsights, resetNewlyDiscovered, newlyDiscovered } = useKnowledgeStore();
   
   // Component state
   const [showInventory, setShowInventory] = useState(false);
   const [showConstellation, setShowConstellation] = useState(false);
   const [insightTransferred, setInsightTransferred] = useState(false);
-  const [fadeIn, setFadeIn] = useState(false);
-  const [showTransferEffect, setShowTransferEffect] = useState(false);
-  const [initializeStarted, setInitializeStarted] = useState(false);
-  const [initializeComplete, setInitializeComplete] = useState(false);
-  const [initialRender, setInitialRender] = useState(true);
+  const [renderCount, setRenderCount] = useState(0);
+  const [hasStartedInsightTransfer, setHasStartedInsightTransfer] = useState(false);
   
-  // Error handling state
-  const [hasError, setHasError] = useState(false);
-  const [errorDetails, setErrorDetails] = useState<string | null>(null);
+  // Mount tracking
+  const mounted = useRef(true);
   
-  // Render count for debugging
-  const renderCount = useRef(0);
-  
-  // Track component mounted state for cleanup
-  const componentMounted = useRef(true);
-  const didResetNewlyDiscovered = useRef(false);
-  const eventBus = useEventBus.getState();
-  
-  // Audio elements for night phase ambience (optional)
-  const nightAmbienceRef = useRef<HTMLAudioElement | null>(null);
-  const insightSoundRef = useRef<HTMLAudioElement | null>(null);
-  
-  // Memoize resetNewlyDiscovered to maintain reference stability
-  const resetNewlyDiscoveredSafe = useCallback(() => {
-    // Only reset if not already reset and component is still mounted
-    if (componentMounted.current && !didResetNewlyDiscovered.current && newlyDiscovered.length > 0) {
-      resetNewlyDiscovered();
-      didResetNewlyDiscovered.current = true;
-    }
-  }, [resetNewlyDiscovered, newlyDiscovered]);
-  
-  // Track render count for debugging
+  // Track renders for debugging
   useEffect(() => {
-    renderCount.current += 1;
-    console.log(`[HillHomeScene] Render #${renderCount.current}`);
-  });
-  
-  // Create and manage audio on mount
-  useEffect(() => {
-    // Initialize component
-    if (!initializeStarted) {
-      setInitializeStarted(true);
-      
-      // Log critical mount event with full state
-      console.log('[HillHomeScene] MOUNTING - Game Phase:', gamePhase);
-      console.log('[HillHomeScene] Pending insights:', pendingInsights);
-      console.log('[HillHomeScene] Newly discovered:', newlyDiscovered);
-      
-      // Validate initialization state
-      if (gamePhase !== 'night') {
-        console.warn(`[HillHomeScene] Mounting with incorrect phase: ${gamePhase}, expected 'night'`);
-        
-        // Optionally attempt auto-repair through state machine
-        try {
-          if (typeof window !== 'undefined' && (window as any).__GAME_STATE_MACHINE_DEBUG__) {
-            console.log('[HillHomeScene] Attempting to auto-repair game phase');
-            (window as any).__GAME_STATE_MACHINE_DEBUG__.forceTransition('night', 'hill_home_auto_repair');
-          }
-        } catch (e) {
-          console.error('[HillHomeScene] Auto-repair failed:', e);
-        }
-      }
-      
-      // Create audio elements if we want ambient audio
-      try {
-        nightAmbienceRef.current = new Audio('/audio/night_ambience.mp3');
-        if (nightAmbienceRef.current) {
-          nightAmbienceRef.current.volume = 0.3;
-          nightAmbienceRef.current.loop = true;
-        }
-        
-        insightSoundRef.current = new Audio('/audio/insight_transfer.mp3');
-        if (insightSoundRef.current) {
-          insightSoundRef.current.volume = 0.5;
-        }
-      } catch (e) {
-        console.log('Audio creation failed, continuing without sound');
-      }
-      
-      // Mark initialization as complete
-      setInitializeComplete(true);
-      
-      // Log initialization success
-      console.log('[HillHomeScene] Initialization complete');
-    }
+    setRenderCount(prev => prev + 1);
+    console.log(`[HillHomeScene] Render #${renderCount + 1}`);
     
-    return () => {
-      // Clean up audio
-      try {
-        if (nightAmbienceRef.current) {
-          nightAmbienceRef.current.pause();
-          nightAmbienceRef.current = null;
-        }
-        if (insightSoundRef.current) {
-          insightSoundRef.current.pause();
-          insightSoundRef.current = null;
-        }
-      } catch (e) {
-        console.log('Audio cleanup failed');
-      }
-    };
-  }, [gamePhase, initializeStarted, pendingInsights]);
+    // Log critical debug info
+    console.log('[HillHomeScene] Current game phase:', gamePhase);
+    console.log('[HillHomeScene] Has pending insights:', pendingInsights.length);
+    console.log('[HillHomeScene] Newly discovered concepts:', newlyDiscovered.length);
+  }, [gamePhase, pendingInsights.length, newlyDiscovered.length]);
   
-  // Play ambience when component mounts
+  // Set up mount/unmount tracking
   useEffect(() => {
-    if (!initializeComplete) return;
+    // Log when component mounts
+    console.log('[HillHomeScene] Component mounted');
+    mounted.current = true;
     
+    // Notify event system that night phase has started
     try {
-      if (nightAmbienceRef.current) {
-        nightAmbienceRef.current.play().catch(e => {
-          console.log('Ambience playback failed, likely due to autoplay restrictions');
-        });
-      }
-    } catch (e) {
-      console.log('Playing ambience failed');
-    }
-  }, [initializeComplete]);
-  
-  // Fade in effect on mount
-  useEffect(() => {
-    if (!initializeComplete) return;
-    
-    // Set mounted state on mount
-    componentMounted.current = true;
-    didResetNewlyDiscovered.current = false;
-    
-    // Trigger fade-in effect
-    setTimeout(() => {
-      if (componentMounted.current) {
-        setFadeIn(true);
-        setInitialRender(false);
-      }
-    }, 100);
-    
-    // Log night phase started
-    try {
-      eventBus.dispatch(
+      useEventBus.getState().dispatch(
         GameEventType.GAME_PHASE_CHANGED,
         {
           from: 'transition_to_night',
           to: 'night',
-          reason: 'player_returned_home'
+          reason: 'hill_home_mounted'
         },
         'HillHomeScene'
       );
     } catch (e) {
-      console.log('Event dispatch failed, continuing');
+      console.warn('[HillHomeScene] Event dispatch failed:', e);
     }
     
-    // Cleanup function
     return () => {
-      // Mark as unmounted first
-      componentMounted.current = false;
+      mounted.current = false;
+      console.log('[HillHomeScene] Component unmounted');
     };
-  }, [initializeComplete, eventBus]);
+  }, []);
   
-  // Automatically transfer insights after a delay
+  // Handle insight transfer with improved error handling
   useEffect(() => {
-    if (!initializeComplete || initialRender) return;
+    if (!mounted.current) return;
     
-    if (!insightTransferred && pendingInsights.length > 0) {
-      // Wait 3 seconds then show transfer effect
-      const transferTimer = setTimeout(() => {
-        if (!componentMounted.current) return;
+    // Only start transfer if we haven't already and we have insights to transfer
+    if (!hasStartedInsightTransfer && !insightTransferred && pendingInsights.length > 0) {
+      console.log('[HillHomeScene] Starting insight transfer process');
+      setHasStartedInsightTransfer(true);
+      
+      // Start transfer after a delay
+      const timer = setTimeout(() => {
+        if (!mounted.current) return;
         
         try {
-          setShowTransferEffect(true);
-          
-          // Play insight sound
-          try {
-            if (insightSoundRef.current) {
-              insightSoundRef.current.play().catch(e => {
-                console.log('Sound playback failed');
-              });
-            }
-          } catch (e) {
-            console.log('Playing sound failed');
-          }
+          console.log('[HillHomeScene] Executing insight transfer');
           
           // Calculate total insight gain
           const totalInsightGain = pendingInsights.reduce((total, insight) => {
@@ -228,182 +94,224 @@ export default function HillHomeScene({ onComplete }: { onComplete: () => void }
           // Grant insight points
           updateInsight(totalInsightGain);
           
-          // Wait 2 more seconds then complete the transfer
-          setTimeout(() => {
-            if (!componentMounted.current) return;
-            
-            try {
-              transferInsights();
-              setInsightTransferred(true);
-              setShowTransferEffect(false);
-              
-              // Log insight transfer
-              try {
-                eventBus.dispatch(
-                  GameEventType.KNOWLEDGE_TRANSFERRED,
-                  {
-                    conceptIds: pendingInsights.map(insight => insight.conceptId),
-                    source: 'night_reflection',
-                    successful: true
-                  },
-                  'HillHomeScene'
-                );
-              } catch (e) {
-                console.log('Event dispatch failed, continuing');
-              }
-            } catch (error) {
-              console.error('Error during insight transfer:', error);
-              setHasError(true);
-              setErrorDetails(`Failed to transfer insights: ${error}`);
-            }
-          }, 2000);
-        } catch (error) {
-          console.error('Error setting transfer effect:', error);
-          setHasError(true);
-          setErrorDetails(`Failed to show transfer effect: ${error}`);
+          // Actually transfer insights in the knowledge store
+          transferInsights();
           
-          // Still attempt to transfer insights
-          try {
-            transferInsights();
-            setInsightTransferred(true);
-          } catch (fallbackError) {
-            console.error('Even fallback transfer failed:', fallbackError);
+          // Update state
+          setInsightTransferred(true);
+          
+          // Log insight transfer for debugging
+          console.log('[HillHomeScene] Insight transfer complete:', {
+            insightsTransferred: pendingInsights.length,
+            totalGain: totalInsightGain
+          });
+          
+          // Automatically open constellation view after a delay
+          if (newlyDiscovered.length > 0) {
+            setTimeout(() => {
+              if (mounted.current) {
+                setShowConstellation(true);
+              }
+            }, 1000);
           }
+          
+        } catch (error) {
+          console.error('[HillHomeScene] Error during insight transfer:', error);
+          // Still mark as transferred so player can continue
+          setInsightTransferred(true);
         }
-      }, 3000);
+      }, 1500); // Reduced delay for better responsiveness
       
-      return () => {
-        clearTimeout(transferTimer);
-      };
+      return () => clearTimeout(timer);
     }
-  }, [insightTransferred, pendingInsights, transferInsights, updateInsight, eventBus, initializeComplete, initialRender]);
+  }, [
+    hasStartedInsightTransfer, 
+    insightTransferred, 
+    pendingInsights, 
+    updateInsight, 
+    transferInsights,
+    newlyDiscovered
+  ]);
   
-  // Open constellation automatically after insights transfer
+  // Handle clean-up of newly discovered state when leaving
   useEffect(() => {
-    if (!initializeComplete || initialRender) return;
-    
-    if (insightTransferred && !showConstellation && newlyDiscovered.length > 0) {
-      // Wait 1 second then open constellation
-      const constellationTimer = setTimeout(() => {
-        if (componentMounted.current) {
-          setShowConstellation(true);
+    return () => {
+      // Reset newly discovered state when component unmounts
+      if (newlyDiscovered.length > 0) {
+        try {
+          console.log('[HillHomeScene] Resetting newly discovered on unmount');
+          resetNewlyDiscovered();
+        } catch (e) {
+          console.warn('[HillHomeScene] Failed to reset newly discovered:', e);
         }
-      }, 1000);
-      
-      return () => {
-        clearTimeout(constellationTimer);
-      };
-    }
-  }, [insightTransferred, showConstellation, newlyDiscovered, initializeComplete, initialRender]);
-
+      }
+    };
+  }, [newlyDiscovered, resetNewlyDiscovered]);
+  
   // Handle starting the next day
-  const handleStartDay = useCallback(() => {
-    // Ensure insights are transferred first
+  const handleStartDay = () => {
+    // Ensure insights are transferred
     if (!insightTransferred && pendingInsights.length > 0) {
       try {
+        // Force transfer insights if not done yet
         transferInsights();
-        setInsightTransferred(true);
-        
-        // Log forced insight transfer
-        try {
-          eventBus.dispatch(
-            GameEventType.KNOWLEDGE_TRANSFERRED,
-            {
-              conceptIds: pendingInsights.map(insight => insight.conceptId),
-              source: 'forced_before_day',
-              successful: true
-            },
-            'HillHomeScene'
-          );
-        } catch (e) {
-          console.log('Event dispatch failed, continuing');
-        }
-      } catch (error) {
-        console.error('Error during forced insight transfer:', error);
+        console.log('[HillHomeScene] Forced insight transfer before day start');
+      } catch (e) {
+        console.warn('[HillHomeScene] Error during forced insight transfer:', e);
       }
     }
     
-    // Close constellation view if open
+    // Close constellation if open
     setShowConstellation(false);
     
-    // Reset newlyDiscovered on exit if needed
+    // Reset newly discovered
     if (newlyDiscovered.length > 0) {
-      resetNewlyDiscoveredSafe();
+      resetNewlyDiscovered();
     }
     
     // Log button click
-    try {
-      eventBus.dispatch(
-        GameEventType.UI_BUTTON_CLICKED,
-        {
-          componentId: 'startDayButton',
-          action: 'click',
-          metadata: { currentDay }
-        },
-        'HillHomeScene'
-      );
-    } catch (error) {
-      console.warn('Failed to log button click:', error);
-    }
+    console.log('[HillHomeScene] Starting next day (Day ' + (currentDay + 1) + ')');
     
-    // Call onComplete to transition to day phase
+    // Complete night phase
     onComplete();
-  }, [
-    insightTransferred, 
-    pendingInsights, 
-    transferInsights, 
-    newlyDiscovered, 
-    resetNewlyDiscoveredSafe, 
-    onComplete, 
-    eventBus,
-    currentDay
-  ]);
+  };
   
-  // Error fallback UI
-  if (hasError) {
-    return (
-      <div className="h-full w-full flex items-center justify-center bg-black text-white">
-        <div className="max-w-md text-center p-8">
-          <h2 className="text-2xl mb-4 text-red-500">Error in Night Phase</h2>
-          <div className="mb-8 p-4 bg-gray-900 rounded text-sm">
-            {errorDetails || "An unknown error occurred in the night phase."}
-          </div>
-          <button
-            className="px-6 py-3 bg-blue-600 hover:bg-blue-500 text-white rounded"
-            onClick={handleStartDay}
-          >
-            Continue to Next Day
-          </button>
-        </div>
-      </div>
-    );
-  }
-  
-  // Initial loading state
-  if (!initializeComplete || initialRender) {
-    return (
-      <div className="h-full w-full flex items-center justify-center bg-black text-white">
-        <div className="text-center">
-          <h2 className="text-2xl mb-4 text-blue-300">Preparing Night View...</h2>
-          <div className="w-32 h-1 bg-blue-900 mx-auto overflow-hidden rounded-full">
-            <div className="h-full bg-blue-500 animate-pulse-flow"></div>
-          </div>
-        </div>
-      </div>
-    );
-  }
+  // Get concept color helper
+  const getConceptColor = (conceptId) => {
+    // Map concept to domain colors
+    const conceptDomains = {
+      'electron-equilibrium': '#3b82f6', // Blue - radiation physics
+      'radiation-dosimetry': '#3b82f6',
+      'inverse-square-law': '#3b82f6',
+      'output-calibration': '#10b981', // Green - quality assurance
+      'tolerance-limits': '#10b981',
+      'dosimetry-principles': '#10b981',
+      'clinical-dose-significance': '#ec4899', // Pink - clinical practice
+      'treatment-planning': '#ec4899',
+      'radiation-safety': '#f59e0b', // Amber - radiation protection
+      'alara-principle': '#f59e0b',
+      'general': '#6b7280', // Gray - general
+    };
+    
+    return conceptDomains[conceptId] || '#8b5cf6'; // Default to purple
+  };
 
   return (
-    <div 
-      className={`h-full w-full bg-gradient-to-b from-black via-indigo-950 to-black flex flex-col items-center justify-center p-6 transition-opacity duration-1000 ${fadeIn ? 'opacity-100' : 'opacity-0'}`}
-    >
-      {/* Stars background effect */}
-      <div className="stars-bg fixed inset-0 z-0"></div>
+    <div className="fixed inset-0 bg-black p-4 flex flex-col items-center justify-center overflow-auto">
+      {/* Starfield background - simplified with inline styles */}
+      <div 
+        className="fixed inset-0 z-0" 
+        style={{
+          background: '#000',
+          backgroundImage: 'radial-gradient(2px 2px at 20px 30px, #fff, rgba(0,0,0,0)), radial-gradient(2px 2px at 40px 70px, #fff, rgba(0,0,0,0)), radial-gradient(1px 1px at 90px 40px, #fff, rgba(0,0,0,0))',
+          backgroundSize: '200px 200px',
+          opacity: 0.7
+        }}
+      />
       
-      {/* Knowledge transfer effect overlay */}
-      {showTransferEffect && (
-        <div className="fixed inset-0 z-50 pointer-events-none">
-          <div className="absolute inset-0 bg-educational/10 animate-pulse"></div>
+      {/* Emergency night phase indicator - always visible */}
+      <div className="fixed top-0 left-0 m-4 bg-purple-800 text-white px-3 py-1 z-50 text-sm rounded">
+        Night Phase - Day {currentDay}
+      </div>
+      
+      {/* Emergency continue button - always visible at bottom */}
+      <div className="fixed bottom-8 right-8 z-50">
+        <button
+          className="px-6 py-3 bg-purple-700 hover:bg-purple-600 text-white font-medium rounded-lg shadow-lg"
+          onClick={handleStartDay}
+        >
+          Continue to Day {currentDay + 1} →
+        </button>
+      </div>
+      
+      {/* Main content area */}
+      <div className="relative z-10 w-full max-w-4xl">
+        {/* Header */}
+        <div className="text-center mb-8">
+          <h1 className="text-3xl font-pixel text-white mb-2">Night at Hill Home</h1>
+          <p className="text-blue-300 text-lg">Time to reflect on your knowledge</p>
+        </div>
+        
+        {/* Main content grid */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+          {/* Constellation card */}
+          <div 
+            className="col-span-3 bg-gray-900 border border-purple-800 rounded-lg p-6 flex flex-col items-center justify-center min-h-[180px] hover:bg-gray-800 transition cursor-pointer"
+            onClick={() => setShowConstellation(true)}
+          >
+            <div className="text-4xl mb-3">✨</div>
+            <h2 className="text-xl font-pixel text-white mb-1">Knowledge Constellation</h2>
+            <p className="text-gray-400 text-sm text-center">
+              Explore your growing understanding of medical physics
+            </p>
+            {newlyDiscovered.length > 0 && (
+              <div className="mt-3 px-3 py-1 bg-purple-600 text-white text-sm animate-pulse rounded">
+                {newlyDiscovered.length} new concept{newlyDiscovered.length !== 1 ? 's' : ''} discovered!
+              </div>
+            )}
+          </div>
+          
+          {/* Inventory card */}
+          <div 
+            className="bg-gray-900 border border-blue-800 rounded-lg p-6 flex flex-col items-center justify-center min-h-[180px] hover:bg-gray-800 transition cursor-pointer"
+            onClick={() => setShowInventory(true)}
+          >
+            <div className="text-4xl mb-3">🎒</div>
+            <h2 className="text-lg font-pixel text-white mb-1">Inventory</h2>
+            <div className="mt-2 px-3 py-1 bg-gray-700 text-white text-sm">
+              {inventory.length} Items
+            </div>
+          </div>
+          
+          {/* Return to hospital card */}
+          <div 
+            className="col-span-2 bg-gray-900 border border-blue-800 rounded-lg p-6 flex flex-col items-center justify-center min-h-[180px] hover:bg-gray-800 transition cursor-pointer"
+            onClick={handleStartDay}
+          >
+            <div className="text-4xl mb-3">🏥</div>
+            <h2 className="text-xl font-pixel text-white mb-1">Return to Hospital</h2>
+            <div className="mt-2 px-3 py-1 bg-blue-600 text-white text-sm">
+              Begin Day {currentDay + 1}
+            </div>
+          </div>
+        </div>
+        
+        {/* Status area */}
+        <div className="bg-gray-900 border border-gray-700 rounded-lg p-4">
+          <div className="flex justify-between items-center mb-3">
+            <h2 className="text-lg font-pixel text-white">Player Status</h2>
+            <div className="flex space-x-3">
+              <span className="px-2 py-1 bg-red-600 text-white text-sm rounded">
+                Health: {player.health}/{player.maxHealth}
+              </span>
+              <span className="px-2 py-1 bg-blue-600 text-white text-sm rounded">
+                Insight: {player.insight}
+              </span>
+            </div>
+          </div>
+          
+          <div className="mb-2">
+            <div className="text-gray-400 mb-1 text-sm">Knowledge Mastery</div>
+            <div className="w-full h-2 bg-gray-800 rounded-full overflow-hidden">
+              <div 
+                className="h-full bg-purple-600" 
+                style={{ width: `${totalMastery}%` }}
+              />
+            </div>
+          </div>
+          
+          <div className="text-xs text-gray-400 flex justify-between">
+            <span>Clinical: {domainMastery['clinical-practice'] || 0}%</span>
+            <span>Technical: {domainMastery['quality-assurance'] || 0}%</span>
+            <span>Theory: {domainMastery['theoretical'] || 0}%</span>
+          </div>
+        </div>
+      </div>
+      
+      {/* Insight transfer effect */}
+      {hasStartedInsightTransfer && !insightTransferred && pendingInsights.length > 0 && (
+        <div className="fixed inset-0 z-20 pointer-events-none">
+          <div className="absolute inset-0 bg-purple-900/10 animate-pulse" />
           {pendingInsights.map((insight, index) => (
             <div 
               key={`insight-${index}`}
@@ -415,123 +323,40 @@ export default function HillHomeScene({ onComplete }: { onComplete: () => void }
                 animationDelay: `${index * 0.2}s`,
                 opacity: 0.8
               }}
-            ></div>
+            />
           ))}
         </div>
       )}
       
-      {/* Header */}
-      <div className="w-full max-w-4xl mb-8 text-center relative z-10">
-        <PixelText className="text-3xl text-white font-pixel-heading mb-2">Night Phase</PixelText>
-        <PixelText className="text-lg text-gray-400">
-          Hillside Home - Study and Reflect
-        </PixelText>
-      </div>
-      
-      {/* Main interaction grid */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-8 w-full max-w-4xl mb-8 relative z-10">
-        {/* Constellation button */}
-        <div 
-          className="p-8 col-span-3 bg-surface-dark pixel-borders flex flex-col items-center justify-center min-h-[200px] transition-all duration-300 hover:bg-surface cursor-pointer"
-          onClick={() => setShowConstellation(true)}
-        >
-          <div className="text-4xl mb-4">🌠</div>
-          <PixelText className="text-xl mb-2">Knowledge Constellation</PixelText>
-          <PixelText className="text-sm text-text-secondary mb-2">
-            View your growing understanding of medical physics
-          </PixelText>
-          {newlyDiscovered.length > 0 && (
-            <div className="px-3 py-1 bg-educational text-white text-sm mt-2 animate-pulse">
-              {newlyDiscovered.length} new concept{newlyDiscovered.length !== 1 ? 's' : ''} discovered
-            </div>
-          )}
-        </div>
-        
-        {/* Inventory button */}
-        <div 
-          className="p-8 bg-surface-dark pixel-borders flex flex-col items-center justify-center min-h-[200px] transition-all duration-300 hover:bg-surface cursor-pointer"
-          onClick={() => setShowInventory(true)}
-        >
-          <div className="text-4xl mb-4">🎒</div>
-          <PixelText className="text-xl mb-2">Inventory</PixelText>
-          <span className="px-3 py-1 bg-gray-700 text-white text-sm mt-2">
-            {inventory.length} Items
-          </span>
-        </div>
-        
-        {/* Start day button */}
-        <div 
-          className="p-8 bg-surface-dark pixel-borders flex flex-col items-center justify-center min-h-[200px] transition-all duration-300 hover:bg-surface cursor-pointer col-span-2 group relative overflow-hidden"
-          onClick={handleStartDay}
-        >
-          <div className="text-4xl mb-4">🏥</div>
-          <PixelText className="text-xl mb-2">Return to Hospital</PixelText>
-          <span className="px-3 py-1 bg-clinical text-white text-sm mt-2 group-hover:bg-clinical-light transition-colors">
-            Begin Day {currentDay + 1}
-          </span>
-        </div>
-      </div>
-      
-      {/* Player stats summary */}
-      <div className="bg-surface-dark pixel-borders p-4 w-full max-w-4xl relative z-10">
-        <div className="flex justify-between items-center mb-4">
-          <PixelText className="text-lg">Player Status</PixelText>
-          <div className="flex space-x-2">
-            <span className="px-2 py-1 bg-danger text-white text-sm">
-              Health: {player.health}/{player.maxHealth}
-            </span>
-            <span className="px-2 py-1 bg-clinical text-white text-sm">
-              Insight: {player.insight}
-            </span>
-          </div>
-        </div>
-        
-        <div className="mb-2">
-          <PixelText className="text-text-secondary mb-1">Knowledge Mastery</PixelText>
-          <div className="pixel-progress-bg">
-            <div 
-              className="h-full bg-educational" 
-              style={{ width: `${totalMastery}%` }}
-            ></div>
-          </div>
-        </div>
-        
-        <div className="text-xs text-text-secondary flex justify-between">
-          <span>Clinical: {domainMastery['clinical-practice'] || 0}%</span>
-          <span>Technical: {domainMastery['quality-assurance'] || 0}%</span>
-          <span>Theory: {domainMastery['theoretical'] || 0}%</span>
-        </div>
-      </div>
-      
-      {/* Simplified inventory panel */}
+      {/* Inventory panel */}
       {showInventory && (
-        <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-50">
-          <div className="bg-surface p-6 max-w-md w-full pixel-borders">
+        <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-30">
+          <div className="bg-gray-900 border border-blue-700 rounded-lg p-6 max-w-md w-full">
             <div className="flex justify-between items-center mb-4">
-              <PixelText className="text-2xl">Inventory</PixelText>
-              <PixelButton 
-                className="bg-red-600 hover:bg-red-500 text-white" 
+              <h2 className="text-xl font-pixel text-white">Inventory</h2>
+              <button 
+                className="bg-red-600 hover:bg-red-500 text-white px-3 py-1 rounded"
                 onClick={() => setShowInventory(false)}
               >
                 Close
-              </PixelButton>
+              </button>
             </div>
             
-            <div className="grid grid-cols-1 gap-3 mb-4 max-h-96 overflow-y-auto">
+            <div className="space-y-3 max-h-80 overflow-y-auto">
               {inventory && inventory.length > 0 ? (
-                inventory.map((item: any, index: number) => (
-                  <div key={index} className="bg-surface-dark p-3 pixel-borders-thin">
+                inventory.map((item, index) => (
+                  <div key={index} className="bg-gray-800 p-3 rounded">
                     <div className="flex justify-between">
-                      <PixelText>{item.name}</PixelText>
-                      <PixelText className="text-text-secondary text-sm">{item.rarity}</PixelText>
+                      <div className="font-medium text-white">{item.name}</div>
+                      <div className="text-sm text-gray-400">{item.rarity}</div>
                     </div>
-                    <PixelText className="text-text-secondary text-sm">{item.description}</PixelText>
+                    <div className="text-sm text-gray-300 mt-1">{item.description}</div>
                   </div>
                 ))
               ) : (
-                <div className="bg-surface-dark p-4 text-center">
-                  <PixelText className="text-text-secondary">No items collected yet</PixelText>
-                  <PixelText className="text-text-secondary text-sm mt-2">Visit storage closets in the hospital to find useful equipment</PixelText>
+                <div className="text-center py-8 text-gray-400">
+                  <p>No items collected yet</p>
+                  <p className="text-xs mt-2">Visit storage closets in the hospital to find equipment</p>
                 </div>
               )}
             </div>
@@ -539,98 +364,51 @@ export default function HillHomeScene({ onComplete }: { onComplete: () => void }
         </div>
       )}
       
-      {/* Constellation overlay */}
+      {/* Constellation view */}
       {showConstellation && (
-        <div className="fixed inset-0 bg-black/95 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black/95 z-30">
           <ConstellationView
             nightMode={true}
             showLabels={true}
             interactive={true}
             activeNodes={newlyDiscovered}
-            onClose={() => {
-              setShowConstellation(false);
-              // Don't reset here - we'll let the user see newly discovered nodes until they leave
-            }}
+            onClose={() => setShowConstellation(false)}
           />
         </div>
       )}
       
-      {/* Debug information */}
+      {/* Debug info */}
       {process.env.NODE_ENV !== 'production' && (
-        <div className="fixed bottom-4 left-4 bg-black/80 text-white p-2 rounded text-xs font-mono z-50">
-          <div>Game Phase: {gamePhase}</div>
+        <div className="fixed bottom-0 left-0 bg-black/80 text-white text-xs font-mono z-50 p-2 max-w-xs">
+          <div>Phase: {gamePhase}</div>
           <div>Day: {currentDay}</div>
-          <div>Initialize: {initializeComplete ? 'Complete' : 'Pending'}</div>
-          <div>Transfer: {insightTransferred ? 'Complete' : 'Pending'}</div>
           <div>Insights: {pendingInsights.length}</div>
+          <div>Transferred: {insightTransferred ? 'Yes' : 'No'}</div>
           <div>New Concepts: {newlyDiscovered.length}</div>
-          <div>Renders: {renderCount.current}</div>
+          <div>Renders: {renderCount}</div>
         </div>
       )}
       
-      {/* CSS animations for insight transfer */}
+      {/* Required CSS animations */}
       <style jsx>{`
-        @keyframes floatUp {
-          0% { 
-            transform: translateY(0) scale(1);
-            opacity: 0.8;
-          }
-          100% { 
-            transform: translateY(-50vh) scale(0.5);
-            opacity: 0;
-          }
+        @keyframes float-up {
+          0% { transform: translateY(0); opacity: 0.8; }
+          100% { transform: translateY(-50vh); opacity: 0; }
         }
         
         .animate-float-up {
-          animation: floatUp 3s forwards ease-out;
+          animation: float-up 3s forwards ease-out;
         }
         
-        @keyframes pulseFlow {
-          0% { width: 0%; }
-          50% { width: 100%; }
-          100% { width: 0%; }
+        @keyframes pulse {
+          0%, 100% { opacity: 0.5; }
+          50% { opacity: 0.8; }
         }
         
-        .animate-pulse-flow {
-          animation: pulseFlow 2s ease-in-out infinite;
-        }
-        
-        .stars-bg {
-          background-image: radial-gradient(2px 2px at 20px 30px, #eee, rgba(0,0,0,0)),
-                            radial-gradient(2px 2px at 40px 70px, #fff, rgba(0,0,0,0)),
-                            radial-gradient(1px 1px at 90px 40px, #fff, rgba(0,0,0,0)),
-                            radial-gradient(1px 1px at 130px 80px, #fff, rgba(0,0,0,0)),
-                            radial-gradient(1px 1px at 160px 120px, #fff, rgba(0,0,0,0));
-          background-repeat: repeat;
-          background-size: 200px 200px;
-        }
-        
-        .pixel-progress-bg {
-          height: 8px;
-          background-color: rgba(0, 0, 0, 0.3);
-          width: 100%;
+        .animate-pulse {
+          animation: pulse 2s ease-in-out infinite;
         }
       `}</style>
     </div>
   );
-}
-
-// Helper functions
-function getConceptColor(conceptId: string): string {
-  // Map concept to domain colors
-  const conceptDomains: Record<string, string> = {
-    'electron-equilibrium': '#3b82f6', // Blue - radiation physics
-    'radiation-dosimetry': '#3b82f6',
-    'inverse-square-law': '#3b82f6',
-    'output-calibration': '#10b981', // Green - quality assurance
-    'tolerance-limits': '#10b981',
-    'dosimetry-principles': '#10b981',
-    'clinical-dose-significance': '#ec4899', // Pink - clinical practice
-    'treatment-planning': '#ec4899',
-    'radiation-safety': '#f59e0b', // Amber - radiation protection
-    'alara-principle': '#f59e0b',
-    'general': '#6b7280', // Gray - general
-  };
-  
-  return conceptDomains[conceptId] || '#8b5cf6'; // Default to purple
 }
