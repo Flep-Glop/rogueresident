@@ -1,4 +1,4 @@
-// app/components/challenges/formats/EnhancedConversationFormat.tsx
+// app/components/challenges/formats/ConversationFormat.tsx
 'use client';
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -6,7 +6,7 @@ import { useGameStore } from '../../../store/gameStore';
 import { useResourceStore, StrategicActionType } from '../../../store/resourceStore';
 import { useDialogueFlow, DialogueStage, DialogueOptionView } from '../../../hooks/useDialogueFlow';
 import { useTypewriter } from '../../../hooks/useTypewriter';
-import { PixelButton, PixelText } from '../../PixelThemeProvider';
+import { PixelButton, PixelText, PixelBox } from '../../PixelThemeProvider';
 import { useEventBus } from '../../../core/events/CentralEventBus';
 import { GameEventType } from '../../../core/events/EventTypes';
 import InsightMeter from '../../gameplay/InsightMeter';
@@ -45,11 +45,6 @@ interface ConversationFormatProps {
 
 /**
  * Enhanced conversation format with Strategic Actions integration
- * 
- * This builds on the existing ConversationFormat with improved:
- * - Strategic action integration via the "whisper-to-shout" pattern
- * - Resource visualization with improved animations
- * - Option enhancement for active strategic actions
  */
 export default function ConversationFormat({
   character,
@@ -351,30 +346,48 @@ export default function ConversationFormat({
   // Main conversation UI
   return (
     <div className="p-6 max-w-4xl mx-auto bg-surface pixel-borders relative">
-      {/* Character header */}
-      <div className="flex justify-between items-center mb-6">
-        <div className="flex items-center">
-          <div className="w-12 h-12 mr-4 rounded-lg overflow-hidden">
-            <div className={`w-full h-full ${charData.bgClass}`}></div>
+      {/* Character header - Enhanced with more space */}
+      <div className="flex justify-between items-start mb-8">
+        <div className="flex items-start">
+          {/* Character portrait with dedicated space */}
+          <div className="w-24 h-24 mr-6 relative pixel-borders">
+            <div 
+              className="absolute inset-0 bg-cover bg-center"
+              style={{
+                backgroundImage: `url(${charData.sprite})`,
+                imageRendering: 'pixelated'
+              }}
+            ></div>
+            <div className={`absolute inset-0 ${charData.bgClass} opacity-20 mix-blend-overlay`}></div>
           </div>
-          <div>
-            <PixelText className={`text-lg ${charData.textClass}`}>{charData.name}</PixelText>
-            <PixelText className="text-text-secondary text-sm">{charData.title}</PixelText>
+          
+          {/* Character info - now with more space */}
+          <div className="mt-2">
+            <PixelText className={`text-xl ${charData.textClass} pixel-glow mb-1`}>
+              {charData.name}
+            </PixelText>
+            <PixelText className="text-text-secondary">
+              {charData.title}
+            </PixelText>
           </div>
         </div>
         
-        {/* Resource meters */}
-        <div className="flex flex-col gap-2">
-          <InsightMeter />
+        {/* Empty spacer div to push things to sides */}
+        <div className="flex-grow"></div>
+        
+        {/* Resource meters - now in header with more space */}
+        <div className="flex flex-col gap-3 w-60">
+          <InsightMeter size="lg" />
           <MomentumCounter 
             level={momentum}
             consecutiveCorrect={consecutiveCorrect}
+            showLabel={true}
           />
         </div>
       </div>
       
-      {/* Strategic actions panel */}
-      <div className="absolute top-4 right-4 z-10">
+      {/* Strategic actions panel - now with more prominence */}
+      <div className="absolute top-6 right-6 z-10">
         <StrategicActionsContainer 
           characterId={character}
           stageId={currentStageId}
@@ -385,7 +398,7 @@ export default function ConversationFormat({
       </div>
       
       {/* Dialogue area */}
-      <div className="bg-surface-dark p-4 pixel-borders-thin mb-4 min-h-[120px] relative">
+      <div className="bg-surface-dark p-5 pixel-borders mb-5 min-h-[150px] relative">
         {/* Feedback overlay for correct/incorrect answers */}
         <AnimatePresence>
           {showOptionFeedback && (
@@ -447,14 +460,18 @@ export default function ConversationFormat({
         
         {/* Show backstory or main content */}
         {showBackstory ? (
-          <PixelText className="italic">{displayedBackstoryText}{isTypingBackstory ? '|' : ''}</PixelText>
+          <PixelText className="italic text-lg leading-relaxed">
+            {displayedBackstoryText}{isTypingBackstory ? '|' : ''}
+          </PixelText>
         ) : (
           <div>
-            <PixelText>{displayedText}{isTyping ? '|' : ''}</PixelText>
+            <PixelText className="text-lg leading-relaxed">
+              {displayedText}{isTyping ? '|' : ''}
+            </PixelText>
             
             {/* Context note */}
             {!isTyping && currentStage?.contextNote && (
-              <div className="mt-3 pt-2 border-t border-border">
+              <div className="mt-4 pt-2 border-t border-border">
                 <PixelText className="text-text-secondary text-sm italic">
                   {currentStage.contextNote}
                 </PixelText>
@@ -474,11 +491,11 @@ export default function ConversationFormat({
         </PixelButton>
       ) : (
         enhancedOptions && enhancedOptions.length > 0 ? (
-          <div className="space-y-2">
+          <div className="space-y-3">
             {enhancedOptions.map((option: any) => (
               <motion.button
                 key={option.id}
-                className={`w-full text-left p-3 bg-surface hover:bg-surface-dark pixel-borders-thin relative
+                className={`w-full text-left p-4 bg-surface hover:bg-surface-dark pixel-borders relative
                   ${activeAction === 'boast' ? 'border-orange-500/50' : ''}
                   ${activeAction === 'reframe' ? 'border-blue-500/50' : ''}
                 `}
@@ -488,7 +505,7 @@ export default function ConversationFormat({
                 whileTap={{ scale: 0.99 }}
               >
                 <div className="flex justify-between">
-                  <PixelText>{option.text}</PixelText>
+                  <PixelText className="text-base">{option.text}</PixelText>
                   
                   {/* Show insight preview */}
                   {option.insightGain && option.insightGain > 0 && (
@@ -516,7 +533,7 @@ export default function ConversationFormat({
                 
                 {/* Approach indicator - visually show player what type of response this is */}
                 {option.approach && (
-                  <div className="mt-1 text-xs">
+                  <div className="mt-2 text-sm">
                     {option.approach === 'humble' && (
                       <span className="text-blue-400">Humble approach</span>
                     )}

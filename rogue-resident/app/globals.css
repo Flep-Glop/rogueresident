@@ -989,3 +989,103 @@ img.pixel-art,
   max-height: 150px;
   font-size: 12px;
 }
+
+
+/* These could go in globals.css or a separate styles/pixel.css */
+
+/* Pixel-perfect frames */
+.pixel-frame {
+  @apply border-2 border-gray-900 overflow-hidden relative;
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.1);
+  image-rendering: pixelated;
+}
+
+.pixel-frame::before {
+  content: '';
+  @apply absolute top-0 left-0 w-1 h-1 bg-white opacity-50;
+}
+
+/* Strategic action buttons */
+.strategic-action-button {
+  @apply w-10 h-10 relative transition-all duration-100 flex items-center justify-center;
+  image-rendering: pixelated;
+}
+
+.strategic-action-button:hover {
+  transform: translateY(-2px);
+}
+
+.strategic-action-button:active {
+  transform: translateY(1px);
+}
+
+.strategic-action-button.active {
+  @apply ring-2 ring-white;
+  animation: pulse 2s infinite;
+}
+
+/* Button color variants */
+.reframe-button {
+  @apply bg-blue-900 border-2 border-blue-950;
+  box-shadow: inset 0 0 0 1px rgba(59, 130, 246, 0.3);
+}
+
+.extrapolate-button {
+  @apply bg-purple-900 border-2 border-purple-950;
+  box-shadow: inset 0 0 0 1px rgba(139, 92, 246, 0.3);
+}
+
+/* Button icons using CSS pixel art */
+.pixel-icon {
+  @apply w-6 h-6;
+  image-rendering: pixelated;
+}
+
+.reframe-icon {
+  background-image: url("data:image/svg+xml,%3Csvg width='6' height='6' viewBox='0 0 6 6' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Crect x='1' y='1' width='4' height='1' fill='white'/%3E%3Crect x='1' y='3' width='4' height='1' fill='white'/%3E%3Crect x='1' y='5' width='3' height='1' fill='white'/%3E%3C/svg%3E");
+  background-size: contain;
+  background-repeat: no-repeat;
+}
+
+/* Pixel-specific visual treatments */
+.mix-blend-overlay {
+  mix-blend-mode: overlay;
+}
+
+/* Strategic Action button styling */
+.strategic-action-button {
+  @apply w-12 h-12 relative transition-all duration-100;
+  image-rendering: pixelated;
+}
+
+.strategic-action-button:hover:not(:disabled) {
+  transform: translateY(-2px);
+}
+
+.strategic-action-button:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.strategic-action-button.active {
+  @apply ring-2 ring-white;
+  animation: pulse 2s infinite;
+}
+
+/* Pixel patterns */
+.pixel-pattern {
+  background-image: url("data:image/svg+xml,%3Csvg width='6' height='6' viewBox='0 0 6 6' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Crect width='1' height='1' fill='rgba(255,255,255,0.1)'/%3E%3Crect x='3' y='3' width='1' height='1' fill='rgba(255,255,255,0.1)'/%3E%3C/svg%3E");
+  background-size: 6px 6px;
+}
+
+/* Text glow effects */
+.text-glow-sm {
+  text-shadow: 0 0 2px currentColor;
+}
+
+.text-glow-md {
+  text-shadow: 0 0 4px currentColor;
+}
+
+.text-glow-lg {
+  text-shadow: 0 0 8px currentColor;
+}

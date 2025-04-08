@@ -8,11 +8,12 @@ interface InsightMeterProps {
   showLabel?: boolean;
   showValue?: boolean;
   className?: string;
+  size?: 'sm' | 'md' | 'lg';
   compact?: boolean;
 }
 
 /**
- * Insight Meter Component
+ * Insight Meter Component - Enhanced version
  * 
  * Visual representation of player's insight resource with threshold markers
  * and anticipation zones as the player approaches key thresholds.
@@ -21,6 +22,7 @@ export default function InsightMeter({
   showLabel = true,
   showValue = true,
   className = '',
+  size = 'md',
   compact = false
 }: InsightMeterProps) {
   // Get resource state
@@ -37,6 +39,13 @@ export default function InsightMeter({
   
   // Calculate fill percentage
   const fillPercentage = Math.min(100, Math.max(0, (insight / insightMax) * 100));
+  
+  // Size classes for different sizes
+  const sizeClasses = {
+    sm: "h-2",
+    md: "h-4",
+    lg: "h-6"
+  };
   
   // Handle effect animations
   useEffect(() => {
@@ -75,17 +84,29 @@ export default function InsightMeter({
   ];
   
   return (
-    <div className={`flex items-center ${className} ${compact ? 'space-x-1' : 'space-x-2'}`}>
+    <div className={`${className} w-full`}>
+      {/* Enhanced header with better visual hierarchy */}
       {showLabel && (
-        <div className={`font-pixel ${compact ? 'text-xs' : 'text-sm'} text-blue-300`}>
-          Insight
+        <div className="flex justify-between items-center mb-1">
+          <div className="font-pixel text-blue-300 text-xs">
+            INSIGHT
+          </div>
+          {showValue && (
+            <div className="font-pixel text-blue-200 text-sm tabular-nums">
+              {insight}/{insightMax}
+            </div>
+          )}
         </div>
       )}
       
-      <div className={`relative grow bg-gray-900 ${compact ? 'h-2' : 'h-3'} rounded-full overflow-hidden`}>
+      {/* Main meter with enhanced visual treatment */}
+      <div className={`
+        relative bg-blue-900/30 ${sizeClasses[size]} rounded-sm 
+        pixel-borders-thin overflow-hidden
+      `}>
         {/* Base fill */}
         <motion.div
-          className="absolute inset-y-0 left-0 bg-blue-600"
+          className="absolute inset-y-0 left-0 bg-gradient-to-r from-blue-700 to-blue-500"
           initial={{ width: `${fillPercentage}%` }}
           animate={{ 
             width: `${fillPercentage}%`,
@@ -103,29 +124,31 @@ export default function InsightMeter({
           // Only show markers within the visible range
           if (position > 0 && position <= 100) {
             return (
-              <div key={index} className="absolute inset-y-0" style={{ left: `${position}%` }}>
+              <div 
+                key={index} 
+                className="absolute inset-y-0" 
+                style={{ left: `${position}%` }}
+              >
                 {/* Marker line */}
-                <div 
-                  className={`w-0.5 h-full ${
-                    marker.color === 'blue' 
-                      ? 'bg-blue-400' 
-                      : marker.color === 'purple' 
-                        ? 'bg-purple-400' 
-                        : 'bg-green-400'
-                  }`}
-                />
+                <div className={`w-1 h-full ${
+                  marker.color === 'blue' 
+                    ? 'bg-blue-400' 
+                    : marker.color === 'purple' 
+                      ? 'bg-purple-400' 
+                      : 'bg-green-400'
+                }`}></div>
                 
                 {/* Marker label - only if not compact */}
-                {!compact && (
-                  <div 
-                    className={`absolute -top-5 -translate-x-1/2 text-xs font-pixel ${
-                      marker.color === 'blue' 
-                        ? 'text-blue-400' 
-                        : marker.color === 'purple' 
-                          ? 'text-purple-400' 
-                          : 'text-green-400'
-                    }`}
-                  >
+                {!compact && size !== 'sm' && (
+                  <div className={`
+                    absolute -top-6 -translate-x-1/2 text-xs font-pixel
+                    ${marker.color === 'blue' 
+                      ? 'text-blue-400' 
+                      : marker.color === 'purple' 
+                        ? 'text-purple-400' 
+                        : 'text-green-400'
+                    }
+                  `}>
                     {marker.label}
                   </div>
                 )}
@@ -133,13 +156,16 @@ export default function InsightMeter({
                 {/* Proximity indicator - "anticipation zone" */}
                 {marker.proximity > 0 && marker.proximity < 1 && (
                   <motion.div 
-                    className={`absolute -top-1 -translate-x-1/2 w-4 h-1 rounded-full ${
-                      marker.color === 'blue' 
+                    className={`
+                      absolute -top-1 -translate-x-1/2 
+                      w-4 h-1 rounded-full
+                      ${marker.color === 'blue' 
                         ? 'bg-blue-500/60' 
                         : marker.color === 'purple' 
                           ? 'bg-purple-500/60' 
                           : 'bg-green-500/60'
-                    }`}
+                      }
+                    `}
                     initial={{ opacity: 0.3, scale: 1 }}
                     animate={{ 
                       opacity: [0.3, 0.8, 0.3], 
@@ -157,17 +183,19 @@ export default function InsightMeter({
           return null;
         })}
         
-        {/* Pulse effect */}
+        {/* Pulse effect for visual feedback */}
         <AnimatePresence>
           {pulseEffect && (
             <motion.div
-              className={`absolute inset-0 ${
-                insightEffect.intensity === 'high' 
+              className={`
+                absolute inset-0 
+                ${insightEffect.intensity === 'high' 
                   ? 'bg-blue-400/40' 
                   : insightEffect.intensity === 'medium'
                     ? 'bg-blue-500/30'
                     : 'bg-blue-600/20'
-              }`}
+                }
+              `}
               initial={{ opacity: 0 }}
               animate={{ 
                 opacity: [0, 1, 0],
@@ -180,20 +208,21 @@ export default function InsightMeter({
             />
           )}
         </AnimatePresence>
+        
+        {/* Decorative pixel dots */}
+        <div className="absolute top-0 left-0 w-1 h-1 bg-white/30"></div>
+        <div className="absolute bottom-0 right-0 w-1 h-1 bg-black/30"></div>
       </div>
       
-      {showValue && (
-        <motion.div 
-          className={`font-pixel ${compact ? 'text-xs w-6' : 'text-sm w-8'} text-blue-300 text-right tabular-nums`}
-          initial={{ opacity: 1 }}
-          animate={pulseEffect ? { 
-            scale: [1, 1.1, 1],
-            color: ['rgb(147, 197, 253)', 'rgb(59, 130, 246)', 'rgb(147, 197, 253)'],
-            transition: { duration: 0.5 }
-          } : {}}
-        >
-          {insight}
-        </motion.div>
+      {/* Threshold hints below meter */}
+      {size === 'lg' && !compact && (
+        <div className="flex justify-between text-2xs text-gray-400 mt-1 px-1">
+          <div>0</div>
+          <div className="text-blue-400">25◆</div>
+          <div className="text-purple-400">50◆</div>
+          <div className="text-green-400">75◆</div>
+          <div>100</div>
+        </div>
       )}
     </div>
   );
