@@ -2,8 +2,8 @@
 import { useState, useEffect } from 'react';
 import { useJournalStore } from '@/app/store/journalStore';
 import { useGameStore } from '@/app/store/gameStore';
-import { useEventSubscription } from '../core/events/CentralEventBus';
-import { GameEventType } from '../core/events/EventTypes';
+import { useEventSubscription } from '@/app/core/events/CentralEventBus';
+import { GameEventType } from '@/app/core/events/EventTypes';
 
 // Define valid page types to ensure type safety across the UI
 export type JournalPageType = 'knowledge' | 'characters' | 'notes' | 'references';

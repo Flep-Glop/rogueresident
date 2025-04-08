@@ -71,7 +71,10 @@
 │   ├── assert.js
 │   ├── eventRecorder.js
 │   ├── simpleRunner.js
+│   ├── testDialogueSystem.js
+│   ├── testKnowledgeSystem.js
+│   ├── testResourceSystems.js
 │   └── verticalSliceIntegrationTest.js
 └── tsconfig.json
 
-23 directories, 51 files
+23 directories, 54 files
