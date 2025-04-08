@@ -47,6 +47,7 @@ export default function GameContainer() {
   const [isInitialized, setIsInitialized] = useState(false);
   const [hasError, setHasError] = useState<string | null>(null);
   const [isTransitioning, setIsTransitioning] = useState(false);
+  const [fadeState, setFadeState] = useState<'none' | 'fading-in' | 'fading-out'>('none');
   
   // Refs for state tracking across render cycles
   const initRef = useRef(false);
@@ -91,6 +92,7 @@ export default function GameContainer() {
           
           // Force transition and update UI
           setIsTransitioning(false);
+          setFadeState('none');
           transitionToPhase(targetPhase, 'emergency_override');
           
           // Reset transition state
@@ -170,7 +172,7 @@ export default function GameContainer() {
     }
   }, [map, startGame, eventBus]);
   
-  // FIXED: Complete rewrite of the transition handler with "breath of anticipation" pattern
+  // FIX: Thoroughly refactored transition handling with multiple safety mechanisms
   useEffect(() => {
     // Only handle transition phases
     if (gamePhase !== 'transition_to_night' && gamePhase !== 'transition_to_day') {
@@ -192,40 +194,97 @@ export default function GameContainer() {
       targetPhase
     };
     
-    // Begin visual transition
+    // Begin visual transition - two-phase with explicit fade states
     setIsTransitioning(true);
+    setFadeState('fading-in');
     
     // Clear existing transition timer
     if (transitionTimerRef.current) {
       clearTimeout(transitionTimerRef.current);
     }
     
-    // The "Breath of Anticipation" timing pattern:
-    // 1. Fade to black (visual only)
-    // 2. Brief pause at peak darkness for tension
-    // 3. State change just before visual transition completes
-    // 4. Visual completion slightly after state change
+    // TRANSITION SEQUENCE: 
+    // 1. Begin fade to black (visual)
+    // 2. Pause at peak darkness (anticipation)
+    // 3. Change state (functional)
+    // 4. Begin fade out from black (reveal)
+    // 5. Complete transition (cleanup)
     
-    // Stage 1: Fade in completed, now pause at peak darkness
-    const pauseTimer = setTimeout(() => {
+    // Stage 1: Wait for fade-in to complete before changing state
+    const fadeInTimer = setTimeout(() => {
       if (!componentMountedRef.current) return;
       
-      // Stage 2: At peak darkness, apply the state change
-      console.log(`%c[TRANSITION] At peak darkness, changing phase to: ${targetPhase}`, 
+      console.log(`%c[TRANSITION] Fade-in complete, at peak darkness`, 
                  'color: cyan; font-weight: bold');
       
-      // This critical phase change needs to happen while visually dark
-      transitionToPhase(targetPhase, 'animation_complete');
-      
-      // Stage 3: Complete visual transition shortly after state change
-      const completeTimer = setTimeout(() => {
-        if (!componentMountedRef.current) return;
+      // Stage 2: Execute state change at peak darkness
+      try {
+        // This critical phase change needs to happen while visually dark
+        const success = transitionToPhase(targetPhase, 'animation_complete');
         
-        console.log(`%c[TRANSITION] Visual transition complete to: ${targetPhase}`, 
-                   'color: cyan; font-weight: bold');
+        if (success) {
+          console.log(`%c[TRANSITION] Phase successfully changed to: ${targetPhase}`, 
+                     'color: green; font-weight: bold');
+        } else {
+          console.error(`%c[TRANSITION] Failed to change phase to: ${targetPhase}`, 
+                       'color: red; font-weight: bold');
+          
+          // Force direct state override as extreme fallback
+          try {
+            console.warn(`%c[TRANSITION] Attempting emergency direct phase override to: ${targetPhase}`, 
+                         'color: yellow; font-weight: bold');
+                         
+            // Forcibly bypass the state machine's validation
+            useGameState().transitionToPhase(targetPhase, 'emergency_direct_override');
+          } catch (emergencyError) {
+            console.error(`Emergency override failed:`, emergencyError);
+          }
+        }
         
-        // Complete visual transition
+        // Stage 3: Begin fade-out transition (reveal) after a brief pause
+        setTimeout(() => {
+          if (!componentMountedRef.current) return;
+          
+          console.log(`%c[TRANSITION] Beginning fade-out (reveal)`, 
+                     'color: cyan; font-weight: bold');
+          
+          setFadeState('fading-out');
+          
+          // Stage 4: Complete visual transition
+          const fadeOutTimer = setTimeout(() => {
+            if (!componentMountedRef.current) return;
+            
+            console.log(`%c[TRANSITION] Fade-out complete, transition finished to: ${targetPhase}`, 
+                       'color: cyan; font-weight: bold');
+            
+            // Complete visual transition
+            setIsTransitioning(false);
+            setFadeState('none');
+            
+            // Reset transition state
+            transitionStateRef.current = {
+              inProgress: false,
+              startTime: 0,
+              phase: '',
+              targetPhase: ''
+            };
+          }, TRANSITION_FADE_DURATION);
+          
+          // Store the timeout reference
+          transitionTimerRef.current = fadeOutTimer;
+          
+        }, TRANSITION_PAUSE_DURATION);
+        
+      } catch (error) {
+        console.error(`%c[TRANSITION] Error during phase change:`, 
+                     'color: red; font-weight: bold', error);
+                     
+        // Attempt recovery even after error
         setIsTransitioning(false);
+        setFadeState('none');
+        
+        // Force target phase directly
+        transitionToPhase(targetPhase, 'error_recovery');
         
         // Reset transition state
         transitionStateRef.current = {
@@ -234,14 +293,11 @@ export default function GameContainer() {
           phase: '',
           targetPhase: ''
         };
-      }, TRANSITION_PAUSE_DURATION);
-      
-      // Store the completion timer
-      transitionTimerRef.current = completeTimer;
+      }
     }, TRANSITION_FADE_DURATION);
     
-    // Store the pause timer
-    transitionTimerRef.current = pauseTimer;
+    // Store the primary timer reference
+    transitionTimerRef.current = fadeInTimer;
     
     // Cleanup function
     return () => {
@@ -334,7 +390,7 @@ export default function GameContainer() {
     // Show transition animation
     if (isTransitioning) {
       return (
-        <div className="h-full w-full flex items-center justify-center bg-black transition-opacity duration-700">
+        <div className="h-full w-full flex items-center justify-center bg-black">
           <div className="text-center">
             <h2 className="text-xl mb-4 text-blue-300 animate-pulse">
               {gamePhase === 'transition_to_night' 
@@ -349,8 +405,10 @@ export default function GameContainer() {
       );
     }
     
-    // Night phase (constellation visualization)
-    if (isNight) {
+    // FIX: Night phase (constellation visualization) - simplified condition
+    // Changed from isNight to directly check gamePhase for more reliability
+    if (gamePhase === 'night') {
+      console.log('%c[RENDERING] HillHomeScene component', 'color: green; font-weight: bold');
       return (
         <HillHomeScene 
           onComplete={handleCompleteNight}
@@ -434,6 +492,16 @@ export default function GameContainer() {
           </div>
         </div>
       </div>
+      
+      {/* Transition overlay */}
+      {(fadeState !== 'none' || isTransitioning) && (
+        <div 
+          className={`fixed inset-0 z-[9999] bg-black pointer-events-none transition-opacity duration-700
+            ${fadeState === 'fading-in' ? 'opacity-100' : 
+              fadeState === 'fading-out' ? 'opacity-0' : 
+              isTransitioning ? 'opacity-100' : 'opacity-0'}`}
+        />
+      )}
       
       {/* Debug panel for vertical slice mode */}
       <VerticalSliceDebugPanel />

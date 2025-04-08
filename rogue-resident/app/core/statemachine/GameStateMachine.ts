@@ -48,13 +48,24 @@ const VALID_STATE_TRANSITIONS: Record<GameState, GameState[]> = {
   'in_progress': ['not_started'] // Simplified to allow restart
 };
 
-// Define valid phase transitions
+// Define valid phase transitions - MORE PERMISSIVE for robust recovery
 const VALID_PHASE_TRANSITIONS: Record<GamePhase, GamePhase[]> = {
-  'day': ['transition_to_night'],
-  'night': ['transition_to_day'],
-  'transition_to_night': ['night'],
-  'transition_to_day': ['day'],
+  'day': ['transition_to_night', 'night'], // Allow direct transition for recovery
+  'night': ['transition_to_day', 'day'], // Allow direct transition for recovery
+  'transition_to_night': ['night', 'day'], // Allow reverting in emergency
+  'transition_to_day': ['day', 'night'], // Allow reverting in emergency
 };
+
+// ======== Transition Tracking ========
+
+// Track transitions for debugging and recovery
+interface TransitionRecord {
+  from: GamePhase;
+  to: GamePhase;
+  timestamp: number;
+  reason?: string;
+  succeeded: boolean;
+}
 
 // ======== State Machine Store ========
 
@@ -72,6 +83,9 @@ interface GameStateMachineState {
     duration: number;
   } | null;
   
+  // Debugging and recovery
+  transitionHistory: TransitionRecord[];
+  
   // Progress tracking data for vertical slice
   completedNodeIds: string[];
   
@@ -86,8 +100,9 @@ interface GameStateMachineState {
   // Node completion tracking
   markNodeCompleted: (nodeId: string) => void;
   
-  // Getter
+  // Getters
   getCompletedNodeIds: () => string[];
+  getTransitionHistory: () => TransitionRecord[];
 }
 
 export const useGameStateMachine = create<GameStateMachineState>((set, get) => ({
@@ -96,6 +111,7 @@ export const useGameStateMachine = create<GameStateMachineState>((set, get) => (
   gamePhase: 'day',
   isTransitioning: false,
   transitionData: null,
+  transitionHistory: [],
   completedNodeIds: [],
   
   /**
@@ -145,9 +161,28 @@ export const useGameStateMachine = create<GameStateMachineState>((set, get) => (
       return true;
     }
     
-    // Validate transition
-    if (!VALID_PHASE_TRANSITIONS[currentPhase].includes(newPhase)) {
+    // Validate transition with safeguards for recovery
+    const isValidTransition = VALID_PHASE_TRANSITIONS[currentPhase].includes(newPhase);
+    const isEmergencyOverride = reason && (
+      reason.includes('emergency') || 
+      reason.includes('recovery') || 
+      reason.includes('override')
+    );
+    
+    if (!isValidTransition && !isEmergencyOverride) {
       console.error(`[StateMachine] Invalid phase transition: ${currentPhase} -> ${newPhase}`);
+      set(state => ({
+        transitionHistory: [
+          ...state.transitionHistory,
+          {
+            from: currentPhase,
+            to: newPhase,
+            timestamp: Date.now(),
+            reason,
+            succeeded: false
+          }
+        ]
+      }));
       return false;
     }
     
@@ -171,14 +206,31 @@ export const useGameStateMachine = create<GameStateMachineState>((set, get) => (
       });
     }
     
+    // Record transition attempt
+    set(state => ({
+      transitionHistory: [
+        ...state.transitionHistory.slice(-19), // Keep last 20 entries
+        {
+          from: currentPhase,
+          to: newPhase,
+          timestamp: Date.now(),
+          reason,
+          succeeded: true
+        }
+      ]
+    }));
+    
+    // Extra safety - log more details about important transitions
+    if (newPhase === 'night' || newPhase === 'day') {
+      console.log(`%c[StateMachine] CRITICAL TRANSITION: ${currentPhase} -> ${newPhase}${reason ? ` (${reason})` : ''}`,
+                  'background: #2a0; color: white; padding: 2px 5px; border-radius: 3px');
+    }
+    
     // Dispatch event before phase change
     changeGamePhase(currentPhase, newPhase, reason);
     
-    // Update phase
+    // Update phase - do this after everything else to ensure state is changed
     set({ gamePhase: newPhase });
-    
-    // Log phase change
-    console.log(`[StateMachine] Game phase: ${currentPhase} -> ${newPhase}${reason ? ` (${reason})` : ''}`);
     
     return true;
   },
@@ -196,9 +248,33 @@ export const useGameStateMachine = create<GameStateMachineState>((set, get) => (
       return true;
     }
     
-    // Cannot complete if not in day phase
+    // Cannot complete if not in day phase - removed to allow forced completion
     if (gamePhase !== 'day') {
-      console.warn(`[StateMachine] Cannot complete day: Not in day phase (current: ${gamePhase})`);
+      console.warn(`[StateMachine] Attempting to complete day from non-day phase (current: ${gamePhase})`);
+      
+      // FIXED: Allow emergency transition from any state
+      if (gamePhase === 'transition_to_day') {
+        console.warn(`[StateMachine] Emergency direct transition from ${gamePhase} to night`);
+        const success = transitionToPhase('night', 'emergency_recovery');
+        
+        if (success) {
+          try {
+            useEventBus.getState().dispatch(
+              GameEventType.DAY_COMPLETED,
+              {
+                completedNodeCount: get().completedNodeIds.length,
+                wasEmergencyTransition: true
+              },
+              'gameStateMachine:emergencyCompleteDay'
+            );
+          } catch (error) {
+            console.error('[StateMachine] Error dispatching emergency DAY_COMPLETED event:', error);
+          }
+        }
+        
+        return success;
+      }
+      
       return false;
     }
     
@@ -209,7 +285,7 @@ export const useGameStateMachine = create<GameStateMachineState>((set, get) => (
     if (success) {
       try {
         useEventBus.getState().dispatch(
-          GameEventType.DAY_COMPLETED, // FIXED: Changed from DAY_STARTED to DAY_COMPLETED
+          GameEventType.DAY_COMPLETED,
           {
             completedNodeCount: get().completedNodeIds.length
           },
@@ -236,9 +312,36 @@ export const useGameStateMachine = create<GameStateMachineState>((set, get) => (
       return true;
     }
     
-    // Cannot complete if not in night phase
+    // Cannot complete if not in night phase - made more permissive
     if (gamePhase !== 'night') {
-      console.warn(`[StateMachine] Cannot complete night: Not in night phase (current: ${gamePhase})`);
+      console.warn(`[StateMachine] Attempting to complete night from non-night phase (current: ${gamePhase})`);
+      
+      // FIXED: Allow emergency transition from any state
+      if (gamePhase === 'transition_to_night') {
+        console.warn(`[StateMachine] Emergency direct transition from ${gamePhase} to day`);
+        const success = transitionToPhase('day', 'emergency_recovery');
+        
+        if (success) {
+          try {
+            useEventBus.getState().dispatch(
+              GameEventType.NIGHT_COMPLETED,
+              {
+                previousCompletedNodeCount: get().completedNodeIds.length,
+                wasEmergencyTransition: true
+              },
+              'gameStateMachine:emergencyCompleteNight'
+            );
+            
+            // Reset completed nodes for new day
+            set({ completedNodeIds: [] });
+          } catch (error) {
+            console.error('[StateMachine] Error dispatching emergency NIGHT_COMPLETED event:', error);
+          }
+        }
+        
+        return success;
+      }
+      
       return false;
     }
     
@@ -249,7 +352,7 @@ export const useGameStateMachine = create<GameStateMachineState>((set, get) => (
     if (success) {
       try {
         useEventBus.getState().dispatch(
-          GameEventType.NIGHT_COMPLETED, // FIXED: Changed from NIGHT_STARTED to NIGHT_COMPLETED
+          GameEventType.NIGHT_COMPLETED,
           {
             previousCompletedNodeCount: get().completedNodeIds.length
           },
@@ -286,8 +389,9 @@ export const useGameStateMachine = create<GameStateMachineState>((set, get) => (
     console.log(`[StateMachine] Node completed: ${nodeId}`);
   },
   
-  // Getter
-  getCompletedNodeIds: () => get().completedNodeIds
+  // Getters
+  getCompletedNodeIds: () => get().completedNodeIds,
+  getTransitionHistory: () => get().transitionHistory
 }));
 
 // ======== Integration with Event System ========
@@ -341,6 +445,21 @@ export function initializeStateMachine() {
   });
   
   console.log('[StateMachine] Initialized and connected to event bus');
+  
+  // FIXED: Add recovery system check
+  setTimeout(() => {
+    // Check for stuck transitions on startup
+    const { gamePhase, transitionToPhase, transitionHistory } = stateMachine;
+    
+    // If we're in a transition phase on startup, we might be stuck
+    if (gamePhase === 'transition_to_night' || gamePhase === 'transition_to_day') {
+      console.warn('[StateMachine] Detected potential stuck transition on startup:', gamePhase);
+      
+      // Force direct transition to target phase
+      const targetPhase = gamePhase === 'transition_to_night' ? 'night' : 'day';
+      transitionToPhase(targetPhase, 'startup_recovery');
+    }
+  }, 1000);
 }
 
 // ======== React Hook for Components ========
@@ -397,6 +516,17 @@ export function setupGameStateMachine() {
     // Expose teardown if needed
     teardown: () => {
       console.log('[StateMachine] Teardown initiated');
+    }
+  };
+}
+
+// Expose debug methods to window when in development
+if (typeof window !== 'undefined' && process.env.NODE_ENV !== 'production') {
+  (window as any).__GAME_STATE_MACHINE_DEBUG__ = {
+    getCurrentState: () => useGameStateMachine.getState(),
+    getTransitionHistory: () => useGameStateMachine.getState().transitionHistory,
+    forceTransition: (phase: GamePhase, reason = 'debug_override') => {
+      return useGameStateMachine.getState().transitionToPhase(phase, reason);
     }
   };
 }
