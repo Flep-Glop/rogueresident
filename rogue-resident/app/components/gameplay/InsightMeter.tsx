@@ -1,165 +1,200 @@
 // app/components/gameplay/InsightMeter.tsx
-import React, { useEffect, useState } from 'react';
-import { useGameStore } from '../../store/gameStore';
+'use client';
+import { useState, useEffect } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { useResourceStore, RESOURCE_THRESHOLDS } from '../../store/resourceStore';
 
 interface InsightMeterProps {
+  showLabel?: boolean;
+  showValue?: boolean;
   className?: string;
-  showAnimation?: boolean;
   compact?: boolean;
 }
 
 /**
- * InsightMeter - Visual representation of the player's insight resource
+ * Insight Meter Component
  * 
- * This displays the current insight value and provides visual feedback
- * for when strategic actions become available at threshold percentages.
+ * Visual representation of player's insight resource with threshold markers
+ * and anticipation zones as the player approaches key thresholds.
  */
 export default function InsightMeter({
+  showLabel = true,
+  showValue = true,
   className = '',
-  showAnimation = false,
   compact = false
 }: InsightMeterProps) {
-  // Access global insight value
-  const { player } = useGameStore();
-  const insight = player.insight;
+  // Get resource state
+  const { 
+    insight, 
+    insightMax, 
+    insightEffect, 
+    insightThresholds,
+    getThresholdProximity
+  } = useResourceStore();
   
-  // Local state for animations
-  const [prevInsight, setPrevInsight] = useState(insight);
-  const [isAnimating, setIsAnimating] = useState(false);
-  const [showThresholdAnimation, setShowThresholdAnimation] = useState<number | null>(null);
+  // Animation state
+  const [pulseEffect, setPulseEffect] = useState(false);
   
-  // Action thresholds (at what insight values actions become available)
-  const thresholds = [
-    { value: 25, action: 'Reframe' },
-    { value: 50, action: 'Extrapolate' },
-    { value: 75, action: 'Advanced' }
-  ];
+  // Calculate fill percentage
+  const fillPercentage = Math.min(100, Math.max(0, (insight / insightMax) * 100));
   
-  // Calculate percentage for visual meter
-  const insightPercentage = Math.min(100, Math.max(0, insight));
-  
-  // Handle animation when insight changes
+  // Handle effect animations
   useEffect(() => {
-    if (insight !== prevInsight) {
-      setIsAnimating(true);
+    if (insightEffect.active) {
+      setPulseEffect(true);
       
-      // Check if we've crossed any thresholds
-      thresholds.forEach(threshold => {
-        if (prevInsight < threshold.value && insight >= threshold.value) {
-          setShowThresholdAnimation(threshold.value);
-        }
-      });
-      
-      setPrevInsight(insight);
-      
-      // Reset animations after delay
+      // Clear effect after animation
       const timer = setTimeout(() => {
-        setIsAnimating(false);
-        setShowThresholdAnimation(null);
-      }, 2000);
+        setPulseEffect(false);
+      }, insightEffect.duration);
       
       return () => clearTimeout(timer);
     }
-  }, [insight, prevInsight]);
+  }, [insightEffect]);
   
-  // Compact mode for minimal UI spaces
-  if (compact) {
-    return (
-      <div className={`flex items-center ${className}`}>
-        <div className="w-24 h-2 bg-gray-800 rounded-full overflow-hidden">
-          <div 
-            className={`h-full bg-blue-500 ${isAnimating ? 'animate-pulse' : ''}`} 
-            style={{ width: `${insightPercentage}%` }}
-          ></div>
-        </div>
-        <span className="ml-2 text-xs font-pixel text-blue-300">{insight}</span>
-      </div>
-    );
-  }
-
+  // Threshold markers configuration
+  const thresholdMarkers = [
+    { 
+      value: RESOURCE_THRESHOLDS.REFRAME, 
+      label: 'R', 
+      color: 'blue',
+      proximity: getThresholdProximity('reframe')
+    },
+    { 
+      value: RESOURCE_THRESHOLDS.EXTRAPOLATE, 
+      label: 'E', 
+      color: 'purple',
+      proximity: getThresholdProximity('extrapolate')
+    },
+    { 
+      value: RESOURCE_THRESHOLDS.SYNTHESIS, 
+      label: 'S', 
+      color: 'green',
+      proximity: getThresholdProximity('synthesis')
+    }
+  ];
+  
   return (
-    <div className={`${className}`}>
-      {/* Header */}
-      <div className="flex justify-between items-center mb-1">
-        <div className="text-sm font-pixel text-blue-200">Insight</div>
-        <div className="text-xs font-pixel text-blue-100">{insight}/100</div>
-      </div>
+    <div className={`flex items-center ${className} ${compact ? 'space-x-1' : 'space-x-2'}`}>
+      {showLabel && (
+        <div className={`font-pixel ${compact ? 'text-xs' : 'text-sm'} text-blue-300`}>
+          Insight
+        </div>
+      )}
       
-      {/* Main meter */}
-      <div className="h-4 bg-surface-dark/60 rounded overflow-hidden">
-        <div 
-          className={`h-full bg-gradient-to-r from-blue-600 to-blue-400 ${isAnimating ? 'animate-pulse' : ''}`} 
-          style={{ width: `${insightPercentage}%` }}
-        ></div>
-      </div>
-      
-      {/* Threshold markers */}
-      <div className="relative h-1 mt-1">
-        {thresholds.map(threshold => (
-          <div 
-            key={`threshold-${threshold.value}`}
-            className={`absolute h-4 w-0.5 -mt-3 ${
-              insight >= threshold.value 
-                ? 'bg-blue-300' 
-                : 'bg-gray-700'
-            } ${
-              showThresholdAnimation === threshold.value 
-                ? 'animate-ping' 
-                : ''
-            }`}
-            style={{ left: `${threshold.value}%` }}
-          />
-        ))}
-      </div>
-      
-      {/* Action labels */}
-      <div className="relative h-4 mt-1">
-        {thresholds.map(threshold => (
-          insight >= threshold.value && (
-            <div 
-              key={`label-${threshold.value}`}
-              className={`absolute text-xs font-pixel ${
-                showThresholdAnimation === threshold.value 
-                  ? 'text-blue-300 animate-bounce' 
-                  : 'text-blue-500'
+      <div className={`relative grow bg-gray-900 ${compact ? 'h-2' : 'h-3'} rounded-full overflow-hidden`}>
+        {/* Base fill */}
+        <motion.div
+          className="absolute inset-y-0 left-0 bg-blue-600"
+          initial={{ width: `${fillPercentage}%` }}
+          animate={{ 
+            width: `${fillPercentage}%`,
+            transition: { 
+              type: 'spring', 
+              damping: 15 
+            }
+          }}
+        />
+        
+        {/* Threshold markers */}
+        {thresholdMarkers.map((marker, index) => {
+          const position = (marker.value / insightMax) * 100;
+          
+          // Only show markers within the visible range
+          if (position > 0 && position <= 100) {
+            return (
+              <div key={index} className="absolute inset-y-0" style={{ left: `${position}%` }}>
+                {/* Marker line */}
+                <div 
+                  className={`w-0.5 h-full ${
+                    marker.color === 'blue' 
+                      ? 'bg-blue-400' 
+                      : marker.color === 'purple' 
+                        ? 'bg-purple-400' 
+                        : 'bg-green-400'
+                  }`}
+                />
+                
+                {/* Marker label - only if not compact */}
+                {!compact && (
+                  <div 
+                    className={`absolute -top-5 -translate-x-1/2 text-xs font-pixel ${
+                      marker.color === 'blue' 
+                        ? 'text-blue-400' 
+                        : marker.color === 'purple' 
+                          ? 'text-purple-400' 
+                          : 'text-green-400'
+                    }`}
+                  >
+                    {marker.label}
+                  </div>
+                )}
+                
+                {/* Proximity indicator - "anticipation zone" */}
+                {marker.proximity > 0 && marker.proximity < 1 && (
+                  <motion.div 
+                    className={`absolute -top-1 -translate-x-1/2 w-4 h-1 rounded-full ${
+                      marker.color === 'blue' 
+                        ? 'bg-blue-500/60' 
+                        : marker.color === 'purple' 
+                          ? 'bg-purple-500/60' 
+                          : 'bg-green-500/60'
+                    }`}
+                    initial={{ opacity: 0.3, scale: 1 }}
+                    animate={{ 
+                      opacity: [0.3, 0.8, 0.3], 
+                      scale: [1, 1.1, 1],
+                      transition: { 
+                        repeat: Infinity, 
+                        duration: 2
+                      }
+                    }}
+                  />
+                )}
+              </div>
+            );
+          }
+          return null;
+        })}
+        
+        {/* Pulse effect */}
+        <AnimatePresence>
+          {pulseEffect && (
+            <motion.div
+              className={`absolute inset-0 ${
+                insightEffect.intensity === 'high' 
+                  ? 'bg-blue-400/40' 
+                  : insightEffect.intensity === 'medium'
+                    ? 'bg-blue-500/30'
+                    : 'bg-blue-600/20'
               }`}
-              style={{ left: `${threshold.value}%`, transform: 'translateX(-50%)' }}
-            >
-              {threshold.action}
-            </div>
-          )
-        ))}
+              initial={{ opacity: 0 }}
+              animate={{ 
+                opacity: [0, 1, 0],
+                transition: { 
+                  repeat: insightEffect.intensity === 'high' ? 3 : 2,
+                  duration: 0.5 
+                }
+              }}
+              exit={{ opacity: 0 }}
+            />
+          )}
+        </AnimatePresence>
       </div>
       
-      {/* CSS for animations */}
-      <style jsx>{`
-        @keyframes pulse {
-          0%, 100% { opacity: 1; }
-          50% { opacity: 0.6; }
-        }
-        
-        .animate-pulse {
-          animation: pulse 1s ease-in-out infinite;
-        }
-        
-        @keyframes ping {
-          0% { transform: scale(1); opacity: 1; }
-          75%, 100% { transform: scale(2); opacity: 0; }
-        }
-        
-        .animate-ping {
-          animation: ping 1s cubic-bezier(0, 0, 0.2, 1) infinite;
-        }
-        
-        @keyframes bounce {
-          0%, 100% { transform: translateY(0) translateX(-50%); }
-          50% { transform: translateY(-5px) translateX(-50%); }
-        }
-        
-        .animate-bounce {
-          animation: bounce 1s ease infinite;
-        }
-      `}</style>
+      {showValue && (
+        <motion.div 
+          className={`font-pixel ${compact ? 'text-xs w-6' : 'text-sm w-8'} text-blue-300 text-right tabular-nums`}
+          initial={{ opacity: 1 }}
+          animate={pulseEffect ? { 
+            scale: [1, 1.1, 1],
+            color: ['rgb(147, 197, 253)', 'rgb(59, 130, 246)', 'rgb(147, 197, 253)'],
+            transition: { duration: 0.5 }
+          } : {}}
+        >
+          {insight}
+        </motion.div>
+      )}
     </div>
   );
 }

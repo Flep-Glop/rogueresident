@@ -1,203 +1,180 @@
 // app/components/gameplay/MomentumCounter.tsx
-import React, { useEffect, useState, useRef } from 'react';
-import { MAX_MOMENTUM_LEVEL } from '../../hooks/useGameplayEffects';
+'use client';
+import { useState, useEffect } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { useResourceStore, MAX_MOMENTUM_LEVEL } from '../../store/resourceStore';
 
 interface MomentumCounterProps {
-  level: number;
-  showEffect?: boolean;
-  consecutiveCorrect?: number;
+  showLabel?: boolean;
   className?: string;
   compact?: boolean;
+  level?: number; // Optional override for displaying specific level
+  consecutiveCorrect?: number; // Optional consecutive counter
 }
 
 /**
- * MomentumCounter - Visual representation of the player's answer streak
+ * Momentum Counter Component
  * 
- * Similar to combo systems in action games, this provides immediate visual
- * feedback for answering questions correctly in sequence.
- * 
- * The component provides several visual states:
- * - Empty pips (no momentum)
- * - Filled pips (momentum building)
- * - Pulsing pips (maximum momentum)
+ * Visual representation of player's momentum level, showing pips
+ * that fill up as the player builds momentum with correct answers.
  */
 export default function MomentumCounter({
-  level,
-  showEffect = false,
-  consecutiveCorrect = 0,
+  showLabel = true,
   className = '',
-  compact = false
+  compact = false,
+  level: overrideLevel,
+  consecutiveCorrect: overrideConsecutive
 }: MomentumCounterProps) {
-  // Track previous level for animation
-  const [prevLevel, setPrevLevel] = useState(level);
-  const [animatingLevel, setAnimatingLevel] = useState<number | null>(null);
+  // Get resource state, but allow override
+  const { 
+    momentum: storeMomentum, 
+    consecutiveCorrect: storeConsecutive,
+    momentumEffect
+  } = useResourceStore();
   
-  // References for animation control
-  const animationTimerRef = useRef<NodeJS.Timeout | null>(null);
+  // Use override if provided, otherwise use store value
+  const momentum = overrideLevel !== undefined ? overrideLevel : storeMomentum;
+  const consecutiveCorrect = overrideConsecutive !== undefined ? overrideConsecutive : storeConsecutive;
   
-  // Handle level change animations
+  // Animation state
+  const [pulseEffect, setPulseEffect] = useState(false);
+  
+  // Handle effect animations
   useEffect(() => {
-    // Clear any existing animation timer
-    if (animationTimerRef.current) {
-      clearTimeout(animationTimerRef.current);
-      animationTimerRef.current = null;
-    }
-    
-    // If level increased, animate it
-    if (level > prevLevel) {
-      setAnimatingLevel(level);
+    if (momentumEffect.active) {
+      setPulseEffect(true);
       
-      // Clear animation after delay
-      animationTimerRef.current = setTimeout(() => {
-        setAnimatingLevel(null);
-      }, 1000);
-    }
-    // If level decreased, show break animation
-    else if (level < prevLevel) {
-      setAnimatingLevel(-1); // Use -1 to indicate breaking animation
+      // Clear effect after animation
+      const timer = setTimeout(() => {
+        setPulseEffect(false);
+      }, momentumEffect.duration);
       
-      // Clear animation after delay
-      animationTimerRef.current = setTimeout(() => {
-        setAnimatingLevel(null);
-      }, 1000);
+      return () => clearTimeout(timer);
     }
-    
-    // Update previous level
-    setPrevLevel(level);
-    
-    // Cleanup on unmount
-    return () => {
-      if (animationTimerRef.current) {
-        clearTimeout(animationTimerRef.current);
-      }
-    };
-  }, [level, prevLevel]);
-
-  // Generate proper CSS classes for momentum pips
-  const getPipClasses = (pipLevel: number) => {
-    const baseClasses = "w-4 h-4 rounded-full transition-all duration-300";
-    
-    // Breaking momentum animation
-    if (animatingLevel === -1) {
-      return `${baseClasses} ${pipLevel <= prevLevel ? 'animate-break bg-red-500' : 'bg-gray-700'}`;
-    }
-    
-    // Pip is active (filled)
-    if (pipLevel <= level) {
-      // Maximum momentum level - special styling
-      if (level === MAX_MOMENTUM_LEVEL) {
-        return `${baseClasses} bg-orange-500 ${pipLevel === level ? 'animate-pulse-glow' : ''}`;
-      }
-      
-      // Currently animating this pip
-      if (animatingLevel !== null && pipLevel === animatingLevel) {
-        return `${baseClasses} bg-yellow-500 animate-pip-fill`;
-      }
-      
-      // Regular filled pip
-      return `${baseClasses} bg-yellow-400`;
-    }
-    
-    // Inactive pip
-    return `${baseClasses} bg-gray-700`;
-  };
+  }, [momentumEffect]);
   
-  // For compact mode (just dots, no labels)
-  if (compact) {
-    return (
-      <div className={`flex space-x-1 items-center justify-center ${className}`}>
-        {Array.from({ length: MAX_MOMENTUM_LEVEL }).map((_, i) => (
-          <div 
-            key={`momentum-pip-${i}`} 
-            className={getPipClasses(i + 1)}
-          />
-        ))}
-      </div>
-    );
-  }
-
+  // Create array of MAX_MOMENTUM_LEVEL length for rendering pips
+  const momentumPips = Array.from({ length: MAX_MOMENTUM_LEVEL }, (_, i) => i < momentum);
+  
+  // Calculate progress to next level
+  const nextLevelThreshold = momentum < MAX_MOMENTUM_LEVEL ? (momentum + 1) * 2 : Infinity;
+  const progressToNextLevel = momentum < MAX_MOMENTUM_LEVEL 
+    ? (consecutiveCorrect % 2) / 2 // 0 or 0.5
+    : 0;
+  
   return (
-    <div className={`${className}`}>
-      {/* Title & Counter */}
-      <div className="flex justify-between items-center mb-1">
-        <div className="text-sm font-pixel text-yellow-200">Momentum</div>
-        {consecutiveCorrect > 0 && (
-          <div className="text-xs font-pixel text-yellow-100">
-            {consecutiveCorrect} correct
-          </div>
-        )}
-      </div>
-      
-      {/* Momentum pips */}
-      <div className="flex space-x-1.5 items-center p-1 bg-surface-dark/60 rounded">
-        {Array.from({ length: MAX_MOMENTUM_LEVEL }).map((_, i) => (
-          <div 
-            key={`momentum-pip-${i}`} 
-            className={getPipClasses(i + 1)}
-          />
-        ))}
-        
-        {/* Show action reminder at max momentum */}
-        {level === MAX_MOMENTUM_LEVEL && (
-          <div className="ml-2 text-xs animate-pulse text-yellow-300 font-pixel">
-            Boast/Expand available!
-          </div>
-        )}
-      </div>
-      
-      {/* Animation overlay for effects */}
-      {showEffect && (
-        <div className="absolute inset-0 pointer-events-none">
-          {level === MAX_MOMENTUM_LEVEL && (
-            <>
-              <div className="absolute inset-0 bg-orange-500/10 animate-pulse" />
-              <div className="absolute inset-0 bg-yellow-400/5 animate-flash" />
-            </>
-          )}
+    <div className={`flex items-center ${className} ${compact ? 'space-x-1' : 'space-x-2'}`}>
+      {showLabel && (
+        <div className={`font-pixel ${compact ? 'text-xs' : 'text-sm'} text-orange-300`}>
+          {compact ? 'Mom.' : 'Momentum'}
         </div>
       )}
       
-      {/* CSS for animations */}
-      <style jsx>{`
-        @keyframes pip-fill {
-          0% { transform: scale(1); }
-          50% { transform: scale(1.5); background-color: rgb(250, 204, 21); }
-          100% { transform: scale(1); }
-        }
-        
-        @keyframes break {
-          0% { opacity: 1; transform: scale(1); }
-          50% { opacity: 0.7; transform: scale(1.2); }
-          100% { opacity: 0; transform: scale(0.5); }
-        }
-        
-        @keyframes pulse-glow {
-          0% { box-shadow: 0 0 0 rgba(249, 115, 22, 0.4); }
-          50% { box-shadow: 0 0 10px rgba(249, 115, 22, 0.7); }
-          100% { box-shadow: 0 0 0 rgba(249, 115, 22, 0.4); }
-        }
-        
-        @keyframes flash {
-          0%, 100% { opacity: 0; }
-          50% { opacity: 1; }
-        }
-        
-        .animate-pip-fill {
-          animation: pip-fill 1s ease-out;
-        }
-        
-        .animate-break {
-          animation: break 0.8s ease-out forwards;
-        }
-        
-        .animate-pulse-glow {
-          animation: pulse-glow 1.5s infinite;
-        }
-        
-        .animate-flash {
-          animation: flash 0.8s ease-out 2;
-        }
-      `}</style>
+      <div className="flex space-x-1">
+        {/* Render momentum pips */}
+        {momentumPips.map((filled, index) => (
+          <div 
+            key={`pip-${index}`}
+            className={`relative ${compact ? 'w-3 h-3' : 'w-4 h-4'} rounded-full border ${
+              filled 
+                ? 'bg-orange-600 border-orange-400' 
+                : 'bg-gray-900 border-gray-700'
+            } ${index === MAX_MOMENTUM_LEVEL - 1 && filled ? 'animate-pulse' : ''}`}
+          >
+            {/* Partial fill for pip in progress */}
+            {!filled && index === momentum && progressToNextLevel > 0 && (
+              <motion.div 
+                className="absolute bottom-0 left-0 right-0 bg-orange-600/60 rounded-b-full"
+                style={{ 
+                  height: `${progressToNextLevel * 100}%`,
+                  borderBottomLeftRadius: '100%',
+                  borderBottomRightRadius: '100%'
+                }}
+                initial={{ height: 0 }}
+                animate={{ 
+                  height: `${progressToNextLevel * 100}%`,
+                  transition: { type: 'spring', damping: 15 }
+                }}
+              />
+            )}
+            
+            {/* Pulse effect for active pips */}
+            {filled && pulseEffect && (
+              <motion.div
+                className="absolute inset-0 rounded-full bg-orange-500"
+                initial={{ opacity: 0, scale: 0.8 }}
+                animate={{ 
+                  opacity: [0, 0.8, 0],
+                  scale: [0.8, 1.2, 1.5],
+                  transition: { 
+                    duration: 0.8,
+                    repeat: momentumEffect.intensity === 'high' ? 2 : 1
+                  }
+                }}
+              />
+            )}
+          </div>
+        ))}
+      </div>
+      
+      {/* Show consecutive correct count */}
+      {!compact && (
+        <AnimatePresence mode="wait">
+          <motion.div 
+            key={consecutiveCorrect}
+            className="ml-1 font-pixel text-xs text-orange-300/80 tabular-nums"
+            initial={{ opacity: 0, y: -5 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 5 }}
+          >
+            {consecutiveCorrect > 0 ? `${consecutiveCorrect}×` : ''}
+          </motion.div>
+        </AnimatePresence>
+      )}
+      
+      {/* "Max" indicator when at max momentum */}
+      {momentum === MAX_MOMENTUM_LEVEL && !compact && (
+        <motion.div 
+          className="ml-1 font-pixel text-xs text-orange-300 font-bold"
+          initial={{ opacity: 0 }}
+          animate={{ 
+            opacity: [0.7, 1, 0.7],
+            transition: { repeat: Infinity, duration: 1.5 }
+          }}
+        >
+          MAX
+        </motion.div>
+      )}
+      
+      {/* Special notification for first momentum level */}
+      <AnimatePresence>
+        {momentum === 1 && consecutiveCorrect === 2 && !compact && (
+          <motion.div
+            className="absolute -bottom-6 left-0 right-0 text-center text-xs font-pixel text-orange-300"
+            initial={{ opacity: 0, y: -5 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 5 }}
+            transition={{ duration: 0.3 }}
+          >
+            Momentum gained!
+          </motion.div>
+        )}
+      </AnimatePresence>
+      
+      {/* Special notification for max momentum */}
+      <AnimatePresence>
+        {momentum === MAX_MOMENTUM_LEVEL && consecutiveCorrect === MAX_MOMENTUM_LEVEL * 2 && !compact && (
+          <motion.div
+            className="absolute -bottom-6 left-0 right-0 text-center text-xs font-pixel text-orange-300 font-bold"
+            initial={{ opacity: 0, y: -5 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 5 }}
+            transition={{ duration: 0.3 }}
+          >
+            Maximum momentum!
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
