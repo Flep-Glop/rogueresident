@@ -8,6 +8,7 @@ import ConstellationView from './knowledge/ConstellationView';
 import { useEventBus } from '../core/events/CentralEventBus';
 import { GameEventType } from '../core/events/EventTypes';
 
+
 /**
  * HillHomeScene - Simplified night phase component
  * 

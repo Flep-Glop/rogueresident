@@ -1,5 +1,5 @@
 // tests/verticalSliceIntegrationTest.js
-const { assert, assertEqual, assertIncludes } = require('./assert');
+const assert = require('./assert');
 const { createEventRecorder } = require('./eventRecorder');
 
 /**
@@ -8,11 +8,14 @@ const { createEventRecorder } = require('./eventRecorder');
  * Tests the complete player journey through the core gameplay loop:
  * Map Navigation → Challenge → Dialogue → Reward → Knowledge Integration
  */
-function runVerticalSliceTest() {
+async function runVerticalSliceTest() {
   console.log("🔍 STARTING VERTICAL SLICE INTEGRATION TEST");
   
   // ---- SETUP PHASE ----
   console.log("\n📋 Setting up test environment...");
+  
+  // Create event recorder properly
+  const eventRecorder = createEventRecorder();
   
   // Create game state test double
   const gameState = {
@@ -238,6 +241,9 @@ function runVerticalSliceTest() {
         this.subscribers['*'].forEach(callback => callback(event));
       }
       
+      // Record the event in our recorder
+      eventRecorder.record(eventType, payload);
+      
       return true;
     },
     
@@ -260,14 +266,6 @@ function runVerticalSliceTest() {
     }
   };
   
-  // Create event recorder to track events
-  const eventRecorder = createEventRecorder();
-  
-  // Subscribe recorder to all events
-  eventBus.subscribe('*', (event) => {
-    eventRecorder.record(event.type, event.payload);
-  });
-  
   // Constants for the test
   const kapoorNodeId = 'calibration_node';
   
@@ -275,18 +273,18 @@ function runVerticalSliceTest() {
   console.log("\n🔷 Phase 1: Verifying Initial State");
   
   // Verify initial game state
-  assertEqual(gameState.gamePhase, 'day', 'Game should start in day phase');
-  assertEqual(gameState.currentDay, 1, 'Game should start on day 1');
-  assertEqual(gameState.completedNodeIds.length, 0, 'No nodes should be completed initially');
-  assertEqual(gameState.player.insight, 100, 'Insight should start at 100');
-  assertEqual(gameState.player.momentum, 0, 'Momentum should start at 0');
+  assert(gameState.gamePhase === 'day', 'Game should start in day phase');
+  assert(gameState.currentDay === 1, 'Game should start on day 1');
+  assert(gameState.completedNodeIds.length === 0, 'No nodes should be completed initially');
+  assert(gameState.player.insight === 100, 'Insight should start at 100');
+  assert(gameState.player.momentum === 0, 'Momentum should start at 0');
   
   // Verify initial knowledge state
-  assertEqual(knowledgeStore.concepts.length, 0, 'No concepts should be known initially');
+  assert(knowledgeStore.concepts.length === 0, 'No concepts should be known initially');
   
   // Verify initial journal state
-  assertEqual(journalStore.hasJournal, false, 'Player should not have journal initially');
-  assertEqual(journalStore.entries.length, 0, 'Journal should have no entries initially');
+  assert(journalStore.hasJournal === false, 'Player should not have journal initially');
+  assert(journalStore.entries.length === 0, 'Journal should have no entries initially');
   
   console.log("✅ Initial state verified");
 
@@ -303,13 +301,10 @@ function runVerticalSliceTest() {
   gameState.setCurrentNode(kapoorNodeId);
   
   // Verify node selection updated the state
-  assertEqual(gameState.currentNodeId, kapoorNodeId, 'Current node should be updated');
+  assert(gameState.currentNodeId === kapoorNodeId, 'Current node should be updated');
   
   // Verify the event was dispatched
-  assert(
-    eventRecorder.hasEventType('NODE_SELECTED'), 
-    'NODE_SELECTED event should be dispatched'
-  );
+  assert(eventRecorder.hasEventType('NODE_SELECTED'), 'NODE_SELECTED event should be dispatched');
   
   console.log("✅ Map navigation successful");
   
@@ -380,46 +375,36 @@ function runVerticalSliceTest() {
   
   // Verify dialogue is active
   assert(dialogueState.isActive, 'Dialogue should be active');
-  assertEqual(dialogueState.currentState, 'intro', 'Dialogue should start at intro state');
+  assert(dialogueState.currentState === 'intro', 'Dialogue should start at intro state');
   
   // Select first option
   console.log("  - Selecting intro dialogue option");
   const introOptions = dialogueState.getAvailableOptions();
-  assertIncludes(
-    introOptions.map(o => o.id), 
-    'option1', 
-    'Intro should have option1 available'
-  );
+  assert(introOptions.some(o => o.id === 'option1'), 'Intro should have option1 available');
   
   dialogueState.selectOption('option1');
   assert(dialogueState.showResponse, 'Response should be shown after option selection');
   
   // Advance to question
   dialogueState.advanceState();
-  assertEqual(dialogueState.currentState, 'question', 'Should advance to question state');
+  assert(dialogueState.currentState === 'question', 'Should advance to question state');
   
   // Select correct answer
   console.log("  - Selecting correct answer");
   dialogueState.selectOption('option2'); // Gray (Gy)
   dialogueState.advanceState();
-  assertEqual(dialogueState.currentState, 'correct', 'Should advance to correct response');
+  assert(dialogueState.currentState === 'correct', 'Should advance to correct response');
   
   // Complete the dialogue
   console.log("  - Completing dialogue");
   dialogueState.selectOption('option4');
   dialogueState.advanceState();
-  assertEqual(dialogueState.currentState, 'journal-presentation', 'Should reach journal presentation');
+  assert(dialogueState.currentState === 'journal-presentation', 'Should reach journal presentation');
   
   // Verify dialogue completion
   assert(!dialogueState.isActive, 'Dialogue should be inactive after completion');
-  assert(
-    eventRecorder.hasEventType('DIALOGUE_COMPLETED'), 
-    'DIALOGUE_COMPLETED event should be dispatched'
-  );
-  assert(
-    eventRecorder.hasEventType('DIALOGUE_CRITICAL_PATH'), 
-    'DIALOGUE_CRITICAL_PATH event should be dispatched'
-  );
+  assert(eventRecorder.hasEventType('DIALOGUE_COMPLETED'), 'DIALOGUE_COMPLETED event should be dispatched');
+  assert(eventRecorder.hasEventType('DIALOGUE_CRITICAL_PATH'), 'DIALOGUE_CRITICAL_PATH event should be dispatched');
   
   // Simulate completing the challenge
   console.log("  - Completing the challenge");
@@ -438,11 +423,7 @@ function runVerticalSliceTest() {
   gameState.completeNode(kapoorNodeId);
   
   // Verify challenge completed
-  assertIncludes(
-    gameState.completedNodeIds, 
-    kapoorNodeId, 
-    'Node should be marked as completed'
-  );
+  assert(gameState.completedNodeIds.includes(kapoorNodeId), 'Node should be marked as completed');
   
   console.log("✅ Challenge and dialogue flow successful");
   
@@ -463,15 +444,9 @@ function runVerticalSliceTest() {
   
   // Verify journal acquisition
   assert(journalStore.hasJournal, 'Journal should be acquired');
-  assertEqual(journalStore.entries.length, 1, 'Journal should have one entry');
-  assert(
-    eventRecorder.hasEventType('JOURNAL_ACQUIRED'), 
-    'JOURNAL_ACQUIRED event should be dispatched'
-  );
-  assert(
-    eventRecorder.hasEventType('JOURNAL_UPDATED'), 
-    'JOURNAL_UPDATED event should be dispatched'
-  );
+  assert(journalStore.entries.length === 1, 'Journal should have one entry');
+  assert(eventRecorder.hasEventType('JOURNAL_ACQUIRED'), 'JOURNAL_ACQUIRED event should be dispatched');
+  assert(eventRecorder.hasEventType('JOURNAL_UPDATED'), 'JOURNAL_UPDATED event should be dispatched');
   
   console.log("✅ Reward flow (journal acquisition) successful");
   
@@ -485,25 +460,11 @@ function runVerticalSliceTest() {
   knowledgeStore.updateMastery('radiation-dosimetry', 15);
   
   // Verify knowledge exists
-  assertEqual(knowledgeStore.concepts.length, 1, 'Should have one concept');
-  assertEqual(
-    knowledgeStore.concepts[0].id, 
-    'radiation-dosimetry', 
-    'Should have correct concept ID'
-  );
-  assertEqual(
-    knowledgeStore.concepts[0].mastery, 
-    15, 
-    'Should have correct mastery level'
-  );
-  assert(
-    eventRecorder.hasEventType('KNOWLEDGE_CONCEPT_DISCOVERED'), 
-    'KNOWLEDGE_CONCEPT_DISCOVERED event should be dispatched'
-  );
-  assert(
-    eventRecorder.hasEventType('KNOWLEDGE_MASTERY_UPDATED'), 
-    'KNOWLEDGE_MASTERY_UPDATED event should be dispatched'
-  );
+  assert(knowledgeStore.concepts.length === 1, 'Should have one concept');
+  assert(knowledgeStore.concepts[0].id === 'radiation-dosimetry', 'Should have correct concept ID');
+  assert(knowledgeStore.concepts[0].mastery === 15, 'Should have correct mastery level');
+  assert(eventRecorder.hasEventType('KNOWLEDGE_CONCEPT_DISCOVERED'), 'KNOWLEDGE_CONCEPT_DISCOVERED event should be dispatched');
+  assert(eventRecorder.hasEventType('KNOWLEDGE_MASTERY_UPDATED'), 'KNOWLEDGE_MASTERY_UPDATED event should be dispatched');
   
   console.log("✅ Knowledge acquisition successful");
   
@@ -514,18 +475,12 @@ function runVerticalSliceTest() {
   gameState.completeDay();
   
   // Need to wait for timeout to complete
-  return new Promise(resolve => {
+  await new Promise(resolve => {
     setTimeout(() => {
       // Verify night phase
-      assertEqual(gameState.gamePhase, 'night', 'Game should be in night phase');
-      assert(
-        eventRecorder.hasEventType('DAY_COMPLETED'), 
-        'DAY_COMPLETED event should be dispatched'
-      );
-      assert(
-        eventRecorder.hasEventType('GAME_PHASE_CHANGED'), 
-        'GAME_PHASE_CHANGED event should be dispatched'
-      );
+      assert(gameState.gamePhase === 'night', 'Game should be in night phase');
+      assert(eventRecorder.hasEventType('DAY_COMPLETED'), 'DAY_COMPLETED event should be dispatched');
+      assert(eventRecorder.hasEventType('GAME_PHASE_CHANGED'), 'GAME_PHASE_CHANGED event should be dispatched');
       
       console.log("✅ Day to night transition successful");
       
@@ -558,13 +513,10 @@ function runVerticalSliceTest() {
       // Wait for timeout to complete
       setTimeout(() => {
         // Verify day phase
-        assertEqual(gameState.gamePhase, 'day', 'Game should be in day phase');
-        assertEqual(gameState.currentDay, 2, 'Day should increment');
-        assertEqual(gameState.completedNodeIds.length, 0, 'Completed nodes should reset');
-        assert(
-          eventRecorder.hasEventType('NIGHT_COMPLETED'), 
-          'NIGHT_COMPLETED event should be dispatched'
-        );
+        assert(gameState.gamePhase === 'day', 'Game should be in day phase');
+        assert(gameState.currentDay === 2, 'Day should increment');
+        assert(gameState.completedNodeIds.length === 0, 'Completed nodes should reset');
+        assert(eventRecorder.hasEventType('NIGHT_COMPLETED'), 'NIGHT_COMPLETED event should be dispatched');
         
         console.log("✅ Night to day transition successful");
         
@@ -584,6 +536,8 @@ function runVerticalSliceTest() {
       }, 100);
     }, 100);
   });
+  
+  return true;
 }
 
 // Export the test

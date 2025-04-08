@@ -1,11 +1,21 @@
 // tests/simpleRunner.js
+/**
+ * Simple Test Runner for Rogue Resident
+ * 
+ * Provides a clean, synchronous way to run test suites with proper reporting
+ * and error handling, including support for asynchronous tests.
+ */
+
 const testDialogueSystem = require('./testDialogueSystem');
 const testKnowledgeSystem = require('./testKnowledgeSystem');
 const testResourceSystems = require('./testResourceSystems');
 const runVerticalSliceTest = require('./verticalSliceIntegrationTest');
 
+/**
+ * Run the test suite with proper error handling and reporting
+ */
 async function runTests() {
-  console.log("🎮 ROGUE RESIDENT - TEST SUITE 🎮");
+  console.log("\n🎮 ROGUE RESIDENT - TEST SUITE 🎮");
   console.log("------------------------------------------");
   
   // Only include tests that actually exist in your project
@@ -22,7 +32,7 @@ async function runTests() {
   // Run each test
   for (const test of tests) {
     try {
-      console.log(`\nRunning: ${test.name}`);
+      console.log(`\nRunning: ${test.name || 'Anonymous test'}`);
       console.log("------------------------------------------");
       
       // Handle both synchronous and asynchronous tests
@@ -32,15 +42,15 @@ async function runTests() {
         test();
       }
       
-      console.log(`✅ PASSED: ${test.name}`);
+      console.log(`✅ PASSED: ${test.name || 'Anonymous test'}`);
       passed++;
     } catch (error) {
-      console.error(`❌ FAILED: ${test.name}`);
+      console.error(`❌ FAILED: ${test.name || 'Anonymous test'}`);
       console.error(`   Error: ${error.message}`);
       if (error.stack) {
         console.error(`   Stack: ${error.stack.split('\n')[1]}`);
       }
-      failed.push({name: test.name, error});
+      failed.push({name: test.name || 'Anonymous test', error});
     }
   }
   
@@ -63,3 +73,11 @@ runTests().catch(error => {
   console.error("💥 Test runner crashed:", error);
   process.exitCode = 1;
 });
+
+// If the module is run directly
+if (require.main === module) {
+  // Already running tests via the call above
+} else {
+  // If imported, export the runner function
+  module.exports = runTests;
+}

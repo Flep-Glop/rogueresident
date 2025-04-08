@@ -38,6 +38,47 @@ function assert(condition, message, details = {}) {
   }
   
   /**
+   * Check if two values are equal
+   * 
+   * @param {any} actual - The actual value
+   * @param {any} expected - The expected value
+   * @param {string} message - Description of what's being tested
+   */
+  assert.equal = function(actual, expected, message) {
+    const condition = actual === expected;
+    const defaultMessage = `Expected ${formatValue(actual)} to equal ${formatValue(expected)}`;
+    
+    assert(condition, message || defaultMessage, {
+      actual,
+      expected,
+      operator: 'equal'
+    });
+  };
+  
+  /**
+   * Check if an array or string includes a value
+   * 
+   * @param {Array|string} collection - The collection to check
+   * @param {any} value - The value to look for
+   * @param {string} message - Description of what's being tested
+   */
+  assert.includes = function(collection, value, message) {
+    const condition = Array.isArray(collection) 
+      ? collection.includes(value)
+      : typeof collection === 'string' 
+        ? collection.includes(value) 
+        : false;
+    
+    const defaultMessage = `Expected ${formatValue(collection)} to include ${formatValue(value)}`;
+    
+    assert(condition, message || defaultMessage, {
+      collection,
+      value,
+      operator: 'includes'
+    });
+  };
+  
+  /**
    * Assert that an event of a specific type was dispatched
    * 
    * @param {Array} eventLog - Event log from EventRecorder
@@ -142,55 +183,32 @@ function assert(condition, message, details = {}) {
   };
   
   /**
-   * Assert that multiple conditions are all true
-   * 
-   * @param {Array<boolean>} conditions - Array of conditions
-   * @param {string} message - Error message
+   * Format a value for display in error messages
+   * @param {any} value - The value to format
+   * @returns {string} Formatted string representation
    */
-  assert.all = function(conditions, message) {
-    const allTrue = conditions.every(Boolean);
-    
-    if (!allTrue) {
-      const failedIndices = conditions
-        .map((condition, index) => ({ condition, index }))
-        .filter(item => !item.condition)
-        .map(item => item.index);
-        
-      assert(false, message, { failedConditions: failedIndices });
-    } else {
-      assert(true, message);
+  function formatValue(value) {
+    if (typeof value === 'string') {
+      return `"${value}"`;
     }
-  };
-  
-  /**
-   * Assert that an event sequence occurred in order
-   * 
-   * @param {Array} eventLog - Event log from EventRecorder
-   * @param {Array<string>} sequence - Expected sequence of event types
-   * @param {string} [message] - Custom error message
-   */
-  assert.eventSequence = function(eventLog, sequence, message) {
-    let currentIndex = 0;
-    
-    for (const event of eventLog) {
-      if (event.type === sequence[currentIndex]) {
-        currentIndex++;
-        
-        if (currentIndex === sequence.length) {
-          break; // Sequence completed
-        }
+    if (value === null) {
+      return 'null';
+    }
+    if (value === undefined) {
+      return 'undefined';
+    }
+    if (Array.isArray(value)) {
+      return `[${value.map(formatValue).join(', ')}]`;
+    }
+    if (typeof value === 'object') {
+      try {
+        return JSON.stringify(value);
+      } catch (e) {
+        return '[Object]';
       }
     }
-    
-    const condition = currentIndex === sequence.length;
-    const defaultMessage = `Event sequence ${sequence.join(' → ')} should have occurred`;
-    
-    assert(condition, message || defaultMessage, {
-      sequenceProgress: `${currentIndex}/${sequence.length} events matched`,
-      completedEvents: sequence.slice(0, currentIndex),
-      missingEvents: sequence.slice(currentIndex)
-    });
-  };
+    return String(value);
+  }
   
   /**
    * Get a clean stack trace without library frames
@@ -224,6 +242,10 @@ function assert(condition, message, details = {}) {
     
     return true;
   }
+  
+  // Compatibility aliases for old test code
+  assert.assertEqual = assert.equal;
+  assert.assertIncludes = assert.includes;
   
   // Export the main assert function
   module.exports = assert;

@@ -1,5 +1,5 @@
 // tests/testDialogueSystem.js
-const { assert, assertEqual, assertIncludes } = require('./assert');
+const assert = require('./assert');
 const { createEventRecorder } = require('./eventRecorder');
 
 /**
@@ -7,7 +7,8 @@ const { createEventRecorder } = require('./eventRecorder');
  * dialogue flow, and critical path progression
  */
 function testDialogueSystem() {
-  const events = createEventRecorder();
+  // Create event recorder properly
+  const eventRecorder = createEventRecorder();
   
   // Test doubles
   const dialogueState = {
@@ -25,7 +26,7 @@ function testDialogueSystem() {
       this.visitedStates = [dialogueFlow.initialStateId];
       this.selectedOptionIds = [];
       
-      events.record('dialogue-started', { 
+      eventRecorder.record('dialogue-started', { 
         flowId: dialogueFlow.id,
         characterId: dialogueFlow.characterId,
         initialState: this.currentStateId 
@@ -68,7 +69,7 @@ function testDialogueSystem() {
       this.responseShowing = true;
       this.selectedOptionIds.push(optionId);
       
-      events.record('dialogue-option-selected', {
+      eventRecorder.record('dialogue-option-selected', {
         optionId,
         stateId: this.currentStateId,
         flowId: this.flow.id
@@ -89,7 +90,7 @@ function testDialogueSystem() {
       this.selectedOption = null;
       this.responseShowing = false;
       
-      events.record('dialogue-state-changed', {
+      eventRecorder.record('dialogue-state-changed', {
         fromStateId: previousStateId,
         toStateId: nextStateId,
         flowId: this.flow.id
@@ -98,7 +99,7 @@ function testDialogueSystem() {
       // Check for critical path states
       const newState = this.flow.states[nextStateId];
       if (newState.isCriticalPath) {
-        events.record('dialogue-critical-path', {
+        eventRecorder.record('dialogue-critical-path', {
           stateId: nextStateId,
           flowId: this.flow.id
         });
@@ -107,7 +108,7 @@ function testDialogueSystem() {
       // Check if this is a conclusion
       if (newState.isConclusion) {
         this.isActive = false;
-        events.record('dialogue-completed', {
+        eventRecorder.record('dialogue-completed', {
           flowId: this.flow.id,
           finalStateId: nextStateId
         });
@@ -117,7 +118,7 @@ function testDialogueSystem() {
     },
     
     useStrategicAction(actionType) {
-      events.record('strategic-action-used', {
+      eventRecorder.record('strategic-action-used', {
         actionType,
         stateId: this.currentStateId,
         flowId: this.flow.id
@@ -126,17 +127,17 @@ function testDialogueSystem() {
       // Different actions have different effects
       if (actionType === 'reframe') {
         // Reframe highlights precision or humble options
-        events.record('dialogue-options-reframed', {
+        eventRecorder.record('dialogue-options-reframed', {
           highlightedTraits: ['precision', 'humble']
         });
       } else if (actionType === 'extrapolate') {
         // Extrapolate shows additional context
-        events.record('dialogue-context-expanded', {
+        eventRecorder.record('dialogue-context-expanded', {
           stateId: this.currentStateId
         });
       } else if (actionType === 'boast') {
         // Boast unlocks high-confidence options
-        events.record('dialogue-options-expanded', {
+        eventRecorder.record('dialogue-options-expanded', {
           newTraits: ['confidence']
         });
       }
@@ -163,7 +164,7 @@ function testDialogueSystem() {
       if (this.player.relationshipScores[characterId] !== undefined) {
         this.player.relationshipScores[characterId] += amount;
         
-        events.record('relationship-changed', {
+        eventRecorder.record('relationship-changed', {
           characterId,
           change: amount,
           newValue: this.player.relationshipScores[characterId]
@@ -238,23 +239,23 @@ function testDialogueSystem() {
   dialogueState.initializeFlow(basicFlow);
   
   // Check initial state
-  assertEqual(dialogueState.isActive, true, "Dialogue should be active");
-  assertEqual(dialogueState.currentStateId, 'greeting', "Dialogue should start at greeting");
-  assert(events.hasEventType('dialogue-started'), "Dialogue started event should fire");
+  assert(dialogueState.isActive === true, "Dialogue should be active");
+  assert(dialogueState.currentStateId === 'greeting', "Dialogue should start at greeting");
+  assert(eventRecorder.hasEventType('dialogue-started'), "Dialogue started event should fire");
   
   // Get available options
   const options = dialogueState.getAvailableOptions();
-  assertEqual(options.length, 3, "Should have 3 options available");
+  assert(options.length === 3, "Should have 3 options available");
   
   // Select an option
   const success = dialogueState.selectOption('greeting3'); // Precision trait option
   assert(success, "Option selection should succeed");
-  assert(events.hasEventType('dialogue-option-selected'), "Option selected event should fire");
+  assert(eventRecorder.hasEventType('dialogue-option-selected'), "Option selected event should fire");
   
   // Advance state
   dialogueState.advanceState();
-  assertEqual(dialogueState.currentStateId, 'question', "Should advance to question state");
-  assert(events.hasEventType('dialogue-state-changed'), "State changed event should fire");
+  assert(dialogueState.currentStateId === 'question', "Should advance to question state");
+  assert(eventRecorder.hasEventType('dialogue-state-changed'), "State changed event should fire");
   
   // Complete the dialogue
   dialogueState.selectOption('question1');
@@ -263,10 +264,10 @@ function testDialogueSystem() {
   dialogueState.advanceState();
   
   // Check final state
-  assertEqual(dialogueState.isActive, false, "Dialogue should be inactive after conclusion");
-  assertEqual(dialogueState.currentStateId, 'conclusion', "Should end at conclusion state");
-  assert(events.hasEventType('dialogue-completed'), "Dialogue completed event should fire");
-  assertEqual(dialogueState.visitedStates.length, 4, "Should have visited 4 states");
+  assert(dialogueState.isActive === false, "Dialogue should be inactive after conclusion");
+  assert(dialogueState.currentStateId === 'conclusion', "Should end at conclusion state");
+  assert(eventRecorder.hasEventType('dialogue-completed'), "Dialogue completed event should fire");
+  assert(dialogueState.visitedStates.length === 4, "Should have visited 4 states");
   
   console.log("✅ Basic dialogue flow tests passed");
   
@@ -279,7 +280,7 @@ function testDialogueSystem() {
   dialogueState.flow = null;
   dialogueState.visitedStates = [];
   dialogueState.selectedOptionIds = [];
-  events.clear();
+  eventRecorder.clear();
   
   // Create dialogue flow with strategic action opportunities
   const strategicFlow = {
@@ -361,12 +362,12 @@ function testDialogueSystem() {
   
   // Test strategic action: Reframe
   dialogueState.useStrategicAction('reframe');
-  assert(events.hasEventType('strategic-action-used'), "Strategic action event should fire");
-  assert(events.hasEventType('dialogue-options-reframed'), "Options reframed event should fire");
+  assert(eventRecorder.hasEventType('strategic-action-used'), "Strategic action event should fire");
+  assert(eventRecorder.hasEventType('dialogue-options-reframed'), "Options reframed event should fire");
   
   // Test strategic action: Boast
   dialogueState.useStrategicAction('boast');
-  assert(events.hasEventType('dialogue-options-expanded'), "Options expanded event should fire");
+  assert(eventRecorder.hasEventType('dialogue-options-expanded'), "Options expanded event should fire");
   
   // Select an option with trait requirement (now available after Boast)
   dialogueState.selectOption('problem3'); // Confidence trait option
@@ -377,8 +378,8 @@ function testDialogueSystem() {
   dialogueState.advanceState();
   
   // Check critical path handling
-  assertEqual(dialogueState.currentStateId, 'journal-moment', "Should reach journal moment");
-  assert(events.hasEventType('dialogue-critical-path'), "Critical path event should fire");
+  assert(dialogueState.currentStateId === 'journal-moment', "Should reach journal moment");
+  assert(eventRecorder.hasEventType('dialogue-critical-path'), "Critical path event should fire");
   
   // Complete dialogue
   dialogueState.selectOption('journal1');
@@ -386,8 +387,8 @@ function testDialogueSystem() {
   
   // Verify relationship changes
   gameState.incrementRelationship('quinn', 5);
-  assert(events.hasEventType('relationship-changed'), "Relationship changed event should fire");
-  assertEqual(gameState.player.relationshipScores.quinn, 5, "Relationship score should increase");
+  assert(eventRecorder.hasEventType('relationship-changed'), "Relationship changed event should fire");
+  assert(gameState.player.relationshipScores.quinn === 5, "Relationship score should increase");
   
   console.log("✅ Strategic dialogue action tests passed");
   
@@ -400,7 +401,7 @@ function testDialogueSystem() {
   dialogueState.flow = null;
   dialogueState.visitedStates = [];
   dialogueState.selectedOptionIds = [];
-  events.clear();
+  eventRecorder.clear();
   
   // Create character-specific dialogue flow
   const characterFlow = {
@@ -470,7 +471,7 @@ function testDialogueSystem() {
   
   // Apply relationship effect
   gameState.incrementRelationship('jesse', -1);
-  assertEqual(gameState.player.relationshipScores.jesse, -1, "Jesse should dislike precision trait");
+  assert(gameState.player.relationshipScores.jesse === -1, "Jesse should dislike precision trait");
   
   // Reset and try preferred trait
   dialogueState.isActive = false;
@@ -479,7 +480,7 @@ function testDialogueSystem() {
   dialogueState.visitedStates = [];
   dialogueState.selectedOptionIds = [];
   gameState.player.relationshipScores.jesse = 0;
-  events.clear();
+  eventRecorder.clear();
   
   // Initialize again
   dialogueState.initializeFlow(characterFlow);
@@ -490,7 +491,7 @@ function testDialogueSystem() {
   
   // Apply relationship effect
   gameState.incrementRelationship('jesse', 5);
-  assertEqual(gameState.player.relationshipScores.jesse, 5, "Jesse should like confidence trait");
+  assert(gameState.player.relationshipScores.jesse === 5, "Jesse should like confidence trait");
   
   console.log("✅ Character-specific dialogue trait tests passed");
   

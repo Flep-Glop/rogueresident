@@ -1,5 +1,5 @@
 // tests/testKnowledgeSystem.js
-const { assert, assertEqual, assertIncludes } = require('./assert');
+const assert = require('./assert');
 const { createEventRecorder } = require('./eventRecorder');
 
 /**
@@ -7,7 +7,8 @@ const { createEventRecorder } = require('./eventRecorder');
  * constellation visualization, and connections
  */
 function testKnowledgeSystem() {
-  const events = createEventRecorder();
+  // Create event recorder properly
+  const eventRecorder = createEventRecorder();
   
   // ---- Test Double: Knowledge Store ----
   const knowledgeStore = {
@@ -35,7 +36,7 @@ function testKnowledgeSystem() {
       
       this.concepts.push(concept);
       
-      events.record('knowledge-concept-discovered', {
+      eventRecorder.record('knowledge-concept-discovered', {
         conceptId,
         domainId,
         initialMastery
@@ -52,7 +53,7 @@ function testKnowledgeSystem() {
       const oldMastery = concept.mastery;
       concept.mastery += amount;
       
-      events.record('knowledge-mastery-updated', {
+      eventRecorder.record('knowledge-mastery-updated', {
         conceptId,
         oldMastery,
         newMastery: concept.mastery,
@@ -80,7 +81,7 @@ function testKnowledgeSystem() {
         // Update strength if connection exists
         existingConnection.strength = strength;
         
-        events.record('knowledge-connection-updated', {
+        eventRecorder.record('knowledge-connection-updated', {
           fromId: fromConceptId,
           toId: toConceptId,
           strength
@@ -94,7 +95,7 @@ function testKnowledgeSystem() {
           visible: true
         });
         
-        events.record('knowledge-connection-created', {
+        eventRecorder.record('knowledge-connection-created', {
           fromId: fromConceptId,
           toId: toConceptId,
           strength
@@ -179,28 +180,28 @@ function testKnowledgeSystem() {
     
     showConstellation() {
       this.isVisible = true;
-      events.record('constellation-view-opened', {});
+      eventRecorder.record('constellation-view-opened', {});
     },
     
     hideConstellation() {
       this.isVisible = false;
       this.selectedConceptId = null;
-      events.record('constellation-view-closed', {});
+      eventRecorder.record('constellation-view-closed', {});
     },
     
     selectConcept(conceptId) {
       this.selectedConceptId = conceptId;
-      events.record('constellation-concept-selected', { conceptId });
+      eventRecorder.record('constellation-concept-selected', { conceptId });
     },
     
     highlightDomain(domainId) {
       this.highlightedDomainId = domainId;
-      events.record('constellation-domain-highlighted', { domainId });
+      eventRecorder.record('constellation-domain-highlighted', { domainId });
     },
     
     resetHighlights() {
       this.highlightedDomainId = null;
-      events.record('constellation-highlights-reset', {});
+      eventRecorder.record('constellation-highlights-reset', {});
     }
   };
   
@@ -213,18 +214,18 @@ function testKnowledgeSystem() {
   knowledgeStore.discoverConcept('treatment-planning', 'treatment-planning', 8);
   
   // Verify concepts were added
-  assertEqual(knowledgeStore.concepts.length, 3, "Should have 3 concepts");
-  assert(events.hasEventType('knowledge-concept-discovered'), "Concept discovery event should fire");
+  assert(knowledgeStore.concepts.length === 3, "Should have 3 concepts");
+  assert(eventRecorder.hasEventType('knowledge-concept-discovered'), "Concept discovery event should fire");
   
   // Verify concept properties
   const absorbedDose = knowledgeStore.concepts.find(c => c.id === 'absorbed-dose');
-  assertEqual(absorbedDose.mastery, 10, "Concept should have correct mastery");
-  assertEqual(absorbedDose.domainId, 'radiation-physics', "Concept should have correct domain");
+  assert(absorbedDose.mastery === 10, "Concept should have correct mastery");
+  assert(absorbedDose.domainId === 'radiation-physics', "Concept should have correct domain");
   
   // Update mastery
   knowledgeStore.updateMastery('absorbed-dose', 15);
-  assertEqual(absorbedDose.mastery, 25, "Mastery should increase correctly");
-  assert(events.hasEventType('knowledge-mastery-updated'), "Mastery update event should fire");
+  assert(absorbedDose.mastery === 25, "Mastery should increase correctly");
+  assert(eventRecorder.hasEventType('knowledge-mastery-updated'), "Mastery update event should fire");
   
   console.log("✅ Knowledge acquisition tests passed");
   
@@ -241,19 +242,19 @@ function testKnowledgeSystem() {
   knowledgeStore.createConnection('dose-calculation', 'absorbed-dose', 3);
   
   // Verify connections
-  assertEqual(knowledgeStore.connections.length, 3, "Should have 3 connections");
-  assert(events.hasEventType('knowledge-connection-created'), "Connection created event should fire");
+  assert(knowledgeStore.connections.length === 3, "Should have 3 connections");
+  assert(eventRecorder.hasEventType('knowledge-connection-created'), "Connection created event should fire");
   
   // Update connection strength
   const connection = knowledgeStore.connections.find(
     c => c.fromId === 'absorbed-dose' && c.toId === 'dose-measurement'
   );
   knowledgeStore.createConnection('absorbed-dose', 'dose-measurement', 5);
-  assertEqual(connection.strength, 5, "Connection strength should update");
+  assert(connection.strength === 5, "Connection strength should update");
   
   // Get connections for a concept
   const doseConnections = knowledgeStore.getConnectionsForConcept('absorbed-dose');
-  assertEqual(doseConnections.length, 2, "Absorbed dose should have 2 connections");
+  assert(doseConnections.length === 2, "Absorbed dose should have 2 connections");
   
   console.log("✅ Knowledge connection tests passed");
   
@@ -262,10 +263,10 @@ function testKnowledgeSystem() {
   
   // Get concepts by domain
   const physicsConceptsCount = knowledgeStore.getConceptsByDomain('radiation-physics').length;
-  assertEqual(physicsConceptsCount, 3, "Radiation physics should have 3 concepts");
+  assert(physicsConceptsCount === 3, "Radiation physics should have 3 concepts");
   
   const planningConceptsCount = knowledgeStore.getConceptsByDomain('treatment-planning').length;
-  assertEqual(planningConceptsCount, 2, "Treatment planning should have 2 concepts");
+  assert(planningConceptsCount === 2, "Treatment planning should have 2 concepts");
   
   console.log("✅ Knowledge domain tests passed");
   
@@ -275,28 +276,28 @@ function testKnowledgeSystem() {
   // Open constellation view
   constellationUI.showConstellation();
   assert(constellationUI.isVisible, "Constellation should be visible");
-  assert(events.hasEventType('constellation-view-opened'), "Constellation open event should fire");
+  assert(eventRecorder.hasEventType('constellation-view-opened'), "Constellation open event should fire");
   
   // Get visualization data
   const constellationData = knowledgeStore.getConstellationData();
-  assertEqual(constellationData.nodes.length, 5, "Constellation should show 5 nodes");
-  assertEqual(constellationData.edges.length, 3, "Constellation should show 3 edges");
+  assert(constellationData.nodes.length === 5, "Constellation should show 5 nodes");
+  assert(constellationData.edges.length === 3, "Constellation should show 3 edges");
   
   // Test concept selection
   constellationUI.selectConcept('absorbed-dose');
-  assertEqual(constellationUI.selectedConceptId, 'absorbed-dose', "Should select concept");
-  assert(events.hasEventType('constellation-concept-selected'), "Concept selection event should fire");
+  assert(constellationUI.selectedConceptId === 'absorbed-dose', "Should select concept");
+  assert(eventRecorder.hasEventType('constellation-concept-selected'), "Concept selection event should fire");
   
   // Test domain highlighting
   constellationUI.highlightDomain('radiation-physics');
-  assertEqual(constellationUI.highlightedDomainId, 'radiation-physics', "Should highlight domain");
-  assert(events.hasEventType('constellation-domain-highlighted'), "Domain highlight event should fire");
+  assert(constellationUI.highlightedDomainId === 'radiation-physics', "Should highlight domain");
+  assert(eventRecorder.hasEventType('constellation-domain-highlighted'), "Domain highlight event should fire");
   
   // Reset highlights and close
   constellationUI.resetHighlights();
   constellationUI.hideConstellation();
   assert(!constellationUI.isVisible, "Constellation should be hidden");
-  assert(events.hasEventType('constellation-view-closed'), "Constellation close event should fire");
+  assert(eventRecorder.hasEventType('constellation-view-closed'), "Constellation close event should fire");
   
   console.log("✅ Constellation visualization tests passed");
   
