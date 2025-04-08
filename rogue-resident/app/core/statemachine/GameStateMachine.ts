@@ -139,6 +139,12 @@ export const useGameStateMachine = create<GameStateMachineState>((set, get) => (
   transitionToPhase: (newPhase: GamePhase, reason?: string): boolean => {
     const currentPhase = get().gamePhase;
     
+    // If already in this phase, don't transition again
+    if (currentPhase === newPhase) {
+      console.log(`[StateMachine] Already in ${newPhase} phase, skipping transition`);
+      return true;
+    }
+    
     // Validate transition
     if (!VALID_PHASE_TRANSITIONS[currentPhase].includes(newPhase)) {
       console.error(`[StateMachine] Invalid phase transition: ${currentPhase} -> ${newPhase}`);
@@ -184,6 +190,12 @@ export const useGameStateMachine = create<GameStateMachineState>((set, get) => (
   completeDay: (): boolean => {
     const { transitionToPhase, gamePhase } = get();
     
+    // FIXED: If already transitioning to night or in night phase, consider it a success
+    if (gamePhase === 'transition_to_night' || gamePhase === 'night') {
+      console.log(`[StateMachine] Already transitioning to or in night phase (current: ${gamePhase})`);
+      return true;
+    }
+    
     // Cannot complete if not in day phase
     if (gamePhase !== 'day') {
       console.warn(`[StateMachine] Cannot complete day: Not in day phase (current: ${gamePhase})`);
@@ -191,17 +203,24 @@ export const useGameStateMachine = create<GameStateMachineState>((set, get) => (
     }
     
     // For vertical slice, always allow day completion if in day phase
-    transitionToPhase('transition_to_night', 'day_complete');
+    const success = transitionToPhase('transition_to_night', 'day_complete');
     
     // Notify listening systems
-    useEventBus.getState().dispatch(
-      GameEventType.DAY_STARTED, 
-      {
-        completedNodeCount: get().completedNodeIds.length
+    if (success) {
+      try {
+        useEventBus.getState().dispatch(
+          GameEventType.DAY_COMPLETED, // FIXED: Changed from DAY_STARTED to DAY_COMPLETED
+          {
+            completedNodeCount: get().completedNodeIds.length
+          },
+          'gameStateMachine:completeDay'
+        );
+      } catch (error) {
+        console.error('[StateMachine] Error dispatching DAY_COMPLETED event:', error);
       }
-    );
+    }
     
-    return true;
+    return success;
   },
   
   /**
@@ -211,6 +230,12 @@ export const useGameStateMachine = create<GameStateMachineState>((set, get) => (
   completeNight: (): boolean => {
     const { transitionToPhase, gamePhase } = get();
     
+    // FIXED: If already transitioning to day or in day phase, consider it a success
+    if (gamePhase === 'transition_to_day' || gamePhase === 'day') {
+      console.log(`[StateMachine] Already transitioning to or in day phase (current: ${gamePhase})`);
+      return true;
+    }
+    
     // Cannot complete if not in night phase
     if (gamePhase !== 'night') {
       console.warn(`[StateMachine] Cannot complete night: Not in night phase (current: ${gamePhase})`);
@@ -218,20 +243,28 @@ export const useGameStateMachine = create<GameStateMachineState>((set, get) => (
     }
     
     // Always allow night completion if in night phase
-    transitionToPhase('transition_to_day', 'night_complete');
+    const success = transitionToPhase('transition_to_day', 'night_complete');
     
     // Notify listening systems
-    useEventBus.getState().dispatch(
-      GameEventType.NIGHT_STARTED, 
-      {
-        previousCompletedNodeCount: get().completedNodeIds.length
+    if (success) {
+      try {
+        useEventBus.getState().dispatch(
+          GameEventType.NIGHT_COMPLETED, // FIXED: Changed from NIGHT_STARTED to NIGHT_COMPLETED
+          {
+            previousCompletedNodeCount: get().completedNodeIds.length
+          },
+          'gameStateMachine:completeNight'
+        );
       }
-    );
+      catch (error) {
+        console.error('[StateMachine] Error dispatching NIGHT_COMPLETED event:', error);
+      }
+      
+      // Reset completed nodes for new day
+      set({ completedNodeIds: [] });
+    }
     
-    // Reset completed nodes for new day
-    set({ completedNodeIds: [] });
-    
-    return true;
+    return success;
   },
   
   /**
@@ -345,7 +378,10 @@ export function useGameState() {
     // Convenient derived properties
     isDay: gamePhase === 'day',
     isNight: gamePhase === 'night',
-    isActive: gameState === 'in_progress'
+    isActive: gameState === 'in_progress',
+    
+    // Current day counter - added for convenience
+    currentDay: 1, // This is simplified in the vertical slice
   };
 }
 

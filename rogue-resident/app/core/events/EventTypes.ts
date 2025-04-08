@@ -23,6 +23,7 @@ export enum GameEventType {
   DIALOGUE_OPTION_SELECTED = 'dialogue:option:selected',
   DIALOGUE_COMPLETED = 'dialogue:completed',
   DIALOGUE_CRITICAL_PATH = 'dialogue:critical:path',
+  DIALOGUE_ERROR = 'dialogue:error', // ADDED: Explicit error event
   
   // ===== Map Navigation Events =====
   // Core map interaction
@@ -33,8 +34,12 @@ export enum GameEventType {
   GAME_STATE_CHANGED = 'state:state:changed',
   GAME_PHASE_CHANGED = 'state:phase:changed',
   DAY_STARTED = 'day:started',
+  DAY_COMPLETED = 'day:completed', // ADDED: Explicit day completion event
   NIGHT_STARTED = 'night:started',
+  NIGHT_COMPLETED = 'night:completed', // ADDED: Explicit night completion event
   SESSION_STARTED = 'session:started',
+  SYSTEM_INITIALIZED = 'system:initialized',
+  SYSTEM_SHUTDOWN = 'system:shutdown',
   
   // ===== Progression Events =====
   // Critical progression checkpoints
@@ -52,7 +57,13 @@ export enum GameEventType {
   
   // ===== Debug Events =====
   // Support for debug panel
-  DEBUG_COMMAND = 'debug:command'
+  DEBUG_COMMAND = 'debug:command',
+  
+  // ===== Recovery Events =====
+  // ADDED: New events for recovery systems
+  TRANSITION_RECOVERY = 'system:transition:recovery',
+  CONSISTENCY_CHECK = 'system:consistency:check',
+  CONSISTENCY_REPAIR = 'system:consistency:repair'
 }
 
 // ===== Event Payload Types =====
@@ -157,4 +168,18 @@ export interface TransactionPayload {
 export interface DebugCommandPayload {
   command: string;
   params?: Record<string, any>;
+}
+
+/**
+ * Recovery Event Payload
+ * ADDED: New payload type for recovery systems
+ */
+export interface RecoveryEventPayload {
+  type: 'transition' | 'state' | 'journal' | 'knowledge';
+  source: string;
+  targetState?: string;
+  previousState?: string;
+  metadata?: Record<string, any>;
+  successful: boolean;
+  timestamp: number;
 }

@@ -35,13 +35,16 @@ export default function SimplifiedKapoorMap() {
     currentDay 
   } = useGameStore();
   
-  const { completeDay } = useGameState();
+  const { completeDay, gamePhase } = useGameState();
   const journalStore = useJournalStore();
   
   const [kapoorNodeId, setKapoorNodeId] = useState<string | null>(null);
   const [isMapReady, setIsMapReady] = useState(false);
   const [autoSelectDisabled, setAutoSelectDisabled] = useState(false);
   const [revealEffectPlayed, setRevealEffectPlayed] = useState(false);
+  
+  // FIXED: Track transition state to prevent multiple clicks
+  const [isEndDayProcessing, setIsEndDayProcessing] = useState(false);
   
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const nodeRef = useRef<HTMLDivElement>(null);
@@ -265,9 +268,18 @@ export default function SimplifiedKapoorMap() {
     return false; // No action needed
   };
   
-  // Handle end day button with critical path protection
+  // FIXED: Handle end day button with critical path protection and debouncing
   const handleEndDay = () => {
+    // FIXED: Prevent multiple clicks
+    if (isEndDayProcessing || gamePhase !== 'day') {
+      console.log('[Map] End day already processing or not in day phase, ignoring click');
+      return;
+    }
+    
     try {
+      // Set processing flag first to prevent multiple calls
+      setIsEndDayProcessing(true);
+      
       if (completedNodeIds.length > 0) {
         // Check if the journal was acquired and force if needed
         const journalSuccess = forceJournalAcquisition();
@@ -275,10 +287,7 @@ export default function SimplifiedKapoorMap() {
           console.log('🔄 Successfully forced journal acquisition before night phase');
         }
         
-        // Trigger night phase transition
-        completeDay();
-        
-        // Log event
+        // Log event before triggering transition
         try {
           safeEventDispatch(
             GameEventType.UI_BUTTON_CLICKED,
@@ -292,8 +301,24 @@ export default function SimplifiedKapoorMap() {
         } catch (eventError) {
           console.warn('[Map] End day event failed, continuing anyway:', eventError);
         }
+        
+        // Trigger night phase transition
+        const success = completeDay();
+        
+        // FIXED: If we failed to transition, reset processing state
+        if (!success) {
+          console.warn('Failed to complete day, resetting processing state');
+          setIsEndDayProcessing(false);
+        }
+        
+        // FIXED: Add safety timeout to reset the flag if stuck
+        setTimeout(() => {
+          setIsEndDayProcessing(false);
+        }, 5000); // 5 second safety timeout
       } else {
         // Indicate that node completion is required
+        setIsEndDayProcessing(false); // Reset immediately since we're not transitioning
+        
         // Visual feedback on button
         const button = document.querySelector('.end-day-button');
         if (button instanceof HTMLElement) {
@@ -311,12 +336,21 @@ export default function SimplifiedKapoorMap() {
     } catch (error) {
       console.error('Error handling end day:', error);
       
+      // Reset processing state on error
+      setIsEndDayProcessing(false);
+      
       // Resilient recovery - force day completion anyway
       try {
         console.warn('🔄 Attempting emergency day completion despite error');
         completeDay();
+        
+        // FIXED: Add safety timeout even in error case
+        setTimeout(() => {
+          setIsEndDayProcessing(false);
+        }, 5000);
       } catch (fallbackError) {
         console.error('Critical fallback also failed:', fallbackError);
+        setIsEndDayProcessing(false);
       }
     }
   };
@@ -449,22 +483,33 @@ export default function SimplifiedKapoorMap() {
       {/* Complete Day Button */}
       <div className="mt-12">
         <button
-          className={`end-day-button px-6 py-3 rounded-lg transition-all duration-300 ${
-            completedNodeIds.length > 0 
-              ? 'bg-blue-600 hover:bg-blue-500 text-white' 
-              : 'bg-gray-700 text-gray-400 cursor-not-allowed'
-          }`}
+          className={`end-day-button px-6 py-3 rounded-lg transition-all duration-300 
+            ${
+              // FIXED: Apply additional disabled styling when processing
+              isEndDayProcessing
+                ? 'bg-gray-600 text-gray-400 cursor-not-allowed opacity-70'
+                : completedNodeIds.length > 0 
+                  ? 'bg-blue-600 hover:bg-blue-500 text-white' 
+                  : 'bg-gray-700 text-gray-400 cursor-not-allowed'
+            }`}
           onClick={handleEndDay}
-          disabled={completedNodeIds.length === 0}
+          disabled={completedNodeIds.length === 0 || isEndDayProcessing}
           style={{
-            boxShadow: completedNodeIds.length > 0 
+            boxShadow: completedNodeIds.length > 0 && !isEndDayProcessing
               ? '0 0 15px rgba(59, 130, 246, 0.4)' 
               : 'none'
           }}
         >
-          <span className="relative z-10 font-medium">Return to Hill Home</span>
+          {isEndDayProcessing ? (
+            <>
+              <span className="relative z-10 font-medium">Transitioning...</span>
+              <span className="ml-2 inline-block w-4 h-4 border-2 border-gray-300 border-t-blue-500 rounded-full animate-spin"></span>
+            </>
+          ) : (
+            <span className="relative z-10 font-medium">Return to Hill Home</span>
+          )}
         </button>
-        {completedNodeIds.length === 0 && (
+        {completedNodeIds.length === 0 && !isEndDayProcessing && (
           <p className="text-center text-yellow-500 text-sm mt-2">
             Complete the calibration challenge first
           </p>
@@ -491,6 +536,8 @@ export default function SimplifiedKapoorMap() {
           <div>Completed: {completedNodeIds.length}</div>
           <div>Journal: {journalStore.hasJournal ? `${journalStore.currentUpgrade}` : 'none'}</div>
           <div>Auto-Select: {autoSelectDisabled ? 'Disabled' : 'Enabled'}</div>
+          <div>Phase: {gamePhase}</div>
+          <div>Processing: {isEndDayProcessing ? 'Yes' : 'No'}</div>
         </div>
       )}
       
