@@ -1,6 +1,6 @@
 // app/components/challenges/ChallengeRouter.tsx
 'use client';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useGameStore } from '@/app/store/gameStore';
 import { useJournalStore } from '@/app/store/journalStore';
 import { useKnowledgeStore } from '@/app/store/knowledgeStore';
@@ -8,6 +8,7 @@ import { useEventBus } from '@/app/core/events/CentralEventBus';
 import { GameEventType } from '@/app/core/events/EventTypes';
 import ConversationFormat from './formats/ConversationFormat';
 import { createKapoorCalibrationFlow } from '@/app/core/dialogue/DialogueStateMachine';
+import kapoorCalibrationDialogue from '@/app/data/dialogues/calibrations/kapoor-calibration';
 
 /**
  * Challenge Router - Simplified for Vertical Slice
@@ -25,8 +26,65 @@ export default function ChallengeRouter() {
   const [challengeComplete, setChallengeComplete] = useState(false);
   const [error, setError] = useState<string | null>(null);
   
-  // Set up challenge node (hardcoded to Kapoor calibration for vertical slice)
-  const flow = createKapoorCalibrationFlow(currentNodeId || 'kapoor-calibration');
+  // Prepare dialogue content with fallback mechanisms
+  const dialogueStages = useMemo(() => {
+    try {
+      // First attempt: Try to create a flow via the factory
+      const flow = createKapoorCalibrationFlow(currentNodeId || 'kapoor-calibration');
+      
+      // Validate flow structure
+      if (flow && flow.stages && Array.isArray(flow.stages) && flow.stages.length > 0) {
+        console.log("✅ Generated flow stages successfully:", flow.stages.length);
+        return flow.stages;
+      }
+      
+      console.warn("⚠️ Flow factory returned invalid structure, falling back to direct import");
+      
+      // Fallback: Use directly imported dialogue content
+      if (kapoorCalibrationDialogue && Array.isArray(kapoorCalibrationDialogue) && 
+          kapoorCalibrationDialogue.length > 0) {
+        console.log("✅ Using direct dialogue import:", kapoorCalibrationDialogue.length);
+        return kapoorCalibrationDialogue;
+      }
+      
+      // Last resort: Create a minimal dialogue to ensure critical path progression
+      console.error("🚨 All dialogue sources failed, using emergency minimal dialogue");
+      return [
+        {
+          id: 'emergency-intro',
+          text: "Good morning. I see you've arrived for your first day. Let's get started with the basics of medical physics.",
+          contextNote: "Dr. Kapoor adjusts some equipment as you enter.",
+          options: [
+            { 
+              id: "continue",
+              text: "I'm ready to learn.", 
+              nextStageId: 'emergency-journal',
+              insightGain: 10,
+              relationshipChange: 1
+            }
+          ]
+        },
+        {
+          id: 'emergency-journal',
+          type: 'critical-moment',
+          text: "You'll need this journal to document your observations and track your progress through the residency.",
+          contextNote: "Dr. Kapoor hands you a leather-bound journal.",
+          isConclusion: true
+        }
+      ];
+    } catch (err) {
+      // Capture any unexpected errors
+      console.error("Error preparing dialogue content:", err);
+      setError(`Failed to prepare dialogue: ${err instanceof Error ? err.message : String(err)}`);
+      
+      // Return minimal content to avoid breaking the UI
+      return [{
+        id: 'error-recovery',
+        text: "System initializing... please stand by.",
+        isConclusion: true
+      }];
+    }
+  }, [currentNodeId]);
   
   // Reset challenge state when node changes
   useEffect(() => {
@@ -143,6 +201,8 @@ export default function ChallengeRouter() {
       <div className="max-w-3xl w-full">
         <ConversationFormat
           character="kapoor"
+          dialogueStages={dialogueStages} // Using our hardened dialogue stages
+          dialogueId={currentNodeId || 'kapoor-calibration'}
           onComplete={handleConversationComplete}
           onOptionSelected={(option, stageId) => {
             // Log for analytics

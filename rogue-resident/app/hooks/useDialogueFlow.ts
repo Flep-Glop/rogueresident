@@ -211,30 +211,55 @@ export function useDialogueFlow({
         // Use predefined flow from state machine
         let flow;
         
-        switch (characterId) {
-          case 'kapoor':
-            flow = createKapoorCalibrationFlow(nodeId || dialogueId);
-            break;
-          case 'jesse':
-            flow = createJesseEquipmentFlow(nodeId || dialogueId);
-            break;
-          default:
-            throw new Error(`Unknown character: ${characterId}`);
-        }
-        
-        // Initialize flow in state machine
-        const initialStageId = dialogueState.initializeFlow(flow);
-        
-        // Get the initial stage and set it
-        const initialStage = flow.stages.find(s => s.id === initialStageId);
-        if (initialStage) {
+        try {
+          switch (characterId) {
+            case 'kapoor':
+              flow = createKapoorCalibrationFlow(nodeId || dialogueId);
+              break;
+            case 'jesse':
+              flow = createJesseEquipmentFlow(nodeId || dialogueId);
+              break;
+            default:
+              throw new Error(`Unknown character: ${characterId}`);
+          }
+          
+          // Validate flow structure before proceeding
+          if (!flow || !flow.stages || !Array.isArray(flow.stages) || flow.stages.length === 0) {
+            throw new Error(`Invalid flow structure for ${characterId}. Flow or stages array is missing.`);
+          }
+          
+          // Initialize flow in state machine
+          const initialStageId = dialogueState.initializeFlow(flow);
+          
+          // Validate returned stage ID
+          if (!initialStageId) {
+            throw new Error(`State machine didn't return a valid initial stage ID`);
+          }
+          
+          // Get the initial stage and set it
+          const initialStage = flow.stages.find(s => s.id === initialStageId);
+          if (!initialStage) {
+            throw new Error(`Initial stage ${initialStageId} not found in flow`);
+          }
+          
           safeSetState(setCurrentStage, initialStage);
           safeSetState(setCurrentStageId, initialStageId);
-        } else {
-          throw new Error(`Initial stage ${initialStageId} not found in flow`);
+          
+          console.log(`[DialogueFlow] Initialized predefined ${characterId} flow`);
+        } catch (flowError) {
+          console.error(`[DialogueFlow] Flow initialization error:`, flowError);
+          
+          // Fallback to first stage if available
+          if (flow?.stages?.length > 0) {
+            console.warn(`[DialogueFlow] Using fallback initialization`);
+            const fallbackStage = flow.stages[0];
+            safeSetState(setCurrentStage, fallbackStage);
+            safeSetState(setCurrentStageId, fallbackStage.id);
+          } else {
+            // Re-throw if we can't recover
+            throw flowError;
+          }
         }
-        
-        console.log(`[DialogueFlow] Initialized predefined ${characterId} flow`);
       }
       
       // Complete loading
@@ -402,21 +427,32 @@ export function useDialogueFlow({
         }
         // Otherwise use the state machine
         else if (dialogueState.activeFlow) {
-          dialogueState.advanceToStage(nextStageId);
-          
-          // Sync our state with the state machine
-          safeSetState(setCurrentStageId, nextStageId);
-          const nextStage = dialogueState.activeFlow.stages.find(s => s.id === nextStageId);
-          if (nextStage) {
-            safeSetState(setCurrentStage, nextStage);
-          }
-          
-          safeSetState(setShowResponse, false);
-          safeSetState(setSelectedOption, null);
-          
-          // Trigger the onStageChange callback if provided
-          if (onStageChange) {
-            onStageChange(nextStageId, currentStageId);
+          // Safely get the next stage
+          try {
+            dialogueState.advanceToStage(nextStageId);
+            
+            // Sync our state with the state machine
+            safeSetState(setCurrentStageId, nextStageId);
+            
+            // Get the next stage
+            if (dialogueState.activeFlow?.stages) {
+              const nextStage = dialogueState.activeFlow.stages.find(s => s.id === nextStageId);
+              if (nextStage) {
+                safeSetState(setCurrentStage, nextStage);
+              } else {
+                console.error(`[DialogueFlow] Next stage ${nextStageId} not found in active flow`);
+              }
+            }
+            
+            safeSetState(setShowResponse, false);
+            safeSetState(setSelectedOption, null);
+            
+            // Trigger the onStageChange callback if provided
+            if (onStageChange) {
+              onStageChange(nextStageId, currentStageId);
+            }
+          } catch (advanceError) {
+            console.error(`[DialogueFlow] Error advancing to stage ${nextStageId}:`, advanceError);
           }
         }
         

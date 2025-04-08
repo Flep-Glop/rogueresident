@@ -54,6 +54,7 @@ export default function ConversationFormat({
   // Local state
   const [playerScore, setPlayerScore] = useState(0);
   const [insightGained, setInsightGained] = useState(0);
+  const [isInitialized, setIsInitialized] = useState(false);
   
   // Character data (memoized to prevent recreation)
   const charData = useMemo(() => getCharacterData(character), [character]);
@@ -81,7 +82,7 @@ export default function ConversationFormat({
   
   const currentStageId = 'currentStageId' in dialogueState ? 
     dialogueState.currentStageId : 
-    (dialogueState.instanceId || currentStage.id || 'loading');
+    (dialogueState.instanceId || currentStage?.id || 'loading');
   
   const showResponse = dialogueState.showResponse || false;
   const showBackstory = dialogueState.showBackstory || false;
@@ -99,6 +100,13 @@ export default function ConversationFormat({
   const completeDialogue = 'completeDialogue' in dialogueState ? 
     dialogueState.completeDialogue : 
     (() => console.warn('completeDialogue not available'));
+  
+  // Set initialization flag when dialogue state is ready
+  useEffect(() => {
+    if (currentStage && 'text' in currentStage && !isInitialized) {
+      setIsInitialized(true);
+    }
+  }, [currentStage, isInitialized]);
   
   // Handle option selection with local state updates
   const handleOptionSelectWrapper = (option: DialogueOptionView & { 
@@ -123,7 +131,7 @@ export default function ConversationFormat({
   // Handle continue button
   const handleContinueWrapper = () => {
     // Check if at conclusion
-    if ((currentStage.isConclusion && !showResponse) || 
+    if ((currentStage?.isConclusion && !showResponse) || 
         currentStageId === 'journal-presentation') {
       
       // Complete the dialogue and challenge
@@ -155,19 +163,30 @@ export default function ConversationFormat({
     }
   };
   
-  // Initialize typewriter for main text (with fallback)
+  // Initialize typewriter for main text (with safe fallbacks)
   const { 
     displayText: displayedText, 
     isTyping, 
     complete: skipTyping 
-  } = useTypewriter(currentStage.text || '');
+  } = useTypewriter(currentStage?.text || '');
   
-  // Initialize typewriter for backstory (with fallback)
+  // Initialize typewriter for backstory (with safe fallbacks) 
   const { 
     displayText: displayedBackstoryText,
     isTyping: isTypingBackstory,
     complete: skipBackstoryTyping
   } = useTypewriter(backstoryText || '');
+  
+  // Loading state while dialogue initializes
+  if (!isInitialized) {
+    return (
+      <div className="p-6 max-w-4xl mx-auto bg-surface pixel-borders">
+        <div className="bg-surface-dark p-4 pixel-borders-thin mb-4 min-h-[120px] flex items-center justify-center">
+          <PixelText>Initializing dialogue...</PixelText>
+        </div>
+      </div>
+    );
+  }
   
   // Main conversation UI
   return (
@@ -201,7 +220,7 @@ export default function ConversationFormat({
             <PixelText>{displayedText}{isTyping ? '|' : ''}</PixelText>
             
             {/* Context note */}
-            {!isTyping && currentStage.contextNote && (
+            {!isTyping && currentStage?.contextNote && (
               <div className="mt-3 pt-2 border-t border-border">
                 <PixelText className="text-text-secondary text-sm italic">
                   {currentStage.contextNote}
@@ -221,7 +240,7 @@ export default function ConversationFormat({
           {(isTyping || isTypingBackstory) ? "Skip" : "Continue"}
         </PixelButton>
       ) : (
-        currentStage.options && currentStage.options.length > 0 ? (
+        currentStage?.options && currentStage.options.length > 0 ? (
           <div className="space-y-2">
             {currentStage.options.map((option: any) => (
               <button
