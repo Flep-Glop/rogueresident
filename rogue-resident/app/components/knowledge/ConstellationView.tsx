@@ -2,9 +2,7 @@
 'use client';
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { PixelText, PixelButton } from '../PixelThemeProvider';
-import { useGameEffects } from '../GameEffects';
 import { useKnowledgeStore, KnowledgeDomain, ConceptNode, ConceptConnection, KNOWLEDGE_DOMAINS } from '../../store/knowledgeStore';
-import ConnectionSuggestions from './ConnectionSuggestions';
 
 // Re-export KNOWLEDGE_DOMAINS for consistency with imports elsewhere
 export { KNOWLEDGE_DOMAINS };
@@ -23,6 +21,9 @@ interface ConstellationViewProps {
 
 /**
  * ConstellationView - The interactive knowledge visualization system for medical physics concepts
+ * 
+ * This streamlined version removes dependencies on external effect systems
+ * and connection suggestions, making it more self-contained and resilient.
  */
 export default function ConstellationView({ 
   onClose, 
@@ -42,10 +43,6 @@ export default function ConstellationView({
   const isComponentMounted = useRef(true);
   
   // STORE ACCESS - Use stable selectors with useCallback
-  // Direct store for actions to avoid re-renders
-  const knowledgeStore = useRef(useKnowledgeStore.getState());
-  
-  // Set up selectors with useCallback to avoid recreation on each render
   const nodes = useKnowledgeStore(useCallback(state => state.nodes, []));
   const connections = useKnowledgeStore(useCallback(state => state.connections, []));
   const totalMastery = useKnowledgeStore(useCallback(state => state.totalMastery, []));
@@ -54,9 +51,6 @@ export default function ConstellationView({
   const newlyDiscovered = useKnowledgeStore(useCallback(state => state.newlyDiscovered, []));
   const journalEntries = useKnowledgeStore(useCallback(state => state.journalEntries, []));
 
-  // HOOKS
-  const { playSound, flashScreen, showRewardEffect } = useGameEffects();
-  
   // STATE MANAGEMENT
   const [activeNode, setActiveNode] = useState<ConceptNode | null>(null);
   const [selectedNode, setSelectedNode] = useState<ConceptNode | null>(null);
@@ -186,11 +180,12 @@ export default function ConstellationView({
       if (newParticles.length > 0) {
         setParticleEffects(prev => [...prev, ...newParticles]);
         
-        // Play discovery sound effect
-        if (playSound) playSound('success');
+        // Play success sound effect - REMOVED DEPENDENCY
+        // Simply log for now - we'll handle sound elsewhere in the architecture
+        console.log('Would play success sound');
       }
     }
-  }, [activeNodes, nodes, playSound]);
+  }, [activeNodes, nodes]);
   
   // Also highlight newly discovered nodes from knowledgeStore
   useEffect(() => {
@@ -731,7 +726,7 @@ export default function ConstellationView({
     } else {
       canvas.style.cursor = 'grab';
     }
-  }, [isDragging, dragStart, cameraPosition, zoomLevel, discoveredNodes]);
+  }, [isDragging, dragStart, cameraPosition, zoomLevel, discoveredNodes, interactive]);
 
   // Handle mouse down for both left-click interactions and dragging
   const handleMouseDown = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
@@ -807,27 +802,22 @@ export default function ConstellationView({
           
           if (!existingConnection) {
             // Create new connection with satisfying feedback
-            if (playSound) playSound('success');
-            if (flashScreen) flashScreen('blue');
+            // Removed direct sound calls - log instead
+            console.log('Would play connection success sound');
             
             // Create new connection in store
-            knowledgeStore.current.createConnection(pendingConnection, activeNode.id);
+            useKnowledgeStore.getState().createConnection(pendingConnection, activeNode.id);
             
             // Grant insights based on nodes' mastery
             const insightGain = Math.floor((sourceNode.mastery + activeNode.mastery) / 10) + 5;
             
             // Boost mastery for both nodes
-            knowledgeStore.current.updateMastery(pendingConnection, Math.min(5, 100 - sourceNode.mastery));
-            knowledgeStore.current.updateMastery(activeNode.id, Math.min(5, 100 - activeNode.mastery));
+            useKnowledgeStore.getState().updateMastery(pendingConnection, Math.min(5, 100 - sourceNode.mastery));
+            useKnowledgeStore.getState().updateMastery(activeNode.id, Math.min(5, 100 - activeNode.mastery));
             
             // Create visual effect where connection is created
             const midX = ((sourceNode.position?.x || 0) + (activeNode.position?.x || 0)) / 2;
             const midY = ((sourceNode.position?.y || 0) + (activeNode.position?.y || 0)) / 2;
-            
-            if (showRewardEffect && containerRef.current) {
-              const rect = containerRef.current.getBoundingClientRect();
-              showRewardEffect(insightGain, rect.left + midX, rect.top + midY);
-            }
             
             // Create particle burst at connection point
             const newParticles: typeof particleEffects = [];
@@ -866,17 +856,17 @@ export default function ConstellationView({
         // Start connection from selected node
         setPendingConnection(activeNode.id);
         
-        // Play connection sound
-        if (playSound) playSound('click');
+        // Log click sound - removed direct sound call
+        console.log('Would play click sound');
       } else {
         // Select node
         setSelectedNode(activeNode);
         
-        // Play node selection sound
-        if (playSound) playSound('click');
+        // Log click sound - removed direct sound call
+        console.log('Would play click sound');
       }
     }
-  }, [activeNode, discoveredNodes, discoveredConnections, pendingConnection, selectedNode, playSound, flashScreen, showRewardEffect, isDragging]);
+  }, [activeNode, discoveredNodes, discoveredConnections, pendingConnection, selectedNode, isDragging, interactive]);
 
   // Handle zoom with mouse wheel
   const handleWheel = useCallback((e: React.WheelEvent<HTMLCanvasElement>) => {
@@ -892,21 +882,6 @@ export default function ConstellationView({
     setZoomLevel(newZoom);
   }, [zoomLevel, interactive]);
   
-  // Handler for creating connections from the suggestions panel
-  const handleCreateConnectionFromSuggestion = useCallback((sourceId: string, targetId: string) => {
-    if (!isComponentMounted.current) return;
-    
-    // Find the source node and set it as selected
-    const sourceNode = discoveredNodes.find(n => n.id === sourceId);
-    setSelectedNode(sourceNode || null);
-    
-    // Start the connection process from this node
-    setPendingConnection(sourceId);
-    
-    // Play sound effect
-    if (playSound) playSound('click');
-  }, [discoveredNodes, playSound]);
-  
   // Handle closing the constellation view
   const handleClose = useCallback(() => {
     if (!isComponentMounted.current || !onClose) return;
@@ -917,10 +892,73 @@ export default function ConstellationView({
     setPendingConnection(null);
     
     // Clean up newly discovered highlights
-    knowledgeStore.current.resetNewlyDiscovered();
+    useKnowledgeStore.getState().resetNewlyDiscovered();
     
     onClose();
   }, [onClose]);
+  
+  // A simplified version of connection suggestions specifically for use inside the component
+  // This replaces the external ConnectionSuggestions dependency
+  const renderConnectionSuggestions = () => {
+    if (!selectedNode) return null;
+    
+    // Find possible connections
+    const possibleConnections = discoveredNodes.filter(node => 
+      // Must be a different node than selected
+      node.id !== selectedNode.id && 
+      // Must not already be connected
+      !discoveredConnections.some(conn => 
+        (conn.source === selectedNode.id && conn.target === node.id) ||
+        (conn.target === selectedNode.id && conn.source === node.id)
+      )
+    );
+
+    // If no suggestions, don't render anything
+    if (possibleConnections.length === 0) return null;
+    
+    // Take up to 3 suggestions
+    const suggestions = possibleConnections.slice(0, 3);
+    
+    return (
+      <div className="absolute top-4 right-4 w-64 z-10">
+        <div className="bg-surface-dark/80 p-3 pixel-borders-thin">
+          <PixelText className="text-text-primary mb-2">Suggested Connections</PixelText>
+          <div className="space-y-2">
+            {suggestions.map(node => (
+              <div 
+                key={node.id} 
+                className="bg-surface p-2 hover:bg-surface-dark cursor-pointer"
+                onClick={() => {
+                  setPendingConnection(selectedNode.id);
+                  setTimeout(() => {
+                    // Simulate clicking the suggested node
+                    const sourceNode = discoveredNodes.find(n => n.id === selectedNode.id);
+                    if (sourceNode) {
+                      useKnowledgeStore.getState().createConnection(selectedNode.id, node.id);
+                      
+                      // Boost mastery slightly for both nodes
+                      useKnowledgeStore.getState().updateMastery(selectedNode.id, 3);
+                      useKnowledgeStore.getState().updateMastery(node.id, 3);
+                      
+                      console.log('Would play connection success sound');
+                    }
+                  }, 100);
+                }}
+              >
+                <div className="flex items-center">
+                  <div 
+                    className="w-2 h-2 rounded-full mr-2"
+                    style={{ backgroundColor: KNOWLEDGE_DOMAINS[node.domain].color }}
+                  ></div>
+                  <PixelText className="text-sm">{node.name}</PixelText>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  };
   
   return (
     <div 
@@ -963,15 +1001,8 @@ export default function ConstellationView({
         </div>
       </div>
       
-      {/* Connection suggestions panel */}
-      {interactive && (
-        <div className="absolute top-4 right-4 w-64 z-10">
-          <ConnectionSuggestions 
-            onSelectConnection={handleCreateConnectionFromSuggestion}
-            maxSuggestions={3}
-          />
-        </div>
-      )}
+      {/* Simplified connection suggestions panel - internal implementation */}
+      {interactive && selectedNode && renderConnectionSuggestions()}
       
       {/* Domains legend */}
       <div className="absolute bottom-4 left-4 bg-surface-dark/80 p-3 pixel-borders-thin z-10">

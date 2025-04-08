@@ -13,25 +13,23 @@ import VerticalSliceDebugPanel from './debug/VerticalSliceDebugPanel';
 import ChallengeRouter from './challenges/ChallengeRouter';
 
 /**
- * GameContainer - Streamlined for Vertical Slice
+ * GameContainer - Core scene router and system initializer
  * 
- * This version focuses exclusively on demonstrating the core loop:
- * 1. Map → Dr. Kapoor conversation
- * 2. Journal acquisition
- * 3. Day → Night transition
- * 4. Knowledge constellation
- * 5. Night → Day transition
+ * Acts as the primary orchestrator for the game's day/night rhythm, maintaining
+ * the critical narrative flow between challenge (day) and reflection (night).
  */
 export default function GameContainer() {
-  // Game phase state
+  // Game phase state with proper derivation
   const { 
     gamePhase, 
     isDay,
     isNight,
-    completeNight
+    completeNight,
+    completeDay,
+    transitionToPhase
   } = useGameState();
   
-  // Store access
+  // Game store access for node tracking
   const { 
     currentNodeId, 
     map,
@@ -42,10 +40,12 @@ export default function GameContainer() {
   // Component state
   const [isInitialized, setIsInitialized] = useState(false);
   const [hasError, setHasError] = useState<string | null>(null);
+  const [isTransitioning, setIsTransitioning] = useState(false);
   
   // Refs for stable references
   const initRef = useRef(false);
   const componentMountedRef = useRef(true);
+  const eventBus = useEventBus.getState();
   
   // Initialize systems only once
   useEffect(() => {
@@ -73,7 +73,7 @@ export default function GameContainer() {
       
       // Log initialization
       try {
-        useEventBus.getState().dispatch(
+        eventBus.dispatch(
           GameEventType.SESSION_STARTED, 
           { mode: 'vertical_slice', timestamp: Date.now() },
           'gameContainer'
@@ -91,7 +91,49 @@ export default function GameContainer() {
       console.error("Initialization failed:", error);
       setHasError(error instanceof Error ? error.message : String(error));
     }
-  }, [map, startGame]);
+  }, [map, startGame, eventBus]);
+  
+  // Handle phase transitions
+  useEffect(() => {
+    // Handle transition animation
+    if (gamePhase === 'transition_to_night' || gamePhase === 'transition_to_day') {
+      setIsTransitioning(true);
+      
+      // Simulate transition animation
+      const timer = setTimeout(() => {
+        setIsTransitioning(false);
+        
+        // Advance to next phase
+        if (gamePhase === 'transition_to_night') {
+          transitionToPhase('night', 'animation_complete');
+        } else if (gamePhase === 'transition_to_day') {
+          transitionToPhase('day', 'animation_complete');
+        }
+      }, 1500); // 1.5 second transition
+      
+      return () => clearTimeout(timer);
+    }
+  }, [gamePhase, transitionToPhase]);
+  
+  // Handle night phase completion (for returning to day)
+  const handleCompleteNight = () => {
+    try {
+      eventBus.dispatch(
+        GameEventType.UI_BUTTON_CLICKED,
+        {
+          componentId: 'nightCompleteButton',
+          action: 'click',
+          metadata: { timestamp: Date.now() }
+        },
+        'gameContainer'
+      );
+      completeNight();
+    } catch (error) {
+      console.error("Error transitioning from night:", error);
+      // Force transition as fallback
+      completeNight();
+    }
+  };
   
   // Content router based on game phase
   const renderGameContent = () => {
@@ -131,39 +173,61 @@ export default function GameContainer() {
       );
     }
     
+    // Show transition animation
+    if (isTransitioning) {
+      return (
+        <div className="h-full w-full flex items-center justify-center bg-black">
+          <div className="text-center">
+            <h2 className="text-xl mb-4 text-blue-300 animate-pulse">
+              {gamePhase === 'transition_to_night' 
+                ? 'Returning to hill home...' 
+                : 'Heading to the hospital...'}
+            </h2>
+          </div>
+        </div>
+      );
+    }
+    
     // Night phase (constellation visualization)
     if (isNight) {
       return (
         <HillHomeScene 
-          onComplete={() => {
-            try {
-              useEventBus.getState().dispatch(
-                GameEventType.UI_BUTTON_CLICKED,
-                {
-                  componentId: 'nightCompleteButton',
-                  action: 'click',
-                  metadata: { timestamp: Date.now() }
-                },
-                'gameContainer'
-              );
-              completeNight();
-            } catch (error) {
-              console.error("Error transitioning from night:", error);
-              // Force transition as fallback
-              completeNight();
-            }
-          }} 
+          onComplete={handleCompleteNight}
         />
       );
     }
     
     // Map view (day phase navigation)
-    if (!currentNodeId) {
+    if (isDay && !currentNodeId) {
       return <SimplifiedKapoorMap />;
     }
     
     // Challenge view (conversation with Dr. Kapoor)
-    return <ChallengeRouter />;
+    if (isDay && currentNodeId) {
+      return <ChallengeRouter />;
+    }
+    
+    // Fallback for unexpected states
+    return (
+      <div className="h-full w-full flex items-center justify-center bg-background">
+        <div className="text-center p-4">
+          <h2 className="text-xl mb-2 text-yellow-500">Unknown Game State</h2>
+          <div>
+            <p>Current phase: {gamePhase}</p>
+            <p>Current node: {currentNodeId || 'none'}</p>
+          </div>
+          <button
+            className="px-4 py-2 bg-blue-600 text-white rounded mt-4"
+            onClick={() => {
+              // Force day phase as recovery
+              transitionToPhase('day', 'recovery');
+            }}
+          >
+            Return to Day Phase
+          </button>
+        </div>
+      </div>
+    );
   };
   
   // Main render
@@ -190,7 +254,7 @@ export default function GameContainer() {
         </div>
       </div>
       
-      {/* Always show debug panel in vertical slice mode */}
+      {/* Debug panel for vertical slice mode */}
       <VerticalSliceDebugPanel />
     </div>
   );
