@@ -1,4 +1,4 @@
-// app/content/dialogues/calibrations/kapoor-calibration.ts
+// app/data/dialogues/calibrations/kapoor-calibration.ts
 /**
  * Kapoor Calibration Dialogue
  * 
@@ -225,7 +225,7 @@ const kapoorCalibrationDialogue: DialogueStage[] = [
       { 
         id: "correct-clinical",
         text: "The deviation is clinically insignificant, as it falls well below the 5% uncertainty threshold considered impactful for treatment outcomes.", 
-        nextStageId: 'conclusion',
+        nextStageId: 'advanced-concepts',
         approach: 'precision',
         insightGain: 15,
         relationshipChange: 1,
@@ -240,7 +240,7 @@ const kapoorCalibrationDialogue: DialogueStage[] = [
       { 
         id: "partially-correct",
         text: "It's within tolerance but we should monitor it closely on the specific machines used for their patients.", 
-        nextStageId: 'conclusion',
+        nextStageId: 'advanced-concepts',
         approach: 'humble',
         insightGain: 5,
         relationshipChange: 0,
@@ -254,7 +254,7 @@ const kapoorCalibrationDialogue: DialogueStage[] = [
       { 
         id: "incorrect-clinical",
         text: "Any deviation could potentially impact sensitive treatments, so we should inform treatment planning.", 
-        nextStageId: 'conclusion',
+        nextStageId: 'advanced-concepts',
         approach: 'confidence',
         insightGain: 0,
         relationshipChange: -1,
@@ -263,31 +263,192 @@ const kapoorCalibrationDialogue: DialogueStage[] = [
     ]
   },
   
-  // Standard Conclusion
+  // Stage 5: Advanced Concepts (New)
+  {
+    id: 'advanced-concepts',
+    text: "You show promise. Let's explore a more advanced concept. When we calibrate for different energies on the same machine, why might we observe discrepancies between the quality conversion factors (kQ) provided by TG-51 and our measurements?",
+    contextNote: "Kapoor watches you intently, evaluating your understanding of more nuanced calibration principles.",
+    options: [
+      { 
+        id: "beam-matching",
+        text: "Beam matching between our machine and the reference conditions used in TG-51 protocols may not be perfect.", 
+        nextStageId: 'research-collaboration',
+        approach: 'precision',
+        insightGain: 15,
+        relationshipChange: 1,
+        knowledgeGain: { 
+          conceptId: 'beam_quality_factors',
+          domainId: 'radiation-physics',
+          amount: 15
+        },
+        responseText: "Excellent analysis. The beam quality specification used in TG-51 may not perfectly match our specific accelerator, despite having the same nominal energy. This is why careful cross-calibration and understanding of the specific beam characteristics is essential."
+      },
+      { 
+        id: "chamber-variations",
+        text: "Individual chamber-to-chamber variations can lead to discrepancies, even among the same model.", 
+        nextStageId: 'research-collaboration',
+        approach: 'precision',
+        insightGain: 10,
+        relationshipChange: 0,
+        knowledgeGain: { 
+          conceptId: 'beam_quality_factors',
+          domainId: 'radiation-physics',
+          amount: 10
+        },
+        responseText: "That's a contributing factor, though not the primary cause. Chamber variations are typically accounted for in the calibration coefficient provided by the standards laboratory. The bigger issue relates to beam matching between our machine and reference conditions."
+      },
+      { 
+        id: "protocol-limitations",
+        text: "The TG-51 protocol itself acknowledges limitations in its tabulated data.", 
+        nextStageId: 'research-collaboration',
+        approach: 'confidence',
+        insightGain: 5,
+        relationshipChange: 0,
+        knowledgeGain: { 
+          conceptId: 'beam_quality_factors',
+          domainId: 'radiation-physics',
+          amount: 5
+        },
+        responseText: "That's correct, but somewhat vague. Specifically, the limitations relate to beam matching. TG-51 data is based on reference beams, and our clinical beams may have slightly different spectral characteristics even at the same nominal energy."
+      }
+    ]
+  },
+  
+  // Stage 6: Research Collaboration (New)
+  {
+    id: 'research-collaboration',
+    text: "I've been leading a department research project on multi-energy calibration workflows. Would you be interested in contributing to this work during your residency?",
+    contextNote: "Kapoor's demeanor shifts slightly, showing genuine interest in your potential contribution.",
+    options: [
+      { 
+        id: "enthusiastic-yes",
+        text: "Absolutely. I'd be particularly interested in exploring Monte Carlo modeling of beam quality factors across different accelerator types.", 
+        nextStageId: 'calibration-frequency',
+        approach: 'precision',
+        insightGain: 15,
+        relationshipChange: 2,
+        knowledgeGain: { 
+          conceptId: 'research_collaboration',
+          domainId: 'educational',
+          amount: 15
+        },
+        responseText: "Your specific interest shows initiative and understanding. Monte Carlo modeling is precisely the direction we're taking. I'll add you to our research team and share our existing data. This could lead to a valuable publication for your residency portfolio."
+      },
+      { 
+        id: "humble-yes",
+        text: "I'd be honored to contribute in whatever capacity would be most helpful, though I'd need guidance initially.", 
+        nextStageId: 'calibration-frequency',
+        approach: 'humble',
+        insightGain: 10,
+        relationshipChange: 1,
+        knowledgeGain: { 
+          conceptId: 'research_collaboration',
+          domainId: 'educational',
+          amount: 10
+        },
+        responseText: "A commendable attitude. Everyone needs guidance initially. If you maintain this willingness to learn alongside growing technical competence, you'll do well. I'll introduce you to the team's work gradually."
+      },
+      { 
+        id: "cautious-response",
+        text: "I'd need to balance research work with my clinical training obligations.", 
+        nextStageId: 'calibration-frequency',
+        approach: 'confidence',
+        insightGain: 5,
+        relationshipChange: -1,
+        knowledgeGain: { 
+          conceptId: 'research_collaboration',
+          domainId: 'educational',
+          amount: 5
+        },
+        responseText: "While time management is important, research is an integral part of medical physics residency, not an optional extra. The opportunity to participate in departmental research should be embraced as core to your professional development."
+      }
+    ]
+  },
+  
+  // Stage 7: Calibration Frequency (New)
+  {
+    id: 'calibration-frequency',
+    text: "One more question before we conclude today's session. In your opinion, what would be the ideal frequency for cross-calibration between our various dosimetry systems to maintain optimal clinical accuracy?",
+    contextNote: "Kapoor's tone suggests this is a test of your practical operational knowledge.",
+    options: [
+      { 
+        id: "quarterly-calibration",
+        text: "Quarterly cross-calibrations with monthly consistency checks strikes an optimal balance between workload and accuracy.", 
+        nextStageId: 'pre-journal-presentation',
+        approach: 'precision',
+        insightGain: 15,
+        relationshipChange: 1,
+        knowledgeGain: { 
+          conceptId: 'calibration_frequency',
+          domainId: 'quality-assurance',
+          amount: 15
+        },
+        responseText: "That's precisely our departmental protocol. Quarterly is frequent enough to catch drift before it becomes clinically significant, while not overwhelming our physicists with constant calibrations. The monthly consistency checks provide an additional safety net."
+      },
+      { 
+        id: "annual-calibration",
+        text: "Annual cross-calibrations are sufficient as long as consistency checks are performed weekly.", 
+        nextStageId: 'pre-journal-presentation',
+        approach: 'confidence',
+        insightGain: 5,
+        relationshipChange: -1,
+        knowledgeGain: { 
+          conceptId: 'calibration_frequency',
+          domainId: 'quality-assurance',
+          amount: 5
+        },
+        responseText: "Annual is too infrequent. While many facilities calibrate annually with their primary standard, cross-calibration between secondary systems should be more frequent. We've found that quarterly cross-calibrations with monthly consistency checks provides the optimal balance."
+      },
+      { 
+        id: "monthly-calibration",
+        text: "Monthly cross-calibrations would ensure maximum accuracy, though I recognize the workload implications.", 
+        nextStageId: 'pre-journal-presentation',
+        approach: 'humble',
+        insightGain: 10,
+        relationshipChange: 0,
+        knowledgeGain: { 
+          conceptId: 'calibration_frequency',
+          domainId: 'quality-assurance',
+          amount: 10
+        },
+        responseText: "Your attentiveness to accuracy is commendable, but you're right about the workload implications. We've found that quarterly cross-calibrations with monthly consistency checks strikes the optimal balance for our clinic. Quality assurance is always a balance between ideal and practical."
+      }
+    ]
+  },
+  
+  // Pre-Journal Presentation (New)
+  {
+    id: 'pre-journal-presentation',
+    text: "Your understanding of calibration principles is strong, and you've answered my questions with a level of insight I don't typically see in first-day residents. I believe you'll benefit from recording your experiences and knowledge throughout your residency.",
+    contextNote: "Kapoor reaches into a drawer and pulls out a leather-bound journal.",
+    nextStageId: 'journal-presentation'
+  },
+  
+  // Standard Conclusion - Now points to pre-journal-presentation
   {
     id: 'conclusion',
     type: 'conclusion',
     text: "Your understanding of calibration procedures is satisfactory. Regular output measurements are a fundamental responsibility of medical physics. Consistency and attention to detail are essential. Continue to develop your technical knowledge alongside clinical awareness.",
     isConclusion: true,
-    nextStageId: 'journal-presentation'
+    nextStageId: 'pre-journal-presentation'
   },
   
-  // Excellence Conclusion (high score)
+  // Excellence Conclusion - Now points to pre-journal-presentation
   {
     id: 'conclusion-excellence',
     type: 'conclusion',
     text: "Your grasp of calibration principles and their clinical context is impressive for a first-day resident. You demonstrate the careful balance of technical precision and clinical judgment that defines excellent medical physics practice. I look forward to your contributions to our department.",
     isConclusion: true,
-    nextStageId: 'journal-presentation'
+    nextStageId: 'pre-journal-presentation'
   },
   
-  // Needs Improvement Conclusion (low score)
+  // Needs Improvement Conclusion - Now points to pre-journal-presentation
   {
     id: 'conclusion-needs-improvement',
     type: 'conclusion',
     text: "Your understanding of calibration procedures requires significant improvement. These are foundational concepts in medical physics that impact patient safety. I recommend reviewing TG-51 and TG-142 protocols tonight. This profession demands precision and thorough understanding of both technical and clinical implications.",
     isConclusion: true,
-    nextStageId: 'journal-presentation'
+    nextStageId: 'pre-journal-presentation'
   },
   
   // Journal Presentation (Critical Progression Point)

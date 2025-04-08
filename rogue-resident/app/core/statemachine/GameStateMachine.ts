@@ -310,152 +310,159 @@ export const useGameStateMachine = create<GameStateMachineState>((set, get) => (
   
   /**
    * Complete the day phase, transitioning to night
+   * 
+   * UPDATED with direct transition approach:
+   * 1. Immediately set transition_to_night phase
+   * 2. Schedule a direct transition to night phase after a short delay
+   * 
+   * This ensures the UI has a chance to show the transition state
+   * before completing the transition to night.
+   * 
    * @returns true if transition was triggered, false otherwise
    */
   completeDay: (): boolean => {
-    const { transitionToPhase, gamePhase, completedNodeIds } = get();
+    const { gamePhase } = get();
     
-    // FIXED: If already transitioning to night or in night phase, consider it a success
+    // Skip if already transitioning or in night phase
     if (gamePhase === 'transition_to_night' || gamePhase === 'night') {
       console.log(`[StateMachine] Already transitioning to or in night phase (current: ${gamePhase})`);
       return true;
     }
     
-    // Validate we have at least one completed node
-    if (completedNodeIds.length === 0) {
-      console.warn('[StateMachine] Cannot complete day without completing at least one node');
-      
-      // Log event for analytics but don't block
-      try {
-        safeDispatch(
-          GameEventType.UI_BUTTON_CLICKED,
-          {
-            componentId: 'dayCompleteButton',
-            action: 'failed',
-            metadata: { 
-              reason: 'no_completed_nodes',
-              timestamp: Date.now()
-            }
-          },
-          'gameStateMachine:completeDay'
-        );
-      } catch (error) {
-        console.warn('[StateMachine] Event dispatch error:', error);
+    console.log('[StateMachine] Completing day, setting phase: transition_to_night');
+    
+    // First, set transition phase
+    set({ 
+      gamePhase: 'transition_to_night',
+      isTransitioning: true,
+      transitionData: {
+        from: gamePhase,
+        to: 'night',
+        startTime: Date.now(),
+        duration: 800 // Shorter duration for reliability
       }
+    });
+    
+    // Log transition start
+    try {
+      safeDispatch(
+        GameEventType.GAME_PHASE_CHANGED,
+        {
+          from: gamePhase,
+          to: 'transition_to_night',
+          reason: 'day_complete'
+        },
+        'gameStateMachine:completeDay'
+      );
+    } catch (error) {
+      console.warn('[StateMachine] Event dispatch error:', error);
     }
     
-    // Emergency handling for transition phases
-    if (gamePhase === 'transition_to_day') {
-      console.warn(`[StateMachine] Emergency direct transition from ${gamePhase} to night`);
-      const success = transitionToPhase('night', 'emergency_recovery');
+    // Crucial: Direct transition to night after a short delay
+    // This is the key change that ensures we don't get stuck in transition
+    setTimeout(() => {
+      console.log('[StateMachine] Transition timer complete, setting phase: night');
       
-      if (success) {
-        try {
-          safeDispatch(
-            GameEventType.DAY_COMPLETED,
-            {
-              completedNodeCount: get().completedNodeIds.length,
-              wasEmergencyTransition: true
-            },
-            'gameStateMachine:emergencyCompleteDay'
-          );
-        } catch (error) {
-          console.error('[StateMachine] Error dispatching emergency DAY_COMPLETED event:', error);
-        }
-      }
+      // Direct update to night phase
+      set({ 
+        gamePhase: 'night',
+        isTransitioning: false,
+        transitionData: null
+      });
       
-      return success;
-    }
-    
-    // For vertical slice, allow day completion if in day phase
-    const success = transitionToPhase('transition_to_night', 'day_complete');
-    
-    // Notify listening systems
-    if (success) {
+      // Log completion
       try {
         safeDispatch(
           GameEventType.DAY_COMPLETED,
           {
             completedNodeCount: get().completedNodeIds.length
           },
-          'gameStateMachine:completeDay'
+          'gameStateMachine:completeDay:timer'
         );
       } catch (error) {
         console.error('[StateMachine] Error dispatching DAY_COMPLETED event:', error);
       }
-    }
+    }, 800); // Shorter delay for reliability
     
-    return success;
+    return true;
   },
   
   /**
    * Complete the night phase, transitioning to day
+   * UPDATED with same two-stage approach as completeDay
+   * 
    * @returns true if transition was triggered, false otherwise
    */
   completeNight: (): boolean => {
-    const { transitionToPhase, gamePhase, currentDay } = get();
+    const { gamePhase, currentDay } = get();
     
-    // FIXED: If already transitioning to day or in day phase, consider it a success
+    // Skip if already transitioning or in day phase
     if (gamePhase === 'transition_to_day' || gamePhase === 'day') {
       console.log(`[StateMachine] Already transitioning to or in day phase (current: ${gamePhase})`);
       return true;
     }
     
-    // Emergency handling
-    if (gamePhase === 'transition_to_night') {
-      console.warn(`[StateMachine] Emergency direct transition from ${gamePhase} to day`);
-      const success = transitionToPhase('day', 'emergency_recovery');
-      
-      if (success) {
-        try {
-          safeDispatch(
-            GameEventType.NIGHT_COMPLETED,
-            {
-              previousCompletedNodeCount: get().completedNodeIds.length,
-              wasEmergencyTransition: true
-            },
-            'gameStateMachine:emergencyCompleteNight'
-          );
-          
-          // Reset completed nodes and increment day for new day
-          set({ 
-            completedNodeIds: [],
-            currentDay: currentDay + 1
-          });
-        } catch (error) {
-          console.error('[StateMachine] Error dispatching emergency NIGHT_COMPLETED event:', error);
-        }
+    console.log('[StateMachine] Completing night, setting phase: transition_to_day');
+    
+    // First, set transition phase
+    set({ 
+      gamePhase: 'transition_to_day',
+      isTransitioning: true,
+      transitionData: {
+        from: gamePhase,
+        to: 'day',
+        startTime: Date.now(),
+        duration: 800 // Shorter duration for reliability
       }
-      
-      return success;
+    });
+    
+    // Log transition start
+    try {
+      safeDispatch(
+        GameEventType.GAME_PHASE_CHANGED,
+        {
+          from: gamePhase,
+          to: 'transition_to_day',
+          reason: 'night_complete'
+        },
+        'gameStateMachine:completeNight'
+      );
+    } catch (error) {
+      console.warn('[StateMachine] Event dispatch error:', error);
     }
     
-    // Always allow night completion if in night phase
-    const success = transitionToPhase('transition_to_day', 'night_complete');
+    // Reset completed nodes and increment day for new day
+    set({ 
+      completedNodeIds: [],
+      currentDay: currentDay + 1
+    });
     
-    // Notify listening systems
-    if (success) {
+    // Crucial: Direct transition to day after a short delay
+    setTimeout(() => {
+      console.log('[StateMachine] Transition timer complete, setting phase: day');
+      
+      // Direct update to day phase
+      set({ 
+        gamePhase: 'day',
+        isTransitioning: false,
+        transitionData: null
+      });
+      
+      // Log completion
       try {
         safeDispatch(
           GameEventType.NIGHT_COMPLETED,
           {
-            previousCompletedNodeCount: get().completedNodeIds.length
+            previousCompletedNodeCount: 0
           },
-          'gameStateMachine:completeNight'
+          'gameStateMachine:completeNight:timer'
         );
-      }
-      catch (error) {
+      } catch (error) {
         console.error('[StateMachine] Error dispatching NIGHT_COMPLETED event:', error);
       }
-      
-      // Reset completed nodes and increment day for new day
-      set({ 
-        completedNodeIds: [],
-        currentDay: currentDay + 1
-      });
-    }
+    }, 800); // Shorter delay for reliability
     
-    return success;
+    return true;
   },
   
   /**

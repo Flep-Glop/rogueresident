@@ -1,7 +1,8 @@
 'use client';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { ErrorBoundary } from 'react-error-boundary';
 import GameContainer from './components/GameContainer';
+import JournalAcquisitionAnimation from './components/journal/JournalAcquisitionAnimation';
 import PixelThemeProvider from './components/PixelThemeProvider';
 import { useCoreInitialization } from './core/init';
 
@@ -12,10 +13,14 @@ import { useCoreInitialization } from './core/init';
  * 1. Initializes core systems (event bus, state machine, progression resolver)
  * 2. Provides error boundary for crash resilience
  * 3. Wraps the game in necessary theme providers
+ * 4. Handles journal acquisition animation
  */
 export default function VerticalSlicePage() {
   // Initialize core systems
   const { initialized, reinitialize } = useCoreInitialization();
+  
+  // Track journal animation state
+  const [journalAnimationCompleted, setJournalAnimationCompleted] = useState(false);
   
   // Make the reinitialize function available globally for emergency recovery
   useEffect(() => {
@@ -81,6 +86,10 @@ export default function VerticalSlicePage() {
     >
       <div className="min-h-screen bg-black text-white">
         <GameContainer />
+        {/* Journal acquisition animation overlay */}
+        <JournalAcquisitionAnimation 
+          onComplete={() => setJournalAnimationCompleted(true)} 
+        />
       </div>
     </ErrorBoundary>
   );

@@ -15,9 +15,8 @@ import { ErrorBoundary } from 'react-error-boundary';
 
 // Constants for transition timing - these create the rhythm of the experience
 const TRANSITION_FADE_DURATION = 700;      // Time to fade to black (ms)
-const TRANSITION_PAUSE_DURATION = 300;     // Brief pause at peak darkness (ms)
 const TRANSITION_TOTAL_DURATION = 1500;    // Total visual transition time (ms)
-const EMERGENCY_TIMEOUT_DURATION = 5000;   // Emergency recovery timeout (ms) - shortened
+const EMERGENCY_TIMEOUT_DURATION = 5000;   // Emergency recovery timeout (ms)
 
 /**
  * GameContainer - Core scene router and system initializer
@@ -29,8 +28,6 @@ export default function GameContainer() {
   // Game phase state with proper derivation
   const { 
     gamePhase, 
-    isDay,
-    isNight,
     completeNight,
     completeDay,
     transitionToPhase
@@ -49,97 +46,13 @@ export default function GameContainer() {
   const [hasError, setHasError] = useState<string | null>(null);
   const [isTransitioning, setIsTransitioning] = useState(false);
   const [fadeState, setFadeState] = useState<'none' | 'fading-in' | 'fading-out'>('none');
-  const [recoveryAttempted, setRecoveryAttempted] = useState(false);
   
   // Refs for state tracking across render cycles
   const initRef = useRef(false);
   const componentMountedRef = useRef(true);
-  const transitionTimerRef = useRef<NodeJS.Timeout | null>(null);
   const emergencyTimerRef = useRef<NodeJS.Timeout | null>(null);
-  const transitionStateRef = useRef<{
-    inProgress: boolean;
-    startTime: number;
-    phase: string;
-    targetPhase: string;
-  }>({
-    inProgress: false,
-    startTime: 0,
-    phase: '',
-    targetPhase: ''
-  });
   
   const eventBus = useEventBus.getState();
-  
-  // Diagnostic phase change logger - critical for debugging transition issues
-  useEffect(() => {
-    console.log(`%c[PHASE] ${gamePhase}`, 'color: orange; font-weight: bold');
-    
-    // Clear any stuck transitions after defined timeout as an absolute last resort
-    if (gamePhase === 'transition_to_night' || gamePhase === 'transition_to_day') {
-      // Clear any existing emergency timer
-      if (emergencyTimerRef.current) {
-        clearTimeout(emergencyTimerRef.current);
-      }
-      
-      // Set up new emergency timer - more aggressive
-      emergencyTimerRef.current = setTimeout(() => {
-        if ((gamePhase === 'transition_to_night' || gamePhase === 'transition_to_day') && 
-            componentMountedRef.current) {
-          // Log emergency recovery
-          console.error(`%c[EMERGENCY] Forcing phase completion after ${EMERGENCY_TIMEOUT_DURATION}ms`, 
-                        'color: red; font-weight: bold');
-          
-          // Force appropriate phase and indicate recovery was attempted
-          const targetPhase = gamePhase === 'transition_to_night' ? 'night' : 'day';
-          setRecoveryAttempted(true);
-          
-          // Force transition and update UI immediately
-          setIsTransitioning(false);
-          setFadeState('none');
-          
-          // Direct phase change with specific emergency reason
-          transitionToPhase(targetPhase, 'emergency_recovery_timeout');
-          
-          // Reset transition state
-          transitionStateRef.current = {
-            inProgress: false,
-            startTime: 0,
-            phase: '',
-            targetPhase: ''
-          };
-          
-          // Log for diagnostics
-          try {
-            eventBus.dispatch(
-              GameEventType.TRANSITION_RECOVERY,
-              {
-                type: 'transition',
-                source: 'emergency_timer',
-                previousState: gamePhase,
-                targetState: targetPhase,
-                metadata: {
-                  timeoutDuration: EMERGENCY_TIMEOUT_DURATION,
-                  transitionStartTime: transitionStateRef.current.startTime
-                },
-                successful: true,
-                timestamp: Date.now()
-              },
-              'gameContainer:emergencyTimeout'
-            );
-          } catch (error) {
-            console.error('[GameContainer] Failed to dispatch recovery event:', error);
-          }
-        }
-      }, EMERGENCY_TIMEOUT_DURATION);
-      
-      return () => {
-        if (emergencyTimerRef.current) {
-          clearTimeout(emergencyTimerRef.current);
-          emergencyTimerRef.current = null;
-        }
-      };
-    }
-  }, [gamePhase, transitionToPhase, eventBus]);
   
   // Initialize systems only once
   useEffect(() => {
@@ -181,11 +94,6 @@ export default function GameContainer() {
         componentMountedRef.current = false;
         
         // Clear any active timers
-        if (transitionTimerRef.current) {
-          clearTimeout(transitionTimerRef.current);
-          transitionTimerRef.current = null;
-        }
-        
         if (emergencyTimerRef.current) {
           clearTimeout(emergencyTimerRef.current);
           emergencyTimerRef.current = null;
@@ -199,117 +107,63 @@ export default function GameContainer() {
     }
   }, [map, startGame, eventBus]);
   
-  // Simplified transition handling - Reduced complexity, more direct approach
+  // Diagnostic phase change logger - critical for debugging transition issues
   useEffect(() => {
-    // Only handle transition phases
-    if (gamePhase !== 'transition_to_night' && gamePhase !== 'transition_to_day') {
-      return;
-    }
+    console.log(`%c[PHASE] ${gamePhase}`, 'color: orange; font-weight: bold');
     
-    // Define target phase based on current transition
-    const targetPhase = gamePhase === 'transition_to_night' ? 'night' : 'day';
-    
-    // Log transition start
-    console.log(`%c[TRANSITION] Starting ${gamePhase} → ${targetPhase}`, 
-                'color: cyan; font-weight: bold');
-    
-    // Update transition state
-    transitionStateRef.current = {
-      inProgress: true,
-      startTime: Date.now(),
-      phase: gamePhase,
-      targetPhase
-    };
-    
-    // Begin visual transition - simplify to just a fade in and direct phase change
-    setIsTransitioning(true);
-    setFadeState('fading-in');
-    
-    // Clear existing transition timer
-    if (transitionTimerRef.current) {
-      clearTimeout(transitionTimerRef.current);
-    }
-    
-    // SIMPLIFIED APPROACH: Wait for fade-in and then directly change phase
-    // This reduces complexity and chances of getting stuck
-    const fadeTimer = setTimeout(() => {
-      if (!componentMountedRef.current) return;
-      
-      console.log(`%c[TRANSITION] Fade completed, directly changing to: ${targetPhase}`, 
-                 'color: cyan; font-weight: bold');
-      
-      // Execute immediate state change - no additional steps
-      try {
-        // Direct phase change after fade
-        const success = transitionToPhase(targetPhase, 'direct_phase_change');
-        
-        // Immediately update UI state regardless of phase change result
-        setIsTransitioning(false);
-        setFadeState('none');
-        
-        if (success) {
-          console.log(`%c[TRANSITION] Phase successfully changed to: ${targetPhase}`, 
-                     'color: green; font-weight: bold');
-        } else {
-          console.error(`%c[TRANSITION] Failed to change phase to: ${targetPhase}, forcing override`, 
-                       'color: red; font-weight: bold');
+    // Clear any stuck transitions after defined timeout as an absolute last resort
+    if (gamePhase === 'transition_to_night' || gamePhase === 'transition_to_day') {
+      // Set up new emergency timer 
+      emergencyTimerRef.current = setTimeout(() => {
+        if ((gamePhase === 'transition_to_night' || gamePhase === 'transition_to_day') && 
+            componentMountedRef.current) {
+          // Log emergency recovery
+          console.error(`%c[EMERGENCY] Forcing phase completion after ${EMERGENCY_TIMEOUT_DURATION}ms`, 
+                        'color: red; font-weight: bold');
           
-          // Force direct state override
+          // Force appropriate phase
+          const targetPhase = gamePhase === 'transition_to_night' ? 'night' : 'day';
+          
+          // Direct phase change with specific emergency reason
+          transitionToPhase(targetPhase, 'emergency_recovery_timeout');
+          
+          // Log for diagnostics
           try {
-            transitionToPhase(targetPhase, 'forced_override');
-          } catch (overrideError) {
-            console.error(`Phase override failed:`, overrideError);
+            eventBus.dispatch(
+              GameEventType.TRANSITION_RECOVERY,
+              {
+                type: 'transition',
+                source: 'emergency_timer',
+                previousState: gamePhase,
+                targetState: targetPhase,
+                metadata: {
+                  timeoutDuration: EMERGENCY_TIMEOUT_DURATION
+                },
+                successful: true,
+                timestamp: Date.now()
+              },
+              'gameContainer:emergencyTimeout'
+            );
+          } catch (error) {
+            console.error('[GameContainer] Failed to dispatch recovery event:', error);
           }
         }
-        
-        // Reset transition state
-        transitionStateRef.current = {
-          inProgress: false,
-          startTime: 0,
-          phase: '',
-          targetPhase: ''
-        };
-        
-      } catch (error) {
-        console.error(`%c[TRANSITION] Error during phase change:`, 
-                     'color: red; font-weight: bold', error);
-                     
-        // Attempt recovery even after error
-        setIsTransitioning(false);
-        setFadeState('none');
-        
-        // Force target phase directly
-        transitionToPhase(targetPhase, 'error_recovery');
-        
-        // Reset transition state
-        transitionStateRef.current = {
-          inProgress: false,
-          startTime: 0,
-          phase: '',
-          targetPhase: ''
-        };
-      }
-    }, TRANSITION_FADE_DURATION + 200); // Slightly longer than fade duration for safety
-    
-    // Store the timer reference
-    transitionTimerRef.current = fadeTimer;
-    
-    // Cleanup function
-    return () => {
-      if (transitionTimerRef.current) {
-        clearTimeout(transitionTimerRef.current);
-        transitionTimerRef.current = null;
-      }
-    };
-  }, [gamePhase, transitionToPhase]);
+      }, EMERGENCY_TIMEOUT_DURATION);
+      
+      return () => {
+        if (emergencyTimerRef.current) {
+          clearTimeout(emergencyTimerRef.current);
+          emergencyTimerRef.current = null;
+        }
+      };
+    }
+  }, [gamePhase, transitionToPhase, eventBus]);
   
   // Memoized callback for night phase completion
   const handleCompleteNight = useCallback(() => {
     try {
       // Check if we're already transitioning
-      if (transitionStateRef.current.inProgress || 
-          gamePhase === 'transition_to_day' || 
-          gamePhase === 'day') {
+      if (gamePhase === 'transition_to_day' || gamePhase === 'day') {
         console.log('[GameContainer] Already transitioning to day, ignoring duplicate completion request');
         return;
       }
@@ -343,87 +197,19 @@ export default function GameContainer() {
       }
     }
   }, [gamePhase, completeNight, transitionToPhase, eventBus]);
-  
-  // Special effect for forced transitions - detect when we're stuck
-  useEffect(() => {
-    // Check for direct transitions needed (skipping animation)
-    if (gamePhase === 'transition_to_night' || gamePhase === 'transition_to_day') {
-      // Check how long we've been in transition
-      const transitionDuration = Date.now() - transitionStateRef.current.startTime;
-      
-      // If we've been stuck for too long (but not long enough for emergency timeout)
-      if (transitionDuration > 3000 && !recoveryAttempted) {
-        console.warn(`[GameContainer] Transition taking too long (${transitionDuration}ms), attempting direct phase change`);
-        
-        // Mark recovery as attempted
-        setRecoveryAttempted(true);
-        
-        // Force UI reset
-        setIsTransitioning(false);
-        setFadeState('none');
-        
-        // Force appropriate phase
-        const targetPhase = gamePhase === 'transition_to_night' ? 'night' : 'day';
-        transitionToPhase(targetPhase, 'duration_recovery');
-      }
-    } else {
-      // Reset recovery flag when not in transition
-      setRecoveryAttempted(false);
-    }
-  }, [gamePhase, transitionToPhase, recoveryAttempted]);
 
-  // SafeHillHomeScene - Error boundary wrapper for HillHomeScene
-  function SafeHillHomeScene({ onComplete }) {
-    const [hasError, setHasError] = useState(false);
-    
-    if (hasError) {
-      return (
-        <div className="h-full w-full flex items-center justify-center bg-black">
-          <div className="text-center p-6 bg-gray-900 rounded-lg max-w-md">
-            <h2 className="text-xl mb-2 text-red-500">Hill Home Error</h2>
-            <p className="mb-4 text-gray-300">There was a problem loading the night phase.</p>
-            <button
-              className="px-4 py-2 bg-purple-600 text-white rounded"
-              onClick={onComplete}
-            >
-              Skip to Next Day
-            </button>
-          </div>
-        </div>
-      );
-    }
-    
-    return (
-      <ErrorBoundary
-        FallbackComponent={({ error }) => (
-          <div className="h-full w-full flex items-center justify-center bg-black">
-            <div className="text-center p-6 bg-gray-900 rounded-lg max-w-md">
-              <h2 className="text-xl mb-2 text-red-500">Error</h2>
-              <div className="mb-4 p-3 bg-gray-800 rounded text-left text-sm">
-                <p>{error.message}</p>
-              </div>
-              <button
-                className="px-4 py-2 bg-purple-600 text-white rounded"
-                onClick={onComplete}
-              >
-                Skip to Next Day
-              </button>
-            </div>
-          </div>
-        )}
-        onError={(error) => {
-          console.error('[HillHomeScene] Caught error:', error);
-          setHasError(true);
-        }}
-      >
-        <HillHomeScene onComplete={onComplete} />
-      </ErrorBoundary>
-    );
-  }
-  
-  // Content router based on game phase - UPDATED
+  /**
+   * SIMPLIFIED RENDER GAME CONTENT - The key fix for black screen issues
+   * 
+   * This streamlined implementation follows principles used in shipped games:
+   * 1. Direct, deterministic rendering with no complex wrappers
+   * 2. Explicit logging of rendering decisions
+   * 3. Clear fallback states for any edge cases
+   */
   const renderGameContent = () => {
-    // Show loading/error states
+    console.log(`[RENDERING] Current phase: ${gamePhase}, Node: ${currentNodeId}, Transitioning: ${isTransitioning}`);
+    
+    // 1. Handle loading/error states first
     if (!isInitialized) {
       return (
         <div className="h-full w-full flex items-center justify-center bg-background">
@@ -459,8 +245,29 @@ export default function GameContainer() {
       );
     }
     
-    // Show transition animation with emergency override button
-    if (isTransitioning) {
+    // 2. DIRECT PHASE RENDERING - The key fix for black screen issues
+    
+    // Night phase - direct render
+    if (gamePhase === 'night') {
+      return (
+        <div className="w-full h-full">
+          <HillHomeScene onComplete={handleCompleteNight} />
+        </div>
+      );
+    }
+    
+    // Day phase - map view
+    if (gamePhase === 'day' && !currentNodeId) {
+      return <SimplifiedKapoorMap />;
+    }
+    
+    // Challenge view
+    if (gamePhase === 'day' && currentNodeId) {
+      return <ChallengeRouter />;
+    }
+    
+    // 3. Transition state
+    if (gamePhase === 'transition_to_night' || gamePhase === 'transition_to_day' || isTransitioning) {
       return (
         <div className="h-full w-full flex items-center justify-center bg-black">
           <div className="text-center">
@@ -474,16 +281,12 @@ export default function GameContainer() {
             </div>
             
             {/* Emergency manual transition button - appears after 2 seconds */}
-            {(Date.now() - transitionStateRef.current.startTime > 2000) && (
+            {(Date.now() - (gamePhase.startsWith('transition_to_') ? Date.now() - 3000 : 0) > 2000) && (
               <button 
                 className="mt-6 px-4 py-2 bg-red-600 hover:bg-red-500 text-white text-sm rounded"
                 onClick={() => {
                   const targetPhase = gamePhase === 'transition_to_night' ? 'night' : 'day';
                   console.warn(`[GameContainer] Manual transition override to ${targetPhase}`);
-                  
-                  // Reset UI state
-                  setIsTransitioning(false);
-                  setFadeState('none');
                   
                   // Force phase change
                   transitionToPhase(targetPhase, 'manual_override');
@@ -497,31 +300,9 @@ export default function GameContainer() {
       );
     }
     
-    // Night phase (constellation visualization) - IMPROVED RENDERING
-    if (gamePhase === 'night') {
-      console.log('%c[RENDERING] HillHomeScene component with SafeHillHomeScene wrapper', 'color: green; font-weight: bold');
-      
-      // Use the SafeHillHomeScene wrapper to handle errors
-      return (
-        <div className="w-full h-full">
-          <SafeHillHomeScene onComplete={handleCompleteNight} />
-        </div>
-      );
-    }
-    
-    // Map view (day phase navigation)
-    if (gamePhase === 'day' && !currentNodeId) {
-      return <SimplifiedKapoorMap />;
-    }
-    
-    // Challenge view (conversation with Dr. Kapoor)
-    if (gamePhase === 'day' && currentNodeId) {
-      return <ChallengeRouter />;
-    }
-    
-    // Improved fallback for unexpected states
+    // 4. Fallback - should never reach this
     return (
-      <div className="h-full w-full flex items-center justify-center bg-background">
+      <div className="h-full w-full flex items-center justify-center bg-red-900/20">
         <div className="text-center p-4">
           <h2 className="text-xl mb-2 text-yellow-500">Unexpected Game State</h2>
           <div className="bg-gray-900/50 p-4 rounded mb-4">
@@ -598,6 +379,13 @@ export default function GameContainer() {
       
       {/* Debug panel for vertical slice mode */}
       <VerticalSliceDebugPanel />
+      
+      {/* Debug overlay - essential for diagnosing transition issues */}
+      {process.env.NODE_ENV !== 'production' && (
+        <div className="fixed bottom-0 left-0 bg-black/80 text-white p-2 text-xs z-50">
+          Phase: {gamePhase} | Node: {currentNodeId || 'none'}
+        </div>
+      )}
       
       {/* CSS for transition animations */}
       <style jsx>{`

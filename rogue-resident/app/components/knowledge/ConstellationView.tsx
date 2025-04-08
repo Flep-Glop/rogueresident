@@ -19,6 +19,28 @@ interface ConstellationViewProps {
   enableJournal?: boolean;
 }
 
+// Domain color map for direct use in canvas - avoids CSS variable issues
+const DOMAIN_COLORS = {
+  'radiation-physics': '#3b82f6', // Blue
+  'quality-assurance': '#10b981', // Green
+  'clinical-practice': '#ec4899', // Pink
+  'radiation-protection': '#f59e0b', // Amber
+  'technical': '#6366f1', // Indigo
+  'theoretical': '#8b5cf6', // Violet
+  'general': '#6b7280', // Gray
+};
+
+// Light variant colors for highlights
+const DOMAIN_COLORS_LIGHT = {
+  'radiation-physics': '#93c5fd', // Light blue
+  'quality-assurance': '#5eead4', // Light green
+  'clinical-practice': '#fbcfe8', // Light pink
+  'radiation-protection': '#fcd34d', // Light amber
+  'technical': '#a5b4fc', // Light indigo
+  'theoretical': '#c4b5fd', // Light violet
+  'general': '#9ca3af', // Light gray
+};
+
 /**
  * ConstellationView - The interactive knowledge visualization system for medical physics concepts
  * 
@@ -171,13 +193,16 @@ export default function ConstellationView({
             const angle = Math.random() * Math.PI * 2;
             const distance = Math.random() * 100 + 50;
             
+            // Use the direct color map instead of CSS variables
+            const color = DOMAIN_COLORS[node.domain] || DOMAIN_COLORS.general;
+            
             newParticles.push({
               id: `particle-${nodeId}-${i}-${Date.now()}`,
               x: node.position.x + Math.cos(angle) * distance,
               y: node.position.y + Math.sin(angle) * distance,
               targetX: node.position.x,
               targetY: node.position.y,
-              color: KNOWLEDGE_DOMAINS[node.domain].color,
+              color: color,
               size: Math.random() * 3 + 1,
               life: 100,
               maxLife: 100
@@ -211,13 +236,16 @@ export default function ConstellationView({
           const angle = Math.random() * Math.PI * 2;
           const distance = Math.random() * 100 + 50;
           
+          // Use the direct color map instead of CSS variables
+          const color = DOMAIN_COLORS[node.domain] || DOMAIN_COLORS.general;
+          
           newParticles.push({
             id: `particle-${nodeId}-${i}-${Date.now()}`,
             x: node.position.x + Math.cos(angle) * distance,
             y: node.position.y + Math.sin(angle) * distance,
             targetX: node.position.x,
             targetY: node.position.y,
-            color: KNOWLEDGE_DOMAINS[node.domain].color,
+            color: color,
             size: Math.random() * 3 + 1,
             life: 100,
             maxLife: 100
@@ -405,22 +433,39 @@ export default function ConstellationView({
       const radius = Math.random() * 150 + 100;
       
       // Random domain color for nebula with very low opacity
-      const domainKeys = Object.keys(KNOWLEDGE_DOMAINS);
+      const domainKeys = Object.keys(DOMAIN_COLORS);
       const randomDomain = domainKeys[Math.floor(Math.random() * domainKeys.length)] as KnowledgeDomain;
-      const color = KNOWLEDGE_DOMAINS[randomDomain].color;
+      const color = DOMAIN_COLORS[randomDomain];
       
-      // Create radial gradient for nebula
+      // Create radial gradient for nebula - using direct rgba values
       const nebula = ctx.createRadialGradient(
         x, y, 0,
         x, y, radius
       );
       
-      nebula.addColorStop(0, `${color}15`); // 15 is hex for ~8% opacity
+      // Convert hex to rgba with 0.05 opacity for start
+      const colorRgba = hexToRgba(color, 0.05);
+      
+      nebula.addColorStop(0, colorRgba);
       nebula.addColorStop(1, 'rgba(0,0,0,0)');
       
       ctx.fillStyle = nebula;
       ctx.fillRect(0, 0, width, height);
     }
+  };
+
+  // Helper: Convert hex color to rgba
+  const hexToRgba = (hex: string, alpha: number = 1) => {
+    // Remove # if present
+    hex = hex.replace('#', '');
+    
+    // Parse the hex values
+    const r = parseInt(hex.substring(0, 2), 16);
+    const g = parseInt(hex.substring(2, 4), 16);
+    const b = parseInt(hex.substring(4, 6), 16);
+    
+    // Return rgba string
+    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
   };
   
   // Helper: Draw all connections
@@ -438,17 +483,17 @@ export default function ConstellationView({
         const opacity = connection.strength / 200 + 0.3; // 0.3 - 0.8 range
         const width = connection.strength / 100 * 2 + 1; // 1 - 3 range
         
-        // Get domain colors
-        const sourceDomain = KNOWLEDGE_DOMAINS[sourceNode.domain];
-        const targetDomain = KNOWLEDGE_DOMAINS[targetNode.domain];
+        // Get domain colors from our direct color map
+        const sourceColor = DOMAIN_COLORS[sourceNode.domain];
+        const targetColor = DOMAIN_COLORS[targetNode.domain];
         
         // Create gradient between the two domain colors
         const gradient = ctx.createLinearGradient(
           sourceNode.position.x, sourceNode.position.y,
           targetNode.position.x, targetNode.position.y
         );
-        gradient.addColorStop(0, sourceDomain.color);
-        gradient.addColorStop(1, targetDomain.color);
+        gradient.addColorStop(0, sourceColor);
+        gradient.addColorStop(1, targetColor);
         
         // Draw connection line
         ctx.beginPath();
@@ -486,7 +531,10 @@ export default function ConstellationView({
     discoveredNodes.forEach(node => {
       if (!node.position) return;
       
-      const domain = KNOWLEDGE_DOMAINS[node.domain];
+      // Get domain colors from our direct color maps
+      const domainColor = DOMAIN_COLORS[node.domain];
+      const domainLightColor = DOMAIN_COLORS_LIGHT[node.domain];
+      
       const isActiveNode = activeNode?.id === node.id;
       const isSelectedNode = selectedNode?.id === node.id;
       const isPendingConnection = pendingConnection === node.id;
@@ -514,15 +562,10 @@ export default function ConstellationView({
           node.position.x, node.position.y, glowRadius
         );
         
-        // Use domain color for glow
-        const colorKey = domain.color;
-        const lightColor = domain.textClass === 'text-clinical-light' ? 'var(--clinical-color-light)' : 
-                          domain.textClass === 'text-qa-light' ? 'var(--qa-color-light)' :
-                          domain.textClass === 'text-educational-light' ? 'var(--educational-color-light)' :
-                          domain.textClass === 'text-warning' ? 'var(--warning-color)' : 
-                          domain.color;
+        // Use domain color for glow (direct color references, not CSS vars)
+        const color = isHighlighted ? domainLightColor : domainColor;
         
-        glow.addColorStop(0, isHighlighted ? lightColor : colorKey);
+        glow.addColorStop(0, color);
         glow.addColorStop(1, 'rgba(0,0,0,0)');
         
         ctx.fillStyle = glow;
@@ -538,14 +581,16 @@ export default function ConstellationView({
             node.position.x, node.position.y, glowRadius,
             node.position.x, node.position.y, glowRadius * 1.5
           );
-          outerGlow.addColorStop(0, `${colorKey}50`); // 50 is hex for 31% opacity
+          
+          // Use rgba directly for outer glow
+          outerGlow.addColorStop(0, hexToRgba(domainColor, 0.3));
           outerGlow.addColorStop(1, 'rgba(0,0,0,0)');
           
           ctx.fillStyle = outerGlow;
           ctx.fill();
           
           // Add extra shadow for highlighted nodes
-          ctx.shadowColor = domain.color;
+          ctx.shadowColor = domainColor;
           ctx.shadowBlur = 15;
         }
       }
@@ -557,15 +602,10 @@ export default function ConstellationView({
       // Fill based on mastery and domain
       if (isHighlighted) {
         // Brighter color for highlighted nodes
-        const lightColor = domain.textClass === 'text-clinical-light' ? 'var(--clinical-color-light)' : 
-                          domain.textClass === 'text-qa-light' ? 'var(--qa-color-light)' :
-                          domain.textClass === 'text-educational-light' ? 'var(--educational-color-light)' :
-                          domain.textClass === 'text-warning' ? 'var(--warning-color)' : 
-                          domain.color;
-        ctx.fillStyle = lightColor;
+        ctx.fillStyle = domainLightColor;
       } else {
         // Normal fill with domain color
-        ctx.fillStyle = domain.color;
+        ctx.fillStyle = domainColor;
       }
       
       ctx.fill();
@@ -594,13 +634,7 @@ export default function ConstellationView({
         );
         
         // Get light color for domain
-        const lightColor = domain.textClass === 'text-clinical-light' ? 'var(--clinical-color-light)' : 
-                          domain.textClass === 'text-qa-light' ? 'var(--qa-color-light)' :
-                          domain.textClass === 'text-educational-light' ? 'var(--educational-color-light)' :
-                          domain.textClass === 'text-warning' ? 'var(--warning-color)' : 
-                          domain.color;
-                          
-        ctx.strokeStyle = lightColor;
+        ctx.strokeStyle = domainLightColor;
         ctx.lineWidth = 2;
         ctx.stroke();
       }
@@ -610,7 +644,7 @@ export default function ConstellationView({
         const isTemporaryLabel = isActiveNode && !isSelectedNode && !isHighlighted && !showLabels;
         
         // Text background
-        ctx.font = '12px var(--font-pixel)';
+        ctx.font = '12px Arial, sans-serif';
         const textWidth = ctx.measureText(node.name).width;
         const padding = 4;
         const rectX = node.position.x - textWidth / 2 - padding;
@@ -625,12 +659,12 @@ export default function ConstellationView({
         );
         
         // Text
-        ctx.fillStyle = isHighlighted ? '#FFFFFF' : domain.color;
+        ctx.fillStyle = isHighlighted ? '#FFFFFF' : domainColor;
         ctx.textAlign = 'center';
         ctx.fillText(node.name, node.position.x, node.position.y + 28);
         
         // Domain indicator
-        ctx.fillStyle = domain.color;
+        ctx.fillStyle = domainColor;
         ctx.fillRect(node.position.x - textWidth / 2 - padding, rectY, 3, 18);
       }
     });
@@ -666,9 +700,8 @@ export default function ConstellationView({
       // Draw particle
       ctx.arc(particle.x, particle.y, particle.size, 0, Math.PI * 2);
       
-      // Convert opacity (0-1) to hex for color string
-      const alphaHex = Math.floor(opacity * 255).toString(16).padStart(2, '0');
-      ctx.fillStyle = `${particle.color}${alphaHex}`;
+      // Use RGBA directly
+      ctx.fillStyle = hexToRgba(particle.color, opacity);
       
       ctx.fill();
     });
@@ -956,7 +989,7 @@ export default function ConstellationView({
                 <div className="flex items-center">
                   <div 
                     className="w-2 h-2 rounded-full mr-2"
-                    style={{ backgroundColor: KNOWLEDGE_DOMAINS[node.domain].color }}
+                    style={{ backgroundColor: DOMAIN_COLORS[node.domain] }}
                   ></div>
                   <PixelText className="text-sm">{node.name}</PixelText>
                 </div>
@@ -1026,9 +1059,9 @@ export default function ConstellationView({
                 <div key={key} className="flex items-center">
                   <div 
                     className="w-3 h-3 mr-2" 
-                    style={{ backgroundColor: domain.color }}
+                    style={{ backgroundColor: DOMAIN_COLORS[key as KnowledgeDomain] }}
                   ></div>
-                  <PixelText className={domain.textClass}>{domain.name}: {mastery}%</PixelText>
+                  <PixelText className="text-sm">{domain.name}: {mastery}%</PixelText>
                 </div>
               );
             })}
@@ -1096,9 +1129,9 @@ export default function ConstellationView({
               <div className="flex items-center mb-1">
                 <div 
                   className="w-3 h-3 mr-2" 
-                  style={{ backgroundColor: KNOWLEDGE_DOMAINS[selectedNode.domain].color }}
+                  style={{ backgroundColor: DOMAIN_COLORS[selectedNode.domain] }}
                 ></div>
-                <PixelText className={`text-lg ${KNOWLEDGE_DOMAINS[selectedNode.domain].textClass}`}>
+                <PixelText className="text-lg">
                   {selectedNode.name}
                 </PixelText>
               </div>
@@ -1107,7 +1140,7 @@ export default function ConstellationView({
             
             <div className="bg-surface px-2 py-1 text-sm">
               <PixelText className="text-text-secondary">Mastery:</PixelText>
-              <PixelText className={KNOWLEDGE_DOMAINS[selectedNode.domain].textClass}>{selectedNode.mastery}%</PixelText>
+              <PixelText>{selectedNode.mastery}%</PixelText>
             </div>
           </div>
           
@@ -1124,7 +1157,7 @@ export default function ConstellationView({
             
             {!pendingConnection && (
               <PixelButton
-                className={`text-xs py-1 ${KNOWLEDGE_DOMAINS[selectedNode.domain].bgClass} text-white`}
+                className="text-xs py-1 bg-blue-600 text-white"
                 onClick={() => setPendingConnection(selectedNode.id)}
               >
                 Connect
@@ -1155,8 +1188,6 @@ export default function ConstellationView({
                   const node = discoveredNodes.find(n => n.id === insight.conceptId);
                   if (!node) return null;
                   
-                  const domain = KNOWLEDGE_DOMAINS[node.domain];
-                  
                   return (
                     <div 
                       key={`insight-${index}-${insight.conceptId}`}
@@ -1166,7 +1197,7 @@ export default function ConstellationView({
                         <div className="flex items-center">
                           <div 
                             className="w-3 h-3 mr-2" 
-                            style={{ backgroundColor: domain.color }}
+                            style={{ backgroundColor: DOMAIN_COLORS[node.domain] }}
                           ></div>
                           <PixelText>{node.name}</PixelText>
                         </div>
@@ -1175,7 +1206,7 @@ export default function ConstellationView({
                         </div>
                       </div>
                       <PixelText className="text-sm text-text-secondary mt-1">
-                        {domain.name}
+                        {KNOWLEDGE_DOMAINS[node.domain].name}
                       </PixelText>
                     </div>
                   );
@@ -1208,7 +1239,7 @@ export default function ConstellationView({
             
             <div className="space-y-4 mb-4">
               <div>
-                <PixelText className="text-educational-light mb-1">Viewing Knowledge</PixelText>
+                <PixelText className="mb-1" style={{ color: DOMAIN_COLORS.theoretical }}>Viewing Knowledge</PixelText>
                 <PixelText className="text-sm text-text-secondary">
                   Your constellation represents your knowledge in different domains of medical physics. 
                   Each star is a concept you've learned, with brighter stars indicating higher mastery.
@@ -1216,7 +1247,7 @@ export default function ConstellationView({
               </div>
               
               <div>
-                <PixelText className="text-educational-light mb-1">Creating Connections</PixelText>
+                <PixelText className="mb-1" style={{ color: DOMAIN_COLORS.theoretical }}>Creating Connections</PixelText>
                 <PixelText className="text-sm text-text-secondary">
                   1. Click on a concept to select it
                   2. Click the "Connect" button or click the concept again to begin a connection
@@ -1228,7 +1259,7 @@ export default function ConstellationView({
               </div>
               
               <div>
-                <PixelText className="text-educational-light mb-1">Knowledge Application</PixelText>
+                <PixelText className="mb-1" style={{ color: DOMAIN_COLORS.theoretical }}>Knowledge Application</PixelText>
                 <PixelText className="text-sm text-text-secondary">
                   Your knowledge unlocks new dialogue options and challenge approaches during gameplay.
                   Higher mastery in relevant domains improves your performance in challenges.
@@ -1236,7 +1267,7 @@ export default function ConstellationView({
               </div>
               
               <div>
-                <PixelText className="text-educational-light mb-1">Navigation Controls</PixelText>
+                <PixelText className="mb-1" style={{ color: DOMAIN_COLORS.theoretical }}>Navigation Controls</PixelText>
                 <PixelText className="text-sm text-text-secondary">
                   • Click and drag anywhere to pan the view
                   • Use the mouse wheel to zoom in and out
@@ -1247,8 +1278,8 @@ export default function ConstellationView({
               </div>
             </div>
             
-            <div className="p-3 bg-clinical/20 pixel-borders-thin">
-              <PixelText className="text-clinical-light mb-1">Pro Tip</PixelText>
+            <div className="p-3 bg-surface-dark pixel-borders-thin">
+              <PixelText className="mb-1" style={{ color: DOMAIN_COLORS['clinical-practice'] }}>Pro Tip</PixelText>
               <PixelText className="text-sm text-text-secondary">
                 The most powerful insights come from connecting concepts across different domains.
                 Try connecting clinical knowledge with radiation physics principles!

@@ -1,3 +1,4 @@
+// Modified app/components/challenges/formats/ConversationFormat.tsx
 'use client';
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { useGameStore } from '../../../store/gameStore';
@@ -5,6 +6,9 @@ import { useDialogueFlow, DialogueStage, DialogueOptionView } from '../../../hoo
 import { useTypewriter } from '../../../hooks/useTypewriter';
 import { PixelButton, PixelText } from '../../PixelThemeProvider';
 import { useEventBus } from '../../../core/events/CentralEventBus';
+import { GameEventType } from '../../../core/events/EventTypes';
+import MomentumCounter from '../../gameplay/MomentumCounter';
+import useGameplayEffects from '../../../hooks/useGameplayEffects';
 
 // Results interface for completion
 export interface InteractionResults {
@@ -35,9 +39,13 @@ interface ConversationFormatProps {
 }
 
 /**
- * Streamlined Conversation Format
+ * Enhanced conversation format with Momentum system integration
  * 
- * Reduced to core functionality to establish the state machine architecture
+ * This component builds on the existing dialogue system, adding:
+ * - Momentum counter for consecutive correct answers
+ * - Option validation to determine correctness
+ * - Special actions unlocked at different momentum thresholds
+ * - Visual feedback for momentum changes
  */
 export default function ConversationFormat({
   character,
@@ -55,12 +63,16 @@ export default function ConversationFormat({
   const [playerScore, setPlayerScore] = useState(0);
   const [insightGained, setInsightGained] = useState(0);
   const [isInitialized, setIsInitialized] = useState(false);
+  const [reframingActive, setReframingActive] = useState(false);
+  const [boastActive, setBoastActive] = useState(false);
+  
+  // UI animation states
+  const [showOptionFeedback, setShowOptionFeedback] = useState<'correct' | 'incorrect' | null>(null);
   
   // Character data (memoized to prevent recreation)
   const charData = useMemo(() => getCharacterData(character), [character]);
   
   // Use dialogue flow hook 
-  // We're adapting to its actual return shape while maintaining compatibility
   const dialogueState = useDialogueFlow({
     characterId: character,
     nodeId: currentNodeId || undefined,
@@ -71,7 +83,6 @@ export default function ConversationFormat({
   });
 
   // Extract values from the dialogue state with safe fallbacks
-  // This handles both old and new hook API formats
   const currentStage = 'currentStage' in dialogueState ? dialogueState.currentStage : {
     id: dialogueState.instanceId || 'loading',
     text: dialogueState.currentText || '',
@@ -101,6 +112,15 @@ export default function ConversationFormat({
     dialogueState.completeDialogue : 
     (() => console.warn('completeDialogue not available'));
   
+  // Use new gameplay effects system
+  const {
+    momentumLevel,
+    consecutiveCorrect,
+    showMomentumEffect,
+    availableActions,
+    handleOptionSelected: handleGameplayOptionSelected
+  } = useGameplayEffects(character, currentStageId);
+  
   // Set initialization flag when dialogue state is ready
   useEffect(() => {
     if (currentStage && 'text' in currentStage && !isInitialized) {
@@ -108,11 +128,45 @@ export default function ConversationFormat({
     }
   }, [currentStage, isInitialized]);
   
-  // Handle option selection with local state updates
+  // Function to determine if an option is "correct"
+  const isOptionCorrect = (option: DialogueOptionView & { 
+    relationshipChange?: number;
+    approach?: string;
+  }) => {
+    // Options that improve relationship are considered "correct"
+    if (option.relationshipChange && option.relationshipChange > 0) {
+      return true;
+    }
+    
+    // "precision" and "humble" approaches are generally correct
+    if (option.approach === 'precision' || option.approach === 'humble') {
+      return true;
+    }
+    
+    // Options with critical path are correct
+    if (option.isCriticalPath) {
+      return true;
+    }
+    
+    // Default to neutral (not breaking momentum)
+    return true;
+  };
+  
+  // Handle option selection with enhanced gameplay effects
   const handleOptionSelectWrapper = (option: DialogueOptionView & { 
     relationshipChange?: number;
     insightGain?: number;
   }) => {
+    // Determine if option was "correct" for momentum
+    const correct = isOptionCorrect(option);
+    
+    // Apply appropriate gameplay effects
+    handleGameplayOptionSelected(
+      option,
+      correct,
+      option.insightGain || 0
+    );
+    
     // Update local state
     if (option.relationshipChange) {
       setPlayerScore(prev => prev + option.relationshipChange);
@@ -120,12 +174,69 @@ export default function ConversationFormat({
     
     if (option.insightGain) {
       setInsightGained(prev => prev + option.insightGain);
-      // Update global insight
-      useGameStore.getState().updateInsight(option.insightGain);
     }
+    
+    // Show feedback animation
+    setShowOptionFeedback(correct ? 'correct' : 'incorrect');
+    setTimeout(() => setShowOptionFeedback(null), 1500);
     
     // Forward to dialogue handler
     handleOptionSelect(option);
+    
+    // Reset special states
+    setReframingActive(false);
+    setBoastActive(false);
+  };
+  
+  // Handle special actions
+  const handleReframe = () => {
+    // Toggle reframing mode
+    setReframingActive(!reframingActive);
+    
+    // Log reframe usage
+    try {
+      useEventBus.getState().dispatch(
+        GameEventType.UI_BUTTON_CLICKED,
+        {
+          componentId: 'conversationSpecialAction',
+          action: 'reframe',
+          metadata: { 
+            character,
+            stageId: currentStageId,
+            momentumLevel,
+            timestamp: Date.now() 
+          }
+        },
+        'ConversationFormat'
+      );
+    } catch (error) {
+      console.warn('Error dispatching reframe event:', error);
+    }
+  };
+  
+  const handleBoast = () => {
+    // Toggle boast mode
+    setBoastActive(!boastActive);
+    
+    // Log boast usage
+    try {
+      useEventBus.getState().dispatch(
+        GameEventType.UI_BUTTON_CLICKED,
+        {
+          componentId: 'conversationSpecialAction',
+          action: 'boast',
+          metadata: { 
+            character,
+            stageId: currentStageId,
+            momentumLevel,
+            timestamp: Date.now() 
+          }
+        },
+        'ConversationFormat'
+      );
+    } catch (error) {
+      console.warn('Error dispatching boast event:', error);
+    }
   };
   
   // Handle continue button
@@ -203,15 +314,71 @@ export default function ConversationFormat({
           </div>
         </div>
         
-        <div className="bg-surface-dark px-3 py-1 text-sm font-pixel">
-          <PixelText className="text-text-secondary">
-            {currentStageId || 'Dialogue'}
-          </PixelText>
+        {/* Momentum counter */}
+        <div className="relative">
+          <MomentumCounter 
+            level={momentumLevel}
+            consecutiveCorrect={consecutiveCorrect}
+            showEffect={showMomentumEffect}
+          />
         </div>
       </div>
       
+      {/* Special actions panel (appears when actions are available) */}
+      {(availableActions.canReframe || availableActions.canExtrapolate || availableActions.canBoast) && (
+        <div className="flex space-x-2 mb-4">
+          {availableActions.canReframe && (
+            <button
+              className={`px-3 py-1 text-sm font-pixel ${reframingActive ? 'bg-blue-600 text-white' : 'bg-blue-900/50 text-blue-300 hover:bg-blue-800/70'} rounded transition-colors`}
+              onClick={handleReframe}
+            >
+              Reframe (25% Insight)
+            </button>
+          )}
+          
+          {availableActions.canExtrapolate && (
+            <button
+              className="px-3 py-1 text-sm font-pixel bg-purple-900/50 text-purple-300 hover:bg-purple-800/70 rounded transition-colors"
+              onClick={() => {
+                // Extrapolate implementation would go here
+              }}
+            >
+              Extrapolate (50% Insight)
+            </button>
+          )}
+          
+          {availableActions.canBoast && (
+            <button
+              className={`px-3 py-1 text-sm font-pixel ${boastActive ? 'bg-orange-600 text-white' : 'bg-orange-900/50 text-orange-300 hover:bg-orange-800/70'} rounded transition-colors animate-pulse`}
+              onClick={handleBoast}
+            >
+              Boast/Expand
+            </button>
+          )}
+        </div>
+      )}
+      
       {/* Dialogue area */}
-      <div className="bg-surface-dark p-4 pixel-borders-thin mb-4 min-h-[120px]">
+      <div className="bg-surface-dark p-4 pixel-borders-thin mb-4 min-h-[120px] relative">
+        {/* Feedback overlay for correct/incorrect answers */}
+        {showOptionFeedback && (
+          <div 
+            className={`absolute inset-0 pointer-events-none z-10 ${
+              showOptionFeedback === 'correct' 
+                ? 'bg-green-500/10 border border-green-500/30' 
+                : 'bg-red-500/10 border border-red-500/30'
+            }`}
+          >
+            <div 
+              className={`absolute top-2 right-2 px-2 py-1 text-xs font-pixel ${
+                showOptionFeedback === 'correct' ? 'bg-green-700 text-green-100' : 'bg-red-700 text-red-100'
+              }`}
+            >
+              {showOptionFeedback === 'correct' ? 'Correct Approach' : 'Suboptimal Approach'}
+            </div>
+          </div>
+        )}
+        
         {/* Show backstory or main content */}
         {showBackstory ? (
           <PixelText className="italic">{displayedBackstoryText}{isTypingBackstory ? '|' : ''}</PixelText>
@@ -242,25 +409,69 @@ export default function ConversationFormat({
       ) : (
         currentStage?.options && currentStage.options.length > 0 ? (
           <div className="space-y-2">
-            {currentStage.options.map((option: any) => (
-              <button
-                key={option.id}
-                className="w-full text-left p-3 bg-surface hover:bg-surface-dark pixel-borders-thin"
-                onClick={() => handleOptionSelectWrapper(option)}
-                disabled={isTyping}
-              >
-                <div className="flex justify-between">
-                  <PixelText>{option.text}</PixelText>
+            {/* Filter options based on reframing if active */}
+            {currentStage.options
+              .filter(option => {
+                // When reframing, only show options with "humble" or "precision" approaches
+                if (reframingActive) {
+                  return option.approach === 'humble' || option.approach === 'precision';
+                }
+                
+                // When boasting, prioritize more challenging options
+                if (boastActive) {
+                  // A more challenging option might have specific traits
+                  return option.approach === 'confidence' || option.approach === 'precision';
+                }
+                
+                // Show all options by default
+                return true;
+              })
+              .map((option: any) => (
+                <button
+                  key={option.id}
+                  className={`w-full text-left p-3 bg-surface hover:bg-surface-dark pixel-borders-thin relative
+                    ${reframingActive && (option.approach === 'humble' || option.approach === 'precision') ? 'border-blue-500/50' : ''}
+                    ${boastActive && (option.approach === 'confidence' || option.approach === 'precision') ? 'border-orange-500/50' : ''}
+                  `}
+                  onClick={() => handleOptionSelectWrapper(option)}
+                  disabled={isTyping}
+                >
+                  <div className="flex justify-between">
+                    <PixelText>{option.text}</PixelText>
+                    
+                    {/* Show insight preview */}
+                    {option.insightGain && option.insightGain > 0 && (
+                      <span className="ml-2 text-xs bg-blue-600 text-white px-2 py-1 rounded-sm">
+                        +{option.insightGain}
+                      </span>
+                    )}
+                    
+                    {/* Special indicators for reframed or boast options */}
+                    {reframingActive && (option.approach === 'humble' || option.approach === 'precision') && (
+                      <span className="absolute top-1 right-1 w-2 h-2 bg-blue-500 rounded-full"></span>
+                    )}
+                    
+                    {boastActive && (option.approach === 'confidence' || option.approach === 'precision') && (
+                      <span className="absolute top-1 right-1 w-2 h-2 bg-orange-500 rounded-full"></span>
+                    )}
+                  </div>
                   
-                  {/* Show insight preview */}
-                  {option.insightGain && option.insightGain > 0 && (
-                    <span className="ml-2 text-xs bg-clinical text-white px-2 py-1 rounded-sm">
-                      +{option.insightGain}
-                    </span>
+                  {/* Approach indicator - visually show player what type of response this is */}
+                  {option.approach && (
+                    <div className="mt-1 text-xs">
+                      {option.approach === 'humble' && (
+                        <span className="text-blue-400">Humble approach</span>
+                      )}
+                      {option.approach === 'precision' && (
+                        <span className="text-green-400">Precise approach</span>
+                      )}
+                      {option.approach === 'confidence' && (
+                        <span className="text-orange-400">Confident approach</span>
+                      )}
+                    </div>
                   )}
-                </div>
-              </button>
-            ))}
+                </button>
+              ))}
           </div>
         ) : (
           <PixelButton
@@ -278,7 +489,9 @@ export default function ConversationFormat({
           <div>State Machine: {stateMachineEnabled ? 'Yes' : 'No'}</div>
           <div>Current Stage: {currentStageId}</div>
           <div>Player Score: {playerScore}</div>
-          <div>Hook Return Structure: {Object.keys(dialogueState).join(', ')}</div>
+          <div>Momentum: {momentumLevel} (Consecutive: {consecutiveCorrect})</div>
+          <div>Reframing: {reframingActive ? 'Active' : 'Inactive'}</div>
+          <div>Boast: {boastActive ? 'Active' : 'Inactive'}</div>
         </div>
       )}
     </div>

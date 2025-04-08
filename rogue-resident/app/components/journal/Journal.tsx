@@ -2,6 +2,8 @@
 import { useState, useEffect } from 'react';
 import { useJournalStore } from '@/app/store/journalStore';
 import { useGameStore } from '@/app/store/gameStore';
+import { useEventSubscription } from '../core/events/CentralEventBus';
+import { GameEventType } from '../core/events/EventTypes';
 
 // Define valid page types to ensure type safety across the UI
 export type JournalPageType = 'knowledge' | 'characters' | 'notes' | 'references';
@@ -58,6 +60,27 @@ export default function Journal() {
   // Animation states
   const [isAnimating, setIsAnimating] = useState(false);
   const [showParticles, setShowParticles] = useState(false);
+  const [showFloatingButton, setShowFloatingButton] = useState(false);
+  const [journalAnimating, setJournalAnimating] = useState(false);
+  
+  // Listen for journal acquisition events
+  useEventSubscription(
+    GameEventType.JOURNAL_ACQUIRED,
+    (event) => {
+      const payload = event.payload as any;
+      if (payload) {
+        // Show animation first
+        setJournalAnimating(true);
+        
+        // Show floating button after animation completes
+        setTimeout(() => {
+          setJournalAnimating(false);
+          setShowFloatingButton(true);
+        }, 3000);
+      }
+    },
+    []
+  );
   
   // Lock body when journal is open
   useEffect(() => {
@@ -95,6 +118,20 @@ export default function Journal() {
       return () => clearTimeout(timer);
     }
   }, [isOpen, gamePhase]);
+  
+  // Floating journal button when closed
+  if (hasJournal && !isOpen && showFloatingButton) {
+    return (
+      <div className="fixed bottom-4 right-4 z-50">
+        <button
+          className="px-4 py-2 bg-clinical text-white font-pixel hover:bg-clinical-light transition-colors shadow-lg animate-float"
+          onClick={() => toggleJournal()}
+        >
+          Open Journal
+        </button>
+      </div>
+    );
+  }
   
   // Don't render anything if player doesn't have journal or it's not open
   if (!hasJournal || !isOpen) return null;
@@ -215,6 +252,38 @@ export default function Journal() {
           </div>
         </div>
       </div>
+      
+      {/* CSS Animations */}
+      <style jsx>{`
+        @keyframes pulse {
+          0%, 100% { opacity: 1; }
+          50% { opacity: 0.7; }
+        }
+        
+        @keyframes ping {
+          75%, 100% {
+            transform: scale(2);
+            opacity: 0;
+          }
+        }
+        
+        @keyframes float {
+          0%, 100% { transform: translateY(0); }
+          50% { transform: translateY(-5px); }
+        }
+        
+        .animate-pulse {
+          animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+        }
+        
+        .animate-ping {
+          animation: ping 1.5s cubic-bezier(0, 0, 0.2, 1) infinite;
+        }
+        
+        .animate-float {
+          animation: float 3s ease-in-out infinite;
+        }
+      `}</style>
     </div>
   );
 }

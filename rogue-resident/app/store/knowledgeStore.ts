@@ -20,43 +20,43 @@ import { nanoid } from 'nanoid';
 export const KNOWLEDGE_DOMAINS = {
   'radiation-physics': {
     name: 'Radiation Physics',
-    color: 'var(--clinical-color)',
+    color: '#3b82f6', // Blue
     textClass: 'text-clinical-light',
     bgClass: 'bg-clinical'
   },
   'quality-assurance': {
     name: 'Quality Assurance',
-    color: 'var(--qa-color)',
+    color: '#10b981', // Green
     textClass: 'text-qa-light',
     bgClass: 'bg-qa'
   },
   'clinical-practice': {
     name: 'Clinical Practice',
-    color: 'var(--clinical-alt-color, var(--clinical-color))',
+    color: '#ec4899', // Pink
     textClass: 'text-clinical-light',
     bgClass: 'bg-clinical-dark'
   },
   'radiation-protection': {
     name: 'Radiation Protection',
-    color: 'var(--warning-color)',
+    color: '#f59e0b', // Amber
     textClass: 'text-warning',
     bgClass: 'bg-warning'
   },
   'technical': {
     name: 'Technical Expertise',
-    color: 'var(--qa-color)',
+    color: '#6366f1', // Indigo
     textClass: 'text-qa-light',
     bgClass: 'bg-qa'
   },
   'theoretical': {
     name: 'Theoretical Foundations',
-    color: 'var(--educational-color)',
+    color: '#8b5cf6', // Violet
     textClass: 'text-educational-light',
     bgClass: 'bg-educational'
   },
   'general': {
     name: 'General Knowledge',
-    color: 'var(--text-primary)',
+    color: '#6b7280', // Gray
     textClass: 'text-text-primary',
     bgClass: 'bg-surface-dark'
   }
@@ -871,8 +871,7 @@ export const useKnowledgeStore = create<KnowledgeState>((set, get) => {
     
     // Reset newly discovered tracking after animations complete
     resetNewlyDiscovered: () => {
-      // FIX: Only update state if there are actually newly discovered items
-      // This prevents unnecessary state updates that can trigger re-renders
+      // Only update state if there are actually newly discovered items
       set(state => {
         // If array is already empty, don't trigger a state update
         if (state.newlyDiscovered.length === 0) {

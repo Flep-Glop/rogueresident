@@ -49,7 +49,9 @@ type GameState = {
   player: {
     health: number;
     insight: number;
+    momentum: number; // New field
     maxHealth: number;
+    maxMomentum: number; // New field
   };
   currentNodeId: string | null;
   completedNodeIds: string[];
@@ -87,6 +89,8 @@ type GameState = {
   completeNode: (nodeId: string) => void;
   updateHealth: (amount: number) => void;
   updateInsight: (amount: number) => void;
+  updateMomentum: (amount: number) => void;
+  resetMomentum: () => void;
   addToInventory: (item: Item) => void;
   removeFromInventory: (itemId: string) => void;
   resetGame: () => void;
@@ -119,6 +123,8 @@ const initialState = {
     health: 4, // Starting health
     maxHealth: 4, // Maximum health
     insight: 100, // Starting insight
+    momentum: 0, // Initialize momentum
+    maxMomentum: 3, // Max momentum level
   },
   currentNodeId: null,
   completedNodeIds: [],
@@ -299,6 +305,29 @@ export const useGameStore = create<GameState>()(
           player: {
             ...state.player,
             insight: newInsight,
+          },
+          _lastUpdated: new Date().toISOString()
+        };
+      }),
+      
+      updateMomentum: (amount) => set((state) => {
+        const newMomentum = Math.min(state.player.maxMomentum, Math.max(0, state.player.momentum + amount));
+        console.log(`🔄 Updating momentum by ${amount} to ${newMomentum}`);
+        return {
+          player: {
+            ...state.player,
+            momentum: newMomentum,
+          },
+          _lastUpdated: new Date().toISOString()
+        };
+      }),
+      
+      resetMomentum: () => set((state) => {
+        console.log(`🔄 Resetting momentum to 0`);
+        return {
+          player: {
+            ...state.player,
+            momentum: 0,
           },
           _lastUpdated: new Date().toISOString()
         };
@@ -493,7 +522,8 @@ export const useGameStore = create<GameState>()(
           // Basic health restoration
           player: {
             ...get().player,
-            health: Math.min(get().player.maxHealth, get().player.health + 1) // Restore 1 health
+            health: Math.min(get().player.maxHealth, get().player.health + 1), // Restore 1 health
+            momentum: 0 // Reset momentum for new day
           },
           _lastUpdated: new Date().toISOString()
         });
