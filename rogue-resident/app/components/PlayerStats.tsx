@@ -1,138 +1,103 @@
 'use client';
 import { useEffect, useState } from 'react';
-import { useGameStore } from '../store/gameStore';
-import { PixelBorder, PixelText } from './PixelThemeProvider';
-import { PixelProgressBar } from './PixelHealthBar';
-import Image from 'next/image';
-import Inventory from './Inventory';
+import { useGameStore } from '@/app/store/gameStore';
+import { useGameState } from '@/app/core/statemachine/GameStateMachine';
+import { useKnowledgeStore } from '@/app/store/knowledgeStore';
+import { useJournalStore } from '@/app/store/journalStore';
 
+/**
+ * PlayerStats - Simplified player stats sidebar
+ * Removed dependencies on GameEffects and PixelThemeProvider
+ */
 export default function PlayerStats() {
-  const { health, insight } = useGameStore((state) => state.player);
-  const { gamePhase } = useGameStore();
+  // Global state
+  const { insight, currentNodeId } = useGameStore();
+  const { gamePhase, dayCount } = useGameState();
+  const { totalMastery, newlyDiscovered } = useKnowledgeStore();
+  const { hasJournal, currentUpgrade } = useJournalStore();
   
-  // Character progression state tracking based on insight for prototype
-  // This will later be connected to the knowledge constellation system
-  const knowledgeLevel = useGameStore((state) => {
-    // For prototype, derive knowledge level from player insight instead
-    return Math.min(Math.floor(state.player.insight / 40), 4); // 0-4 based on insight
-  });
+  // Local state
+  const [prevInsight, setPrevInsight] = useState(insight);
+  const [isInsightAnimating, setIsInsightAnimating] = useState(false);
   
-  const [characterState, setCharacterState] = useState('default');
-  const [equipmentLevel, setEquipmentLevel] = useState(0);
-  
-  // Update character state based on knowledge progression
+  // Animate insight changes
   useEffect(() => {
-    // Character confidence evolves with knowledge
-    if (knowledgeLevel >= 4) {
-      setCharacterState('expert');
-      setEquipmentLevel(3);
-    } else if (knowledgeLevel >= 2) {
-      setCharacterState('confident');
-      setEquipmentLevel(2);
-    } else if (knowledgeLevel >= 1) {
-      setCharacterState('default');
-      setEquipmentLevel(1);
-    } else {
-      setCharacterState('default');
-      setEquipmentLevel(0);
+    if (insight !== prevInsight) {
+      setIsInsightAnimating(true);
+      setPrevInsight(insight);
+      
+      // Reset animation after delay
+      const timer = setTimeout(() => {
+        setIsInsightAnimating(false);
+      }, 2000);
+      
+      return () => clearTimeout(timer);
     }
-  }, [knowledgeLevel]);
+  }, [insight, prevInsight]);
   
   return (
-    <div className="h-full flex flex-col">
-      {/* Header with character identity */}
-      <div className="p-4 border-b border-gray-800">
-        <PixelText className="text-lg font-pixel">The Resident</PixelText>
-        <div className="text-xs font-pixel text-educational-light">
-          {characterState === 'default' ? 'Novice' : 
-           characterState === 'confident' ? 'Practitioner' : 'Expert'}
-        </div>
+    <div className="p-4 h-full flex flex-col space-y-4">
+      {/* Player info */}
+      <div className="pixel-borders bg-surface p-3">
+        <h2 className="text-lg mb-1 font-pixel">Medical Physics Resident</h2>
+        <div className="text-sm text-text-secondary font-pixel">Day {dayCount}</div>
       </div>
-    
-      {/* Enhanced Character Container */}
-      <div className="character-container relative p-4 min-h-[320px] flex justify-center">
-        {/* Day/Night state-aware backdrop */}
-        <div className={`absolute inset-0 ${gamePhase === 'night' ? 'bg-gradient-to-b from-indigo-900/30 to-surface-dark' : 'bg-surface-dark'}`}>
-          {/* Environmental elements that reflect progression */}
-          {knowledgeLevel > 2 && (
-            <div className="absolute bottom-0 left-0 w-full h-1/4 bg-gradient-to-t from-educational/10 to-transparent"></div>
-          )}
-        </div>
-        
-        {/* Ambient character presence */}
-        <div className="absolute inset-0 flex items-center justify-center">
-          <div className="w-48 h-48 rounded-full bg-educational/5 animate-pulse-slow opacity-25 blur-md"></div>
-        </div>
-        
-        {/* Full body character visualization with proper framing */}
-        <div className="relative h-full w-full flex justify-center items-center">
-          <div className="relative h-[240px] w-[160px]">
-            <Image
-              src="/images/resident-full.png" // In production: resident-${characterState}.png
-              alt="The Resident"
-              fill
-              className="pixel-art object-contain scale-110"
-              priority
-              sizes="160px"
-            />
-            
-            {/* Equipment progression visualization */}
-            {equipmentLevel > 0 && (
-              <div className="absolute top-0 left-0 w-full h-full">
-                <div className={`absolute inset-0 bg-educational/5 transition-opacity duration-500 ${equipmentLevel > 0 ? 'opacity-100' : 'opacity-0'}`}></div>
-                {/* This would be replaced with actual equipment overlay sprites */}
-                {equipmentLevel >= 2 && (
-                  <div className="absolute top-[40px] left-[30px] w-6 h-6 bg-educational/30 rounded-full"></div>
-                )}
-                {equipmentLevel >= 3 && (
-                  <div className="absolute top-[70px] right-[20px] w-8 h-3 bg-educational/40"></div>
-                )}
-              </div>
-            )}
-          </div>
+      
+      {/* Phase indicator */}
+      <div className="pixel-borders bg-surface p-3">
+        <div className="text-sm text-text-secondary font-pixel mb-1">Current Phase</div>
+        <div className={`text-lg font-pixel ${gamePhase === 'day' ? 'text-clinical-light' : 'text-educational-light'}`}>
+          {gamePhase === 'day' ? 'Day - Hospital' : 'Night - Constellation'}
         </div>
       </div>
       
-      {/* Player vitals section */}
-      <div className="flex-shrink-0 p-4 border-t border-b border-gray-800">
-        <h2 className="pixel-heading text-lg mb-3">Vitals</h2>
-        
-        <div className="space-y-4">
-          <div className="space-y-2">
-            <div className="flex justify-between items-center">
-              <PixelText className="text-text-primary">Health</PixelText>
-              <PixelText className="text-text-secondary">{health}/4</PixelText>
-            </div>
-            <div className="flex">
-              {[...Array(4)].map((_, i) => (
-                <div key={i} className={`w-12 h-12 mx-1 ${i < health ? 'bg-danger' : 'bg-dark-gray opacity-30'} pixel-borders-thin`}>
-                  <div className="w-full h-full shadow-[inset_1px_1px_0_rgba(255,255,255,0.3),inset_-1px_-1px_0_rgba(0,0,0,0.3)]"></div>
-                </div>
-              ))}
-            </div>
-          </div>
-          
-          <div className="space-y-2">
-            <div className="flex justify-between items-center">
-              <PixelText className="text-text-primary">Insight</PixelText>
-              <PixelText className="text-text-secondary">{insight}</PixelText>
-            </div>
-            <PixelProgressBar 
-              value={insight} 
-              maxValue={200} 
-              barColor="var(--educational)" 
-            />
-          </div>
+      {/* Insight counter */}
+      <div className={`pixel-borders p-3 ${isInsightAnimating ? 'bg-blue-900/30' : 'bg-surface'} transition-colors`}>
+        <div className="text-sm text-text-secondary font-pixel mb-1">Insight Points</div>
+        <div className={`text-xl font-pixel ${isInsightAnimating ? 'text-blue-300' : 'text-blue-400'}`}>
+          {insight}
         </div>
       </div>
       
-      {/* Inventory section */}
-      <div className="flex-grow p-4 overflow-auto">
-        <div className="mb-2">
-          <PixelText className="font-pixel">Inventory</PixelText>
+      {/* Knowledge status */}
+      <div className="pixel-borders bg-surface p-3">
+        <div className="text-sm text-text-secondary font-pixel mb-1">Knowledge Mastery</div>
+        <div className="text-educational-light text-lg font-pixel">
+          {totalMastery}%
         </div>
-        <Inventory compact={true} />
+        {newlyDiscovered.length > 0 && (
+          <div className="mt-2 text-xs text-educational font-pixel">
+            {newlyDiscovered.length} new concept{newlyDiscovered.length !== 1 ? 's' : ''} discovered
+          </div>
+        )}
       </div>
+      
+      {/* Journal status */}
+      <div className="pixel-borders bg-surface p-3">
+        <div className="text-sm text-text-secondary font-pixel mb-1">Journal</div>
+        {hasJournal ? (
+          <div className="text-clinical-light text-lg font-pixel">
+            {currentUpgrade === 'base' && 'Basic Notebook'}
+            {currentUpgrade === 'technical' && 'Technical Journal'}
+            {currentUpgrade === 'annotated' && 'Annotated Journal'}
+            {currentUpgrade === 'indexed' && 'Indexed Compendium'}
+            {currentUpgrade === 'integrated' && 'Integrated Codex'}
+          </div>
+        ) : (
+          <div className="text-warning text-lg font-pixel">
+            Not Acquired
+          </div>
+        )}
+      </div>
+      
+      {/* Debug info in dev mode */}
+      {process.env.NODE_ENV !== 'production' && (
+        <div className="mt-auto bg-black/30 p-2 rounded text-xs font-mono">
+          <div>Phase: {gamePhase}</div>
+          <div>Day: {dayCount}</div>
+          <div>Node: {currentNodeId ? currentNodeId.substring(0, 8) + '...' : 'none'}</div>
+        </div>
+      )}
     </div>
   );
 }

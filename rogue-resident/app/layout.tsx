@@ -1,10 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import PixelThemeProvider from "./components/PixelThemeProvider";
-import { GameEffectsProvider } from "./components/GameEffects";
 import "./globals.css";
-import "./styles/map-visibility-fix.css"; // Add our visibility fixes
-import FontLoadingContainer from "./components/FontLoadingContainer";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -85,13 +82,8 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
         <PixelThemeProvider>
-          {/* Wrap with GameEffectsProvider to make effects available throughout the app */}
-          <GameEffectsProvider>
-            {/* Note: Systems initialization happens in the page component */}
-            <FontLoadingContainer>
-              {children}
-            </FontLoadingContainer>
-          </GameEffectsProvider>
+          {/* Note: Systems initialization happens in the page component */}
+          {children}
         </PixelThemeProvider>
       </body>
     </html>

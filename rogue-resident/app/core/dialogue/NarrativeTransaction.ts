@@ -10,7 +10,7 @@
  * (pending → active → completed) with repair logic separated from the core flow.
  */
 
-import { useEventBus } from '../events';
+import { useEventBus, safeDispatch } from '../events/CentralEventBus';
 import { GameEventType } from '../events/EventTypes';
 import { create } from 'zustand';
 
@@ -62,21 +62,6 @@ interface TransactionStoreState {
   clearAllTransactions: () => void;
 }
 
-/**
- * Safely dispatch events with error handling
- */
-function safeEventDispatch(eventType: GameEventType, payload: any, source?: string) {
-  try {
-    const eventBus = useEventBus.getState();
-    if (eventBus && typeof eventBus.dispatch === 'function') {
-      eventBus.dispatch(eventType, payload, source || 'narrativeTransaction');
-    }
-  } catch (error) {
-    console.error(`[Transaction] Error dispatching ${eventType}:`, error);
-    // Continue execution despite event error
-  }
-}
-
 // Create transaction store
 export const useNarrativeTransaction = create<TransactionStoreState>((set, get) => ({
   transactions: [],
@@ -106,7 +91,7 @@ export const useNarrativeTransaction = create<TransactionStoreState>((set, get) 
       console.log(`[Transaction] Started: ${type}`, metadata);
       
       // Emit event for tracking
-      safeEventDispatch(
+      safeDispatch(
         GameEventType.PROGRESSION_TRANSACTION_STARTED,
         {
           transactionId: id,
@@ -163,7 +148,7 @@ export const useNarrativeTransaction = create<TransactionStoreState>((set, get) 
       });
       
       // Emit completion event
-      safeEventDispatch(
+      safeDispatch(
         GameEventType.PROGRESSION_TRANSACTION_COMPLETED,
         {
           transactionId,
@@ -199,7 +184,7 @@ export const useNarrativeTransaction = create<TransactionStoreState>((set, get) 
                   
       // Emit cancellation event
       if (transaction) {
-        safeEventDispatch(
+        safeDispatch(
           GameEventType.PROGRESSION_TRANSACTION_CANCELLED,
           {
             transactionId,
@@ -294,7 +279,7 @@ export const useNarrativeTransaction = create<TransactionStoreState>((set, get) 
         repairCount++;
         
         // Log the repair
-        safeEventDispatch(
+        safeDispatch(
           GameEventType.PROGRESSION_TRANSACTION_REPAIRED,
           {
             transactionId: t.id,
@@ -391,12 +376,14 @@ export function checkTransactionIntegrity(): boolean {
   }
 }
 
-// Make sure these event types are defined in GameEventType enum
-// Add this to ensure your GameEventType.ts file includes these event types
-// GameEventType.PROGRESSION_TRANSACTION_STARTED = 'progression:transaction:started'
-// GameEventType.PROGRESSION_TRANSACTION_COMPLETED = 'progression:transaction:completed'
-// GameEventType.PROGRESSION_TRANSACTION_CANCELLED = 'progression:transaction:cancelled'
-// GameEventType.PROGRESSION_TRANSACTION_REPAIRED = 'progression:transaction:repaired'
+// Make transaction system available globally for debugging
+if (typeof window !== 'undefined') {
+  (window as any).__TRANSACTION_SYSTEM__ = {
+    getAllTransactions: () => useNarrativeTransaction.getState().getAllTransactions(),
+    validate: checkTransactionIntegrity,
+    repair: () => useNarrativeTransaction.getState().repairStuckTransactions()
+  };
+}
 
 export default {
   useNarrativeTransaction,

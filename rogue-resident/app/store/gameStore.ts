@@ -1,22 +1,47 @@
 // app/store/gameStore.ts
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
-import { Item } from '../data/items';
-import { Node, NodeState, GameMap, mapUtils, RunConfig, NodeType } from '../types/map';
-import { generateMap } from '../utils/mapGenerator';
-import { 
-  createSeedUrl, 
-  DEV_SEEDS, 
-  generateSeedName, 
-  getRandomSeed, 
-  RunData, 
-  saveRun,
-  updateCurrentRun
-} from '../utils/seedUtils';
 
-// Game phase types
+// Simple type definitions to replace the complex map/node system
 export type GamePhase = 'day' | 'night' | 'game_over' | 'victory';
 export type TutorialStep = number;
+
+// Simplified Item type
+interface Item {
+  id: string;
+  name: string;
+  description: string;
+  rarity: string;
+  effects: Array<{type: string, value: number}>;
+}
+
+// Simplified Node type - hardcoded with bare minimum implementation 
+interface Node {
+  id: string;
+  title: string;
+  type: string;
+  character?: string;
+  connections: string[];
+}
+
+// Simplified map structure
+interface GameMap {
+  nodes: Node[];
+  startNodeId: string;
+  bossNodeId: string;
+  seed?: number;
+  seedName?: string;
+}
+
+// Simplified run data 
+interface RunData {
+  seed?: number;
+  seedName?: string;
+  timestamp: string;
+  dayCount: number;
+  completed: boolean;
+  score?: number;
+}
 
 type GameState = {
   gameState: 'not_started' | 'in_progress' | 'game_over' | 'victory';
@@ -30,15 +55,8 @@ type GameState = {
   completedNodeIds: string[];
   inventory: Item[];
   
-  // Use 'map' for consistency - this is the same as the old 'map' property
+  // Simplified map
   map: GameMap | null;
-  
-  // Map navigation state
-  mapViewState?: {
-    offsetX: number;
-    offsetY: number;
-    zoom: number;
-  };
   
   // Day tracking
   currentDay: number;
@@ -48,7 +66,7 @@ type GameState = {
   tutorialStep: TutorialStep;
   showHints: boolean;
   
-  // Run tracking and seeded generation
+  // Run tracking 
   currentRun: RunData | null;
   recentRuns: RunData[];
   
@@ -64,7 +82,7 @@ type GameState = {
   _lastUpdated: string;
   
   // Actions
-  startGame: (config?: RunConfig) => void;
+  startGame: () => void;
   setCurrentNode: (nodeId: string) => void;
   completeNode: (nodeId: string) => void;
   updateHealth: (amount: number) => void;
@@ -88,19 +106,9 @@ type GameState = {
   completeDay: () => void;
   completeNight: () => void;
   
-  // Enhanced seed & run management
-  replaySeed: (seed: number) => void;
-  useDailyChallenge: () => void;
-  useRandomSeed: () => void;
-  
-  // Enhanced map functionality
+  // Node access helper
   isNodeAccessible: (nodeId: string) => boolean;
-  getNodeState: (nodeId: string) => NodeState;
-};
-
-// Type for persisted state to handle typing more safely
-type PersistedGameState = Partial<Omit<GameState, 'map' | 'currentNodeId'>> & {
-  _storeVersion?: string;
+  getNodeState: (nodeId: string) => 'locked' | 'accessible' | 'active' | 'completed' | 'future';
 };
 
 // Initial state for reuse in resetGame
@@ -116,13 +124,6 @@ const initialState = {
   completedNodeIds: [],
   inventory: [],
   map: null,
-  
-  // Map viewport state
-  mapViewState: {
-    offsetX: 0,
-    offsetY: 0,
-    zoom: 1,
-  },
   
   // Day tracking
   currentDay: 1,
@@ -144,12 +145,65 @@ const initialState = {
   },
   
   // Store metadata
-  _storeVersion: '1.1.0', // Updated for seed support
+  _storeVersion: '1.1.0',
   _lastUpdated: new Date().toISOString(),
 };
 
 // Helper to manage persistence in development
 const STORAGE_KEY = 'rogue-resident-game';
+
+// OPTION 1: Hardcoded map
+function generateHardcodedMap(): GameMap {
+  return {
+    nodes: [
+      {
+        id: 'start_node',
+        title: 'Hospital Entrance',
+        type: 'entrance',
+        character: 'kapoor',
+        connections: ['calibration_node', 'storage_node']
+      },
+      {
+        id: 'calibration_node',
+        title: 'Calibration Lab',
+        type: 'kapoorCalibration',
+        character: 'kapoor',
+        connections: ['qa_node', 'educational_node']
+      },
+      {
+        id: 'qa_node',
+        title: 'Quality Assurance',
+        type: 'qaChallenge',
+        character: 'jesse',
+        connections: ['educational_node', 'boss_node']
+      },
+      {
+        id: 'educational_node',
+        title: 'Medical Physics Theory',
+        type: 'educationalNode',
+        character: 'quinn',
+        connections: ['boss_node']
+      },
+      {
+        id: 'storage_node',
+        title: 'Storage Closet',
+        type: 'storage',
+        connections: ['qa_node']
+      },
+      {
+        id: 'boss_node',
+        title: 'Ionix Chamber Mystery',
+        type: 'boss',
+        character: 'quinn',
+        connections: []
+      }
+    ],
+    startNodeId: 'start_node',
+    bossNodeId: 'boss_node',
+    seed: 12345,
+    seedName: 'Tutorial Map'
+  };
+}
 
 // Create the store with persistence
 export const useGameStore = create<GameState>()(
@@ -157,71 +211,22 @@ export const useGameStore = create<GameState>()(
     (set, get) => ({
       ...initialState,
       
-      startGame: (config: RunConfig = {}) => {
-        console.log("🎮 Starting new game with config:", config);
+      startGame: () => {
+        console.log("🎮 Starting new game");
         
-        // Determine which seed to use
-        const seed = config.seed || getRandomSeed();
+        // OPTION 1: Use hardcoded map instead of generator
+        const newMap = generateHardcodedMap();
         
-        // Generate a new map with the seed
-        const newMap = generateMap({
-          ...config,
-          seed,
-          mapType: 'tutorial'
-        });
-        
-        console.log(`🗺️ Generated new map for game start with seed ${seed}:`, {
-          nodeCount: newMap.nodes.length, 
-          startNode: newMap.startNodeId,
-          seedName: newMap.seedName
-        });
+        console.log(`🗺️ Using hardcoded map with ${newMap.nodes.length} nodes`);
         
         // Create run data
         const runData: RunData = {
-          seed,
-          seedName: generateSeedName(seed),
+          seed: 12345,
+          seedName: 'Tutorial Run',
           timestamp: new Date().toISOString(),
           completed: false,
           dayCount: 1
         };
-        
-        // Save run to history
-        saveRun(runData);
-        
-        // Validate the map has at least one node
-        if (!newMap.nodes || newMap.nodes.length === 0) {
-          console.error("🚨 Map generation failed - no nodes available");
-          // Generate a fallback single-node map for stability
-          const fallbackMap: GameMap = {
-            nodes: [{
-              id: 'emergency_node',
-              title: 'Emergency Calibration',
-              description: 'Emergency fallback node',
-              type: 'kapoorCalibration' as NodeType,
-              position: { x: 50, y: 50 },
-              connections: [],
-              isLocked: false,
-              insightReward: 50,
-              character: 'kapoor'
-            }],
-            startNodeId: 'emergency_node',
-            bossNodeId: 'emergency_node',
-            seed,
-            seedName: generateSeedName(seed),
-            dimensions: { width: 100, height: 100 }
-          };
-          
-          set({ 
-            gameState: 'in_progress',
-            gamePhase: 'day',
-            map: fallbackMap,
-            currentNodeId: null,
-            currentRun: runData,
-            _lastUpdated: new Date().toISOString()
-          });
-          
-          return;
-        }
         
         // Set the game state with the new map
         set({ 
@@ -244,7 +249,6 @@ export const useGameStore = create<GameState>()(
       
       completeNode: (nodeId) => {
         const completedNodeIds = get().completedNodeIds;
-        console.log("🏆 Before completion, completedNodeIds:", completedNodeIds);
         
         // Ensure we don't add the same node twice
         if (completedNodeIds.includes(nodeId)) {
@@ -255,7 +259,6 @@ export const useGameStore = create<GameState>()(
         console.log("✅ Completing node:", nodeId);
         set((state) => {
           const newCompletedNodeIds = [...state.completedNodeIds, nodeId];
-          console.log("🔄 New completedNodeIds:", newCompletedNodeIds);
           return { 
             completedNodeIds: newCompletedNodeIds,
             _lastUpdated: new Date().toISOString()
@@ -269,11 +272,6 @@ export const useGameStore = create<GameState>()(
         
         // If health reaches 0, update gameState
         if (newHealth <= 0) {
-          // Mark current run as completed (but not successful)
-          if (state.currentRun) {
-            updateCurrentRun({ completed: true });
-          }
-          
           return {
             player: {
               ...state.player,
@@ -324,11 +322,6 @@ export const useGameStore = create<GameState>()(
       
       resetGame: () => {
         console.log("🔄 Resetting game to initial state");
-        
-        // Add this development guard to prevent accidental resets
-        if (process.env.NODE_ENV !== 'production') {
-          console.trace("🔍 Reset game called from:");
-        }
         
         // Only reset if not already in initial state to prevent loops
         const currentState = get();
@@ -417,7 +410,7 @@ export const useGameStore = create<GameState>()(
       },
       
       completeDay: () => {
-        const { map, completedNodeIds, player, currentRun } = get();
+        const { map, completedNodeIds, player } = get();
         
         // Can't complete if no map
         if (!map) {
@@ -428,11 +421,6 @@ export const useGameStore = create<GameState>()(
         // Check if player has run out of health
         if (player.health <= 0) {
           console.log("💀 Player has run out of health, transitioning to game over");
-          
-          // Update run data
-          if (currentRun) {
-            updateCurrentRun({ completed: true });
-          }
           
           set({ 
             gameState: 'game_over',
@@ -445,25 +433,12 @@ export const useGameStore = create<GameState>()(
         // Check if boss is defeated
         const isBossDefeated = completedNodeIds.includes(map.bossNodeId);
         
-        // Check if all non-boss nodes are completed
-        const allNodesCompleted = map.nodes
-          .filter(node => node.type !== 'boss' && node.type !== 'boss-ionix')
-          .every(node => completedNodeIds.includes(node.id));
-          
         // Check if player has enough completed nodes to progress
         // (Allow progress even if not everything is complete)
-        const hasMinimumProgress = completedNodeIds.length >= 3;
+        const hasMinimumProgress = completedNodeIds.length >= 1; // OPTION 1: Lower the bar for testing
         
         if (isBossDefeated) {
           console.log("🏆 Boss defeated, transitioning to victory");
-          
-          // Update run data
-          if (currentRun) {
-            updateCurrentRun({ 
-              completed: true,
-              score: player.insight
-            });
-          }
           
           set({ 
             gameState: 'victory',
@@ -474,7 +449,7 @@ export const useGameStore = create<GameState>()(
         }
         
         // If we have enough progress, transition to night phase
-        if (allNodesCompleted || hasMinimumProgress || completedNodeIds.length > 0) {
+        if (hasMinimumProgress || completedNodeIds.length > 0) {
           console.log("🌙 Day complete, transitioning to night phase");
           set({ 
             gamePhase: 'night',
@@ -484,12 +459,10 @@ export const useGameStore = create<GameState>()(
         }
         
         console.log("⚠️ Cannot complete day: Not enough progress");
-        // Maybe show a message to the player that they need to complete more nodes
       },
       
       completeNight: () => {
         console.log("☀️ Night phase complete, starting new day");
-        const { currentRun, currentDay } = get();
         
         // Increment day counter
         set((state) => ({ 
@@ -498,94 +471,32 @@ export const useGameStore = create<GameState>()(
           _lastUpdated: new Date().toISOString()
         }));
         
-        // Update run data
+        // OPTION 1: Use same map for next day for simplicity
+        // Update the current run
+        const currentRun = get().currentRun;
         if (currentRun) {
-          updateCurrentRun({ 
-            dayCount: currentDay + 1
-          });
+          set((state) => ({
+            currentRun: {
+              ...currentRun,
+              dayCount: state.currentDay
+            }
+          }));
         }
         
-        // Generate a new map with more nodes/complexity based on current day
-        // Use the same seed for consistent generation
-        const seed = currentRun?.seed || get().map?.seed || getRandomSeed();
-        
-        const newMap = generateMap({
-          seed,
-          difficultyLevel: currentDay,
-          mapType: 'tutorial'
-        });
-        
-        console.log(`🗺️ Generated new map for day ${get().currentDay + 1} with seed ${seed}`);
-        
         // In a full implementation, this would apply upgrades and 
-        // possibly restore some health
+        // possibly restore some health, and generate a new map
         set({
-          map: newMap,
+          // Don't change map in OPTION 1 implementation
           currentNodeId: null, // Don't auto-select anymore
           // Reset completedNodeIds for the new day
           completedNodeIds: [],
-          // In a real implementation, would apply more sophisticated health restoration
+          // Basic health restoration
           player: {
             ...get().player,
             health: Math.min(get().player.maxHealth, get().player.health + 1) // Restore 1 health
           },
           _lastUpdated: new Date().toISOString()
         });
-      },
-      
-      // Enhanced seed management
-      replaySeed: (seed: number) => {
-        console.log(`🎲 Replaying seed: ${seed}`);
-        
-        // Reset game state while preserving meta-progress
-        const { hasPlayedBefore, bonuses, recentRuns } = get();
-        
-        set({
-          ...initialState,
-          hasPlayedBefore,
-          bonuses,
-          recentRuns,
-          _lastUpdated: new Date().toISOString()
-        });
-        
-        // Start new game with specified seed
-        setTimeout(() => get().startGame({ seed }), 10);
-      },
-      
-      useDailyChallenge: () => {
-        console.log(`📅 Starting daily challenge run`);
-        
-        // Reset game state while preserving meta-progress
-        const { hasPlayedBefore, bonuses, recentRuns } = get();
-        
-        set({
-          ...initialState,
-          hasPlayedBefore,
-          bonuses,
-          recentRuns,
-          _lastUpdated: new Date().toISOString()
-        });
-        
-        // Start new game with daily challenge config
-        setTimeout(() => get().startGame({ useDailyChallenge: true }), 10);
-      },
-      
-      useRandomSeed: () => {
-        console.log(`🎲 Starting random seed run`);
-        
-        // Reset game state while preserving meta-progress
-        const { hasPlayedBefore, bonuses, recentRuns } = get();
-        
-        set({
-          ...initialState,
-          hasPlayedBefore,
-          bonuses,
-          recentRuns,
-          _lastUpdated: new Date().toISOString()
-        });
-        
-        // Start new game with random seed
-        setTimeout(() => get().startGame(), 10);
       },
       
       isNodeAccessible: (nodeId) => {
@@ -599,11 +510,7 @@ export const useGameStore = create<GameState>()(
         // Start node is always accessible
         if (map.startNodeId === nodeId) return true;
         
-        // Content-based accessibility (rather than type-based)
-        // Any calibration node with Kapoor should be an entry point
-        if (node.challengeContent === 'calibration' && node.character === 'kapoor') return true;
-        
-        // Special cases from the old system - keep for backward compatibility
+        // Special case for easy entry points
         if (node.type === 'entrance' || node.type === 'kapoorCalibration') return true;
         
         // Normal connection logic - if connected to a completed node
@@ -655,26 +562,12 @@ export const useGameStore = create<GameState>()(
         map: undefined,
         currentNodeId: undefined,
       }),
-      // Only merge whitelisted keys on hydration
       merge: (persistedState: any, currentState) => {
         console.log("🔄 Hydrating store from persisted state");
         
-        // Safely typed persisted state
-        const typedPersistedState = persistedState as PersistedGameState;
-        
-        // Check for version mismatch
-        if (typedPersistedState._storeVersion !== currentState._storeVersion) {
-          console.warn(`⚠️ Store version mismatch: ${typedPersistedState._storeVersion} vs ${currentState._storeVersion}`);
-          return {
-            ...currentState,
-            hasPlayedBefore: typedPersistedState.hasPlayedBefore || false,
-            recentRuns: typedPersistedState.recentRuns || [],
-          };
-        }
-        
         return {
           ...currentState,  // Start with current state
-          ...typedPersistedState, // Apply persisted values with proper typing
+          ...persistedState, // Apply persisted values (properly typed by TS)
           
           // Safety: Always regenerate map, never restore from persistence
           map: currentState.map, 
@@ -688,98 +581,10 @@ export const useGameStore = create<GameState>()(
   )
 );
 
-// Add development utilities for managing persistent state
-if (typeof window !== 'undefined' && process.env.NODE_ENV !== 'production') {
-  // @ts-ignore - Dev utility
-  window.rogueUtils = {
-    // Clear persisted state (keeps in-memory state)
-    clearStorage: () => {
-      console.log("🧹 Clearing persisted game state from localStorage");
-      localStorage.removeItem(STORAGE_KEY);
-      return "Storage cleared. Refresh the page to start fresh.";
-    },
-    
-    // Full reset (clears storage AND resets in-memory state)
-    hardReset: () => {
-      console.log("💥 Performing hard reset (storage + state)");
-      localStorage.removeItem(STORAGE_KEY);
-      useGameStore.getState().resetGame();
-      
-      setTimeout(() => {
-        console.log("⚡ Starting a fresh game");
-        useGameStore.getState().startGame();
-      }, 100);
-      
-      return "Hard reset complete. Game state is fresh.";
-    },
-    
-    // Get diagnostic info
-    debugState: () => {
-      const store = useGameStore.getState();
-      const persistedJson = localStorage.getItem(STORAGE_KEY);
-      const persistedState = persistedJson ? JSON.parse(persistedJson) : null;
-      
-      console.log("🔍 Current store state:", store);
-      console.log("💾 Persisted state:", persistedState);
-      
-      return {
-        inMemory: {
-          gameState: store.gameState,
-          gamePhase: store.gamePhase,
-          health: store.player.health,
-          insight: store.player.insight,
-          completedNodes: store.completedNodeIds.length,
-          hasMap: !!store.map,
-          nodeCount: store.map?.nodes.length || 0,
-          day: store.currentDay,
-          seed: store.map?.seed || 'none',
-          currentRun: store.currentRun
-        },
-        persisted: persistedState ? "Available" : "None",
-        persistedKeys: persistedState ? Object.keys(persistedState.state) : [],
-      };
-    },
-    
-    // Function to help with debugging persistence issues
-    checkPersistence: () => {
-      const hasPersistedState = !!localStorage.getItem(STORAGE_KEY);
-      console.log(`💾 Persistence check: ${hasPersistedState ? "State found in localStorage" : "No state in localStorage"}`);
-      return hasPersistedState ? "Persistence active" : "No persisted state";
-    },
-    
-    // Run specific seed
-    runSeed: (seed: number) => {
-      useGameStore.getState().replaySeed(seed);
-      return `Starting game with seed: ${seed}`;
-    },
-    
-    // Run daily challenge
-    runDailyChallenge: () => {
-      useGameStore.getState().useDailyChallenge();
-      return "Starting daily challenge";
-    },
-    
-    // Get seed URL
-    getSeedUrl: () => {
-      const seed = useGameStore.getState().map?.seed;
-      if (!seed) return "No active seed";
-      return createSeedUrl(seed);
-    },
-    
-    // List dev seeds
-    listDevSeeds: () => {
-      console.table(DEV_SEEDS);
-      return "See console for dev seed list";
-    }
-  };
-  
-  console.log("🛠️ Development utilities available at window.rogueUtils");
-}
-
 // Helper function to calculate bonuses from inventory
 export const calculateItemBonuses = (inventory: Item[], challengeType: 'clinical' | 'qa' | 'educational' | 'general') => {
   return inventory.reduce((total, item) => {
-    const effect = item.effects.find((e: any) => e.type === challengeType);
+    const effect = item.effects.find(e => e.type === challengeType);
     return total + (effect?.value || 0);
   }, 0);
 };

@@ -1,17 +1,16 @@
 // app/core/statemachine/GameStateMachine.ts
 /**
- * Game State Machine - Formalized state transitions for Rogue Resident
+ * Simplified Game State Machine for Vertical Slice
  * 
- * This state machine provides reliable, controlled transitions between game states
- * and phases while ensuring appropriate side effects occur consistently. It ensures:
+ * Focused exclusively on the day/night cycle for the vertical slice.
+ * This version maintains reliable transitions and validation while
+ * removing states and complexity not needed for the core experience.
  * 
- * 1. Only valid state transitions are permitted
- * 2. Appropriate visual transitions occur between states
- * 3. Event dispatching for state changes is centralized
- * 4. Game progression flows predictably
- * 
- * Inspired by state management systems in roguelikes like Hades and Pyre where
- * state consistency is critical for preventing progression blockers.
+ * Key differences from original:
+ * - Removed game_over and victory states
+ * - Simplified phase transitions
+ * - Reduced tracking to only what's needed for vertical slice
+ * - Maintained core validation for critical transitions
  */
 
 import { create } from 'zustand';
@@ -29,14 +28,12 @@ import {
 
 // ======== State & Phase Definitions ========
 
-// Top-level game states
+// Simplified game states for vertical slice
 export type GameState = 
   | 'not_started'  // Initial state, showing title screen
-  | 'in_progress'  // Active gameplay
-  | 'game_over'    // Player has lost
-  | 'victory';     // Player has won
+  | 'in_progress'; // Active gameplay
 
-// Game phase within the in_progress state
+// Game phases focused on day/night cycle
 export type GamePhase = 
   | 'day'                // Active gameplay at hospital
   | 'night'              // Knowledge constellation at home
@@ -48,14 +45,12 @@ export type GamePhase =
 // Define valid state transitions
 const VALID_STATE_TRANSITIONS: Record<GameState, GameState[]> = {
   'not_started': ['in_progress'],
-  'in_progress': ['game_over', 'victory'],
-  'game_over': ['not_started', 'in_progress'],
-  'victory': ['not_started', 'in_progress'],
+  'in_progress': ['not_started'] // Simplified to allow restart
 };
 
 // Define valid phase transitions
 const VALID_PHASE_TRANSITIONS: Record<GamePhase, GamePhase[]> = {
-  'day': ['transition_to_night', 'game_over', 'victory'],
+  'day': ['transition_to_night'],
   'night': ['transition_to_day'],
   'transition_to_night': ['night'],
   'transition_to_day': ['day'],
@@ -68,9 +63,6 @@ interface GameStateMachineState {
   gameState: GameState;
   gamePhase: GamePhase;
   
-  // Day tracking
-  currentDay: number;
-  
   // Transition flags
   isTransitioning: boolean;
   transitionData: {
@@ -80,38 +72,31 @@ interface GameStateMachineState {
     duration: number;
   } | null;
   
-  // Progress tracking data
+  // Progress tracking data for vertical slice
   completedNodeIds: string[];
-  bossDefeated: boolean;
   
   // State transition methods with validation
   transitionToState: (newState: GameState, reason?: string) => boolean;
   transitionToPhase: (newPhase: GamePhase, reason?: string) => boolean;
   
-  // Complex transitions with side effects
+  // Core phase transition methods
   completeDay: () => boolean;
   completeNight: () => boolean;
-  completeBoss: () => boolean;
   
-  // Helper methods
-  isDayComplete: () => boolean;
+  // Node completion tracking
   markNodeCompleted: (nodeId: string) => void;
-  advanceDay: () => void;
   
-  // Non-state related getters
+  // Getter
   getCompletedNodeIds: () => string[];
-  getCurrentDay: () => number;
 }
 
 export const useGameStateMachine = create<GameStateMachineState>((set, get) => ({
   // Initial state values
   gameState: 'not_started',
   gamePhase: 'day',
-  currentDay: 1,
   isTransitioning: false,
   transitionData: null,
   completedNodeIds: [],
-  bossDefeated: false,
   
   /**
    * Transition to a new game state with validation
@@ -124,7 +109,7 @@ export const useGameStateMachine = create<GameStateMachineState>((set, get) => (
     
     // Validate transition
     if (!VALID_STATE_TRANSITIONS[currentState].includes(newState)) {
-      console.error(`Invalid state transition: ${currentState} -> ${newState}`);
+      console.error(`[StateMachine] Invalid state transition: ${currentState} -> ${newState}`);
       return false;
     }
     
@@ -133,7 +118,7 @@ export const useGameStateMachine = create<GameStateMachineState>((set, get) => (
       set({ gamePhase: 'day' });
     }
     
-    // Dispatch event before state change to allow systems to prepare
+    // Dispatch event before state change
     changeGameState(currentState, newState, reason);
     
     // Update state
@@ -156,7 +141,7 @@ export const useGameStateMachine = create<GameStateMachineState>((set, get) => (
     
     // Validate transition
     if (!VALID_PHASE_TRANSITIONS[currentPhase].includes(newPhase)) {
-      console.error(`Invalid phase transition: ${currentPhase} -> ${newPhase}`);
+      console.error(`[StateMachine] Invalid phase transition: ${currentPhase} -> ${newPhase}`);
       return false;
     }
     
@@ -169,7 +154,7 @@ export const useGameStateMachine = create<GameStateMachineState>((set, get) => (
           from: currentPhase,
           to: newPhase === 'transition_to_day' ? 'day' : 'night',
           startTime: Date.now(),
-          duration: 4000 // 4 seconds - match PhaseTransition.tsx animation
+          duration: 3000 // 3 seconds for transition animation
         }
       });
     } else {
@@ -180,7 +165,7 @@ export const useGameStateMachine = create<GameStateMachineState>((set, get) => (
       });
     }
     
-    // Dispatch event before phase change to allow systems to prepare
+    // Dispatch event before phase change
     changeGamePhase(currentPhase, newPhase, reason);
     
     // Update phase
@@ -193,70 +178,52 @@ export const useGameStateMachine = create<GameStateMachineState>((set, get) => (
   },
   
   /**
-   * Complete the day phase, transitioning to night if conditions are met
+   * Complete the day phase, transitioning to night
    * @returns true if transition was triggered, false otherwise
    */
   completeDay: (): boolean => {
-    const { transitionToPhase, transitionToState, gameState, isDayComplete, bossDefeated } = get();
+    const { transitionToPhase, gamePhase } = get();
     
     // Cannot complete if not in day phase
-    if (get().gamePhase !== 'day') {
-      console.warn(`Cannot complete day: Not in day phase (current: ${get().gamePhase})`);
+    if (gamePhase !== 'day') {
+      console.warn(`[StateMachine] Cannot complete day: Not in day phase (current: ${gamePhase})`);
       return false;
     }
     
-    // Check if boss is defeated
-    if (bossDefeated) {
-      // Boss defeated - transition to victory
-      transitionToState('victory', 'boss_defeated');
-      return true;
-    }
+    // For vertical slice, always allow day completion if in day phase
+    transitionToPhase('transition_to_night', 'day_complete');
     
-    // Check if day is complete (enough nodes completed)
-    if (isDayComplete()) {
-      // Day complete - transition to night via transition animation
-      transitionToPhase('transition_to_night', 'day_complete');
-      
-      // Notify listening systems
-      useEventBus.getState().dispatch(
-        GameEventType.DAY_STARTED, 
-        {
-          day: get().currentDay,
-          completedNodeCount: get().completedNodeIds.length
-        }
-      );
-      
-      return true;
-    } else {
-      console.warn('Cannot complete day: Conditions not met');
-      return false;
-    }
+    // Notify listening systems
+    useEventBus.getState().dispatch(
+      GameEventType.DAY_STARTED, 
+      {
+        completedNodeCount: get().completedNodeIds.length
+      }
+    );
+    
+    return true;
   },
   
   /**
-   * Complete the night phase, transitioning to the next day
+   * Complete the night phase, transitioning to day
    * @returns true if transition was triggered, false otherwise
    */
   completeNight: (): boolean => {
-    const { transitionToPhase, advanceDay } = get();
+    const { transitionToPhase, gamePhase } = get();
     
     // Cannot complete if not in night phase
-    if (get().gamePhase !== 'night') {
-      console.warn(`Cannot complete night: Not in night phase (current: ${get().gamePhase})`);
+    if (gamePhase !== 'night') {
+      console.warn(`[StateMachine] Cannot complete night: Not in night phase (current: ${gamePhase})`);
       return false;
     }
     
-    // Advance to next day
-    advanceDay();
-    
-    // Transition to day via transition animation
+    // Always allow night completion if in night phase
     transitionToPhase('transition_to_day', 'night_complete');
     
     // Notify listening systems
     useEventBus.getState().dispatch(
       GameEventType.NIGHT_STARTED, 
       {
-        day: get().currentDay,
         previousCompletedNodeCount: get().completedNodeIds.length
       }
     );
@@ -265,39 +232,6 @@ export const useGameStateMachine = create<GameStateMachineState>((set, get) => (
     set({ completedNodeIds: [] });
     
     return true;
-  },
-  
-  /**
-   * Mark the boss as defeated, triggering victory state
-   * @returns true if successful, false otherwise
-   */
-  completeBoss: (): boolean => {
-    // Mark boss as defeated
-    set({ bossDefeated: true });
-    
-    // Notify systems
-    useEventBus.getState().dispatch(
-      GameEventType.BOSS_DEFEATED, 
-      {
-        day: get().currentDay
-      }
-    );
-    
-    return true;
-  },
-  
-  /**
-   * Check if the day phase should be considered complete
-   * @returns true if conditions are met to end the day
-   */
-  isDayComplete: (): boolean => {
-    const { completedNodeIds, bossDefeated } = get();
-    
-    // If boss is defeated, day is complete
-    if (bossDefeated) return true;
-    
-    // For prototype: Day is complete if player has finished at least 3 nodes
-    return completedNodeIds.length >= 3;
   },
   
   /**
@@ -316,33 +250,17 @@ export const useGameStateMachine = create<GameStateMachineState>((set, get) => (
       };
     });
     
-    // Check if this is a boss node
-    if (nodeId.includes('boss') || nodeId.includes('ionix')) {
-      get().completeBoss();
-    }
+    console.log(`[StateMachine] Node completed: ${nodeId}`);
   },
   
-  /**
-   * Advance to the next day
-   */
-  advanceDay: (): void => {
-    set(state => ({
-      currentDay: state.currentDay + 1
-    }));
-    
-    console.log(`[StateMachine] Advanced to day ${get().currentDay}`);
-  },
-  
-  // Getters
-  getCompletedNodeIds: () => get().completedNodeIds,
-  getCurrentDay: () => get().currentDay
+  // Getter
+  getCompletedNodeIds: () => get().completedNodeIds
 }));
 
 // ======== Integration with Event System ========
 
 /**
  * Connect state machine to event bus to handle specific events
- * This creates the connections between UI actions and state transitions
  */
 export function initializeStateMachine() {
   const { subscribe } = useEventBus.getState();
@@ -401,7 +319,6 @@ export function initializeStateMachine() {
 export function useGameState() {
   const gameState = useGameStateMachine(state => state.gameState);
   const gamePhase = useGameStateMachine(state => state.gamePhase);
-  const currentDay = useGameStateMachine(state => state.currentDay);
   const isTransitioning = useGameStateMachine(state => state.isTransitioning);
   const transitionData = useGameStateMachine(state => state.transitionData);
   const completedNodeIds = useGameStateMachine(state => state.completedNodeIds);
@@ -415,7 +332,6 @@ export function useGameState() {
     // Current state
     gameState,
     gamePhase,
-    currentDay,
     isTransitioning,
     transitionData,
     completedNodeIds,
@@ -429,8 +345,6 @@ export function useGameState() {
     // Convenient derived properties
     isDay: gamePhase === 'day',
     isNight: gamePhase === 'night',
-    isGameOver: gameState === 'game_over',
-    isVictory: gameState === 'victory',
     isActive: gameState === 'in_progress'
   };
 }
@@ -447,12 +361,10 @@ export function setupGameStateMachine() {
     // Expose teardown if needed
     teardown: () => {
       console.log('[StateMachine] Teardown initiated');
-      // Any cleanup needed
     }
   };
 }
 
-// Export interfaces and utilities
 export default {
   useGameStateMachine,
   useGameState,

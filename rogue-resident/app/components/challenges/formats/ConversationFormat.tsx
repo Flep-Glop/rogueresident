@@ -4,7 +4,6 @@ import { useGameStore } from '../../../store/gameStore';
 import { useDialogueFlow, DialogueStage, DialogueOptionView } from '../../../hooks/useDialogueFlow';
 import { useTypewriter } from '../../../hooks/useTypewriter';
 import { PixelButton, PixelText } from '../../PixelThemeProvider';
-import { useGameEffects } from '../../GameEffects';
 import { useEventBus } from '../../../core/events/CentralEventBus';
 
 // Results interface for completion
@@ -51,7 +50,6 @@ export default function ConversationFormat({
 }: ConversationFormatProps) {
   // Core game systems
   const { currentNodeId } = useGameStore();
-  const { playSound } = useGameEffects();
   
   // Local state
   const [playerScore, setPlayerScore] = useState(0);
@@ -60,18 +58,9 @@ export default function ConversationFormat({
   // Character data (memoized to prevent recreation)
   const charData = useMemo(() => getCharacterData(character), [character]);
   
-  // Use dialogue flow hook
-  const {
-    currentStage,
-    currentStageId,
-    selectedOption,
-    showResponse,
-    showBackstory,
-    backstoryText,
-    handleOptionSelect,
-    handleContinue,
-    completeDialogue,
-  } = useDialogueFlow({
+  // Use dialogue flow hook 
+  // We're adapting to its actual return shape while maintaining compatibility
+  const dialogueState = useDialogueFlow({
     characterId: character,
     nodeId: currentNodeId || undefined,
     dialogueId,
@@ -79,9 +68,43 @@ export default function ConversationFormat({
     onOptionSelected,
     onStageChange
   });
+
+  // Extract values from the dialogue state with safe fallbacks
+  // This handles both old and new hook API formats
+  const currentStage = 'currentStage' in dialogueState ? dialogueState.currentStage : {
+    id: dialogueState.instanceId || 'loading',
+    text: dialogueState.currentText || '',
+    options: dialogueState.options || [],
+    isConclusion: false,
+    contextNote: ''
+  };
+  
+  const currentStageId = 'currentStageId' in dialogueState ? 
+    dialogueState.currentStageId : 
+    (dialogueState.instanceId || currentStage.id || 'loading');
+  
+  const showResponse = dialogueState.showResponse || false;
+  const showBackstory = dialogueState.showBackstory || false;
+  const backstoryText = dialogueState.backstoryText || '';
+  
+  // Safe function references
+  const handleOptionSelect = 'handleOptionSelect' in dialogueState ? 
+    dialogueState.handleOptionSelect : 
+    ((option: DialogueOptionView) => console.warn('handleOptionSelect not available'));
+  
+  const handleContinue = 'handleContinue' in dialogueState ? 
+    dialogueState.handleContinue : 
+    (() => console.warn('handleContinue not available'));
+  
+  const completeDialogue = 'completeDialogue' in dialogueState ? 
+    dialogueState.completeDialogue : 
+    (() => console.warn('completeDialogue not available'));
   
   // Handle option selection with local state updates
-  const handleOptionSelectWrapper = (option: DialogueOptionView) => {
+  const handleOptionSelectWrapper = (option: DialogueOptionView & { 
+    relationshipChange?: number;
+    insightGain?: number;
+  }) => {
     // Update local state
     if (option.relationshipChange) {
       setPlayerScore(prev => prev + option.relationshipChange);
@@ -93,9 +116,6 @@ export default function ConversationFormat({
       useGameStore.getState().updateInsight(option.insightGain);
     }
     
-    // Play sound
-    if (playSound) playSound('click');
-    
     // Forward to dialogue handler
     handleOptionSelect(option);
   };
@@ -104,7 +124,7 @@ export default function ConversationFormat({
   const handleContinueWrapper = () => {
     // Check if at conclusion
     if ((currentStage.isConclusion && !showResponse) || 
-        currentStage.id === 'journal-presentation') {
+        currentStageId === 'journal-presentation') {
       
       // Complete the dialogue and challenge
       finalizeChallenge();
@@ -135,19 +155,19 @@ export default function ConversationFormat({
     }
   };
   
-  // Initialize typewriter for main text
+  // Initialize typewriter for main text (with fallback)
   const { 
     displayText: displayedText, 
     isTyping, 
     complete: skipTyping 
-  } = useTypewriter(currentStage.text);
+  } = useTypewriter(currentStage.text || '');
   
-  // Initialize typewriter for backstory
+  // Initialize typewriter for backstory (with fallback)
   const { 
     displayText: displayedBackstoryText,
     isTyping: isTypingBackstory,
     complete: skipBackstoryTyping
-  } = useTypewriter(backstoryText);
+  } = useTypewriter(backstoryText || '');
   
   // Main conversation UI
   return (
@@ -166,7 +186,7 @@ export default function ConversationFormat({
         
         <div className="bg-surface-dark px-3 py-1 text-sm font-pixel">
           <PixelText className="text-text-secondary">
-            {currentStage.id || 'Dialogue'}
+            {currentStageId || 'Dialogue'}
           </PixelText>
         </div>
       </div>
@@ -203,7 +223,7 @@ export default function ConversationFormat({
       ) : (
         currentStage.options && currentStage.options.length > 0 ? (
           <div className="space-y-2">
-            {currentStage.options.map((option) => (
+            {currentStage.options.map((option: any) => (
               <button
                 key={option.id}
                 className="w-full text-left p-3 bg-surface hover:bg-surface-dark pixel-borders-thin"
@@ -239,6 +259,7 @@ export default function ConversationFormat({
           <div>State Machine: {stateMachineEnabled ? 'Yes' : 'No'}</div>
           <div>Current Stage: {currentStageId}</div>
           <div>Player Score: {playerScore}</div>
+          <div>Hook Return Structure: {Object.keys(dialogueState).join(', ')}</div>
         </div>
       )}
     </div>

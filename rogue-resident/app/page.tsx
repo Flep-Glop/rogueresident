@@ -1,60 +1,87 @@
-// app/page.tsx
-"use client";
-
-// Import the emergency hotfix to stabilize the event system first
-import '@/app/core/events/InstallEmergencyHotfix';
-
-import { useState, useEffect } from 'react';
-import GameContainer from '@/app/components/GameContainer';
-import SimplifiedKapoorMap from '@/app/components/vs/SimplifiedKapoorMap';
-import VerticalSliceDebugPanel from '@/app/components/debug/VerticalSliceDebugPanel';
-import DebugStatePanel from '@/app/components/debug/DebugStatePanel';
+'use client';
+import { useEffect } from 'react';
+import { ErrorBoundary } from 'react-error-boundary';
+import GameContainer from './components/GameContainer';
+import PixelThemeProvider from './components/PixelThemeProvider';
+import { useCoreInitialization } from './core/init';
 
 /**
- * Main page component with integration of the vertical slice
- * This demonstrates the core loop with the Kapoor calibration path
+ * Vertical Slice Entry Point
+ * 
+ * Entry point for the Rogue Resident vertical slice. This component:
+ * 1. Initializes core systems (event bus, state machine, progression resolver)
+ * 2. Provides error boundary for crash resilience
+ * 3. Wraps the game in necessary theme providers
  */
-export default function Home() {
-  const [isLoaded, setIsLoaded] = useState(false);
+export default function VerticalSlicePage() {
+  // Initialize core systems
+  const { initialized, reinitialize } = useCoreInitialization();
   
-  // Simple preloader
+  // Make the reinitialize function available globally for emergency recovery
   useEffect(() => {
-    // Simulate asset loading - would be replaced with actual asset loading
-    const timer = setTimeout(() => {
-      setIsLoaded(true);
-    }, 800);
+    if (typeof window !== 'undefined') {
+      (window as any).__FORCE_REINITIALIZE__ = reinitialize;
+    }
     
-    return () => clearTimeout(timer);
-  }, []);
-  
-  if (!isLoaded) {
-    return (
-      <div className="h-screen w-full flex items-center justify-center bg-gray-900">
-        <div className="text-center">
-          <h1 className="text-3xl text-blue-400 mb-6">Initializing Rogue Resident</h1>
-          <div className="w-64 h-2 bg-gray-800 rounded-full mx-auto overflow-hidden">
-            <div className="h-full bg-blue-600 animate-pulse transition-all duration-500" style={{width: '70%'}}></div>
-          </div>
-          <p className="mt-4 text-gray-500">Preparing knowledge constellation...</p>
+    console.log(`Core systems ${initialized ? 'are initialized' : 'initialization pending'}`);
+    
+    // Cleanup when component unmounts
+    return () => {
+      if (typeof window !== 'undefined') {
+        delete (window as any).__FORCE_REINITIALIZE__;
+      }
+    };
+  }, [initialized, reinitialize]);
+
+  // Fallback UI for critical errors
+  const ErrorFallback = ({ error, resetErrorBoundary }: { 
+    error: Error, 
+    resetErrorBoundary: () => void 
+  }) => (
+    <div className="min-h-screen flex items-center justify-center bg-gray-900 text-white p-6">
+      <div className="max-w-lg">
+        <h1 className="text-2xl font-bold mb-4 text-red-500">Game Error</h1>
+        <div className="bg-gray-800 p-4 rounded mb-4 font-mono text-sm overflow-auto max-h-64">
+          {error.message}
+          {error.stack && (
+            <pre className="mt-2 text-xs text-gray-400">
+              {error.stack.split('\n').slice(0, 5).join('\n')}
+            </pre>
+          )}
         </div>
+        <button 
+          onClick={() => {
+            // First reinitialize core systems
+            reinitialize();
+            console.log('Core systems reinitialized after error');
+            // Then reset the error boundary
+            resetErrorBoundary();
+          }}
+          className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded"
+        >
+          Try Again
+        </button>
+        <button 
+          onClick={() => window.location.reload()}
+          className="bg-gray-700 hover:bg-gray-600 text-white px-4 py-2 rounded ml-2"
+        >
+          Reload Page
+        </button>
       </div>
-    );
-  }
-  
+    </div>
+  );
+
   return (
-    <main className="h-screen w-full relative overflow-hidden bg-black">
-      {/* Main game container with vertical slice map integration */}
-      <GameContainer 
-        mapSlotContent={<SimplifiedKapoorMap />}
-      />
-      
-      {/* Debug panels (only visible in development) */}
-      {process.env.NODE_ENV !== 'production' && (
-        <>
-          <VerticalSliceDebugPanel />
-          <DebugStatePanel />
-        </>
-      )}
-    </main>
+    <ErrorBoundary
+      FallbackComponent={ErrorFallback}
+      onReset={() => {
+        // Core systems will be reinitialized in the ErrorFallback component
+        console.log('Error boundary reset');
+      }}
+    >
+      <div className="min-h-screen bg-black text-white">
+        <GameContainer />
+      </div>
+    </ErrorBoundary>
   );
 }

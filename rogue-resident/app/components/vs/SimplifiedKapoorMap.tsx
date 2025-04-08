@@ -1,25 +1,20 @@
 // app/components/vs/SimplifiedKapoorMap.tsx
 'use client';
 import { useEffect, useState, useRef } from 'react';
-import { useGameStore } from '../../store/gameStore';
-import { useGameEffects } from '../GameEffects';
-import { useEventBus, safeDispatch } from '../../core/events/CentralEventBus';
-import { GameEventType } from '../../core/events/EventTypes';
-import { useGameState } from '../../core/statemachine/GameStateMachine';
-import { useJournalStore } from '../../store/journalStore'; // CRITICAL ADDITION: Direct journal access
+import { useGameStore } from '@/app/store/gameStore';
+import { useEventBus } from '@/app/core/events/CentralEventBus';
+import { GameEventType } from '@/app/core/events/EventTypes';
+import { useGameState } from '@/app/core/statemachine/GameStateMachine';
+import { useJournalStore } from '@/app/store/journalStore';
 
 /**
- * SafeEventDispatch - Enhanced helper function for safely dispatching events
- * This prevents errors from propagating and causing React render issues
- * Uses direct safeDispatch import for more reliable event transmission
+ * Safe event dispatch helper - minimizes crashes from event system issues
  */
 function safeEventDispatch(eventType: GameEventType, payload: any, source?: string) {
   try {
-    // Use the imported safeDispatch instead of direct event bus access
-    safeDispatch(eventType, payload, source || 'simplifiedKapoorMap');
+    useEventBus.getState().dispatch(eventType, payload, source || 'simplifiedKapoorMap');
   } catch (error) {
     console.error(`[SafeEventDispatch] Error dispatching ${eventType}:`, error);
-    // Continue execution despite event error
   }
 }
 
@@ -29,9 +24,6 @@ function safeEventDispatch(eventType: GameEventType, payload: any, source?: stri
  * A focused map component that strips away complexity to spotlight the
  * critical path through Dr. Kapoor's calibration node. Designed specifically
  * for the vertical slice to validate the core gameplay loop.
- * 
- * Inspired by the navigation systems of Hades, where initial runs focus
- * player attention on critical path progression rather than exploration.
  */
 export default function SimplifiedKapoorMap() {
   const { 
@@ -43,9 +35,6 @@ export default function SimplifiedKapoorMap() {
   } = useGameStore();
   
   const { completeDay } = useGameState();
-  const { playSound, flashScreen, createConnectionEffect } = useGameEffects();
-  
-  // CRITICAL ADDITION: Direct journal store access for critical path backup
   const journalStore = useJournalStore();
   
   const [kapoorNodeId, setKapoorNodeId] = useState<string | null>(null);
@@ -56,25 +45,6 @@ export default function SimplifiedKapoorMap() {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const nodeRef = useRef<HTMLDivElement>(null);
   const instanceId = useRef(`vs-map-${Date.now()}`).current;
-  const subscriptionsRef = useRef<Array<() => void>>([]);
-  
-  // Cleanup function for event subscriptions
-  useEffect(() => {
-    return () => {
-      // Unsubscribe from all events
-      subscriptionsRef.current.forEach((unsubscribe, index) => {
-        try {
-          if (typeof unsubscribe === 'function') {
-            unsubscribe();
-          }
-        } catch (error) {
-          console.error(`Error unsubscribing from event at index ${index}:`, error);
-        }
-      });
-      // Clear the subscriptions
-      subscriptionsRef.current = [];
-    };
-  }, []);
   
   // Initialize map if needed
   useEffect(() => {
@@ -87,9 +57,9 @@ export default function SimplifiedKapoorMap() {
           forceVerticalSlice: true
         });
         
-        // Using better error handling for event dispatch
+        // Log map initialization
         try {
-          safeDispatch(
+          safeEventDispatch(
             GameEventType.UI_BUTTON_CLICKED,
             {
               componentId: 'simplifiedKapoorMap',
@@ -137,9 +107,9 @@ export default function SimplifiedKapoorMap() {
           console.log('🔍 Found Kapoor calibration node:', kapoorNode.id);
           setKapoorNodeId(kapoorNode.id);
           
-          // Use direct safeDispatch for guaranteed error handling
+          // Log event
           try {
-            safeDispatch(
+            safeEventDispatch(
               GameEventType.UI_BUTTON_CLICKED,
               {
                 componentId: 'simplifiedKapoorMap',
@@ -188,13 +158,9 @@ export default function SimplifiedKapoorMap() {
           setCurrentNode(kapoorNodeId);
           setHasAutoSelected(true);
           
-          // Visual feedback
-          if (playSound) playSound('node-select');
-          if (flashScreen) flashScreen('blue');
-          
-          // Use improved error handling for event dispatch
+          // Log event
           try {
-            safeDispatch(
+            safeEventDispatch(
               GameEventType.UI_BUTTON_CLICKED,
               {
                 componentId: 'simplifiedKapoorMap',
@@ -208,7 +174,6 @@ export default function SimplifiedKapoorMap() {
             );
           } catch (eventError) {
             console.warn('[Map] Auto-select event failed, continuing anyway:', eventError);
-            // Critical progression continues even if event fails
           }
         } catch (error) {
           console.error('Error auto-selecting node:', error);
@@ -217,48 +182,7 @@ export default function SimplifiedKapoorMap() {
       
       return () => clearTimeout(timer);
     }
-  }, [isMapReady, kapoorNodeId, currentNodeId, hasAutoSelected, setCurrentNode, playSound, flashScreen]);
-  
-  // Play reveal effect once map is ready
-  useEffect(() => {
-    if (isMapReady && !revealEffectPlayed && mapContainerRef.current) {
-      try {
-        setRevealEffectPlayed(true);
-        
-        // Create particles for visual flair
-        if (nodeRef.current && createConnectionEffect) {
-          const rect = nodeRef.current.getBoundingClientRect();
-          const centerX = rect.left + rect.width / 2;
-          const centerY = rect.top + rect.height / 2;
-          
-          // Emit particles from node
-          for (let i = 0; i < 8; i++) {
-            setTimeout(() => {
-              try {
-                if (createConnectionEffect) {
-                  const angle = (i / 8) * Math.PI * 2;
-                  const distance = 100;
-                  const endX = centerX + Math.cos(angle) * distance;
-                  const endY = centerY + Math.sin(angle) * distance;
-                  
-                  createConnectionEffect(centerX, centerY, endX, endY, {
-                    duration: 1200,
-                    color: 'rgba(59, 130, 246, 0.6)', // Blue
-                    width: 2
-                  });
-                }
-              } catch (effectError) {
-                // Ignore effect errors - they're just visual flair
-                console.debug('[Map] Effect creation error:', effectError);
-              }
-            }, i * 100);
-          }
-        }
-      } catch (error) {
-        console.error('Error playing reveal effect:', error);
-      }
-    }
-  }, [isMapReady, revealEffectPlayed, createConnectionEffect]);
+  }, [isMapReady, kapoorNodeId, currentNodeId, hasAutoSelected, setCurrentNode]);
   
   // Handle node click
   const handleNodeClick = () => {
@@ -270,13 +194,9 @@ export default function SimplifiedKapoorMap() {
         // Update game state
         setCurrentNode(kapoorNodeId);
         
-        // Visual and audio feedback
-        if (playSound) playSound('node-select');
-        if (flashScreen) flashScreen('blue');
-        
-        // Use direct safeDispatch for resilient events
+        // Log event
         try {
-          safeDispatch(
+          safeEventDispatch(
             GameEventType.UI_BUTTON_CLICKED,
             {
               componentId: 'simplifiedKapoorMap',
@@ -290,7 +210,6 @@ export default function SimplifiedKapoorMap() {
           );
         } catch (eventError) {
           console.warn('[Map] Node click event failed, continuing anyway:', eventError);
-          // Critical progression continues even if event fails
         }
       } catch (error) {
         console.error('Error handling node click:', error);
@@ -298,16 +217,16 @@ export default function SimplifiedKapoorMap() {
     }
   };
   
-  // CRITICAL ADDITION: Emergency journal acquisition function
+  // Emergency journal acquisition function
   const forceJournalAcquisition = () => {
     if (!journalStore.hasJournal) {
       try {
         console.log('⚠️ Forcing emergency journal acquisition');
         journalStore.initializeJournal('technical');
         
-        // Log that we had to force journal acquisition
+        // Log event
         try {
-          safeDispatch(
+          safeEventDispatch(
             GameEventType.JOURNAL_ACQUIRED,
             {
               tier: 'technical',
@@ -320,10 +239,6 @@ export default function SimplifiedKapoorMap() {
         } catch (e) {
           console.error('Error logging emergency journal acquisition:', e);
         }
-        
-        // Visual confirmation
-        if (flashScreen) flashScreen('green');
-        if (playSound) playSound('success');
         
         return true;
       } catch (error) {
@@ -338,21 +253,18 @@ export default function SimplifiedKapoorMap() {
   const handleEndDay = () => {
     try {
       if (completedNodeIds.length > 0) {
-        // CRITICAL ADDITION: Check if the journal was acquired and force if needed
+        // Check if the journal was acquired and force if needed
         const journalSuccess = forceJournalAcquisition();
         if (journalSuccess) {
           console.log('🔄 Successfully forced journal acquisition before night phase');
         }
         
-        // Visual and audio feedback
-        if (playSound) playSound('click');
-        
         // Trigger night phase transition
         completeDay();
         
-        // Use direct safeDispatch for resilient events
+        // Log event
         try {
-          safeDispatch(
+          safeEventDispatch(
             GameEventType.UI_BUTTON_CLICKED,
             {
               componentId: 'dayCompleteButton',
@@ -362,14 +274,10 @@ export default function SimplifiedKapoorMap() {
             'SimplifiedKapoorMap.endDay'
           );
         } catch (eventError) {
-          // Day completion is critical path, so log but continue
           console.warn('[Map] End day event failed, continuing anyway:', eventError);
         }
       } else {
         // Indicate that node completion is required
-        if (playSound) playSound('error');
-        if (flashScreen) flashScreen('red');
-        
         // Visual feedback on button
         const button = document.querySelector('.end-day-button');
         if (button instanceof HTMLElement) {
@@ -387,7 +295,7 @@ export default function SimplifiedKapoorMap() {
     } catch (error) {
       console.error('Error handling end day:', error);
       
-      // CRITICAL ADDITION: Resilient recovery - force day completion anyway
+      // Resilient recovery - force day completion anyway
       try {
         console.warn('🔄 Attempting emergency day completion despite error');
         completeDay();
@@ -492,7 +400,7 @@ export default function SimplifiedKapoorMap() {
         </div>
       </div>
       
-      {/* CRITICAL ADDITION: Emergency Journal Button */}
+      {/* Emergency Journal Button */}
       {completedNodeIds.length > 0 && !journalStore.hasJournal && (
         <div className="mt-4">
           <button

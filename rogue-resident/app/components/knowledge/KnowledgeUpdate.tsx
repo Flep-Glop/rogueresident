@@ -1,7 +1,10 @@
 'use client';
 import { useState, useEffect } from 'react';
-import { useGameEffects } from '../GameEffects';
-import { PixelText } from '../PixelThemeProvider';
+
+// Simple pixel text component to replace PixelThemeProvider
+const PixelText = ({ className = "", children }: { className?: string, children: React.ReactNode }) => (
+  <div className={`font-pixel ${className}`}>{children}</div>
+);
 
 interface KnowledgeUpdateProps {
   conceptName: string;
@@ -11,6 +14,10 @@ interface KnowledgeUpdateProps {
   onComplete?: () => void;
 }
 
+/**
+ * Knowledge Update - Notification component for knowledge gains
+ * Simplified version without sound effects
+ */
 export default function KnowledgeUpdate({
   conceptName,
   domainName,
@@ -20,27 +27,9 @@ export default function KnowledgeUpdate({
 }: KnowledgeUpdateProps) {
   const [visible, setVisible] = useState(true);
   const [animationStage, setAnimationStage] = useState<'enter' | 'active' | 'exit'>('enter');
-  const { playSound } = useGameEffects();
   
-  // Play sound effect when component mounts
+  // Animation sequence
   useEffect(() => {
-    if (playSound) {
-      // Use compatible sound effects based on gain amount
-      if (gainAmount >= 20) {
-        // Major knowledge gain - use success sound
-        playSound('success');
-      } else if (gainAmount >= 10) {
-        // Medium knowledge gain - use click sound
-        playSound('click');
-      } else {
-        // Minor knowledge gain - use a soft sound
-        playSound('select');
-      }
-      
-      // TODO: Add specific knowledge gain sounds to SoundEffect type
-      // For now, using compatible sound effects as placeholders
-    }
-    
     // Animation sequence
     const enterTimer = setTimeout(() => {
       setAnimationStage('active');
@@ -60,7 +49,7 @@ export default function KnowledgeUpdate({
       clearTimeout(activeTimer);
       clearTimeout(exitTimer);
     };
-  }, [gainAmount, onComplete, playSound]);
+  }, [gainAmount, onComplete]);
   
   if (!visible) return null;
   

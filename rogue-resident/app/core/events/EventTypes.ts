@@ -1,73 +1,160 @@
 // app/core/events/EventTypes.ts
 /**
- * Game event type definitions used throughout the application.
- * Centralized to ensure consistency and prevent type errors.
+ * Streamlined Game Event Types for Vertical Slice
  * 
- * The enum pattern allows for type safety while string values
- * enable easy debugging in console logs and event tracing.
+ * This focused event taxonomy includes only essential events needed
+ * for the core day/night cycle with Dr. Kapoor. This ensures a clean,
+ * focused implementation while maintaining extensibility.
+ * 
+ * Original implementation had 40+ event types; this version focuses on ~15
+ * that directly support the vertical slice experience.
  */
 
 export enum GameEventType {
-  // UI Events
+  // ===== UI Events =====
+  // Essential interface interactions
   UI_BUTTON_CLICKED = 'ui:button:clicked',
-  UI_TOGGLE_CLICKED = 'ui:toggle:clicked',
-  UI_CLOSE_CLICKED = 'ui:close:clicked',
   UI_OPTION_SELECTED = 'ui:option:selected',
   UI_NODE_CLICKED = 'ui:node:clicked',
-  UI_NODE_HOVERED = 'ui:node:hovered',
-  UI_DIALOGUE_ADVANCED = 'ui:dialogue:advanced',
-  UI_JOURNAL_OPENED = 'ui:journal:opened',
-  UI_JOURNAL_CLOSED = 'ui:journal:closed',
-  UI_JOURNAL_PAGE_CHANGED = 'ui:journal:page:changed',
   
-  // Visual and Sound Effects
-  EFFECT_SOUND_PLAYED = 'effect:sound:played',
-  EFFECT_SCREEN_FLASH = 'effect:screen:flash',
-  EFFECT_PARTICLE_EMITTED = 'effect:particle:emitted',
-  
-  // Dialogue Events
+  // ===== Dialogue Events =====
+  // Core narrative flow events
   DIALOGUE_STARTED = 'dialogue:started',
   DIALOGUE_OPTION_SELECTED = 'dialogue:option:selected',
   DIALOGUE_COMPLETED = 'dialogue:completed',
-  DIALOGUE_SKIPPED = 'dialogue:skipped',
   DIALOGUE_CRITICAL_PATH = 'dialogue:critical:path',
   
-  // Challenge Events
-  CHALLENGE_STARTED = 'challenge:started',
-  CHALLENGE_COMPLETED = 'challenge:completed',
-  CHALLENGE_FAILED = 'challenge:failed',
+  // ===== Map Navigation Events =====
+  // Core map interaction
+  NODE_COMPLETED = 'node:completed',
   
-  // Map Navigation Events
-  NODE_REVEALED = 'map:node:revealed',
-  NODE_COMPLETED = 'map:node:completed',
-  NODE_LOCKED = 'map:node:locked',
-  
-  // Game State Events
+  // ===== Game State Events =====
+  // Day/night cycle core events
   GAME_STATE_CHANGED = 'state:state:changed',
   GAME_PHASE_CHANGED = 'state:phase:changed',
-  GAME_DAY_STARTED = 'state:day:started',
-  GAME_NIGHT_STARTED = 'state:night:started',
-  
-  // Session Events
+  DAY_STARTED = 'day:started',
+  NIGHT_STARTED = 'night:started',
   SESSION_STARTED = 'session:started',
-  SESSION_ENDED = 'session:ended',
-  SESSION_PAUSED = 'session:paused',
-  SESSION_RESUMED = 'session:resumed',
   
-  // Progression Events
-  PROGRESSION_CHECKPOINT = 'progression:checkpoint',
+  // ===== Progression Events =====
+  // Critical progression checkpoints
   JOURNAL_ACQUIRED = 'progression:journal:acquired',
-  JOURNAL_UPGRADED = 'progression:journal:upgraded',
   KNOWLEDGE_GAINED = 'progression:knowledge:gained',
+  KNOWLEDGE_TRANSFERRED = 'progression:knowledge:transferred',
+  CHALLENGE_COMPLETED = 'challenge:completed',
   
-  // Transaction Events
+  // ===== Transaction Events =====
+  // These facilitate critical path completion
   PROGRESSION_TRANSACTION_STARTED = 'progression:transaction:started',
   PROGRESSION_TRANSACTION_COMPLETED = 'progression:transaction:completed',
   PROGRESSION_TRANSACTION_CANCELLED = 'progression:transaction:cancelled',
   PROGRESSION_TRANSACTION_REPAIRED = 'progression:transaction:repaired',
   
-  // Debug Events
-  DEBUG_LOG = 'debug:log',
-  DEBUG_ERROR = 'debug:error',
+  // ===== Debug Events =====
+  // Support for debug panel
   DEBUG_COMMAND = 'debug:command'
+}
+
+// ===== Event Payload Types =====
+// These define the structure of data for each event
+
+/**
+ * UI Event Payload
+ */
+export interface UIEventPayload {
+  componentId: string;
+  action: string;
+  metadata?: Record<string, any>;
+  position?: { x: number, y: number };
+}
+
+/**
+ * Dialogue Event Payload
+ */
+export interface DialogueEventPayload {
+  dialogueId: string;
+  characterId: string;
+  nodeId?: string;
+}
+
+/**
+ * Dialogue Option Selection Payload
+ */
+export interface DialogueOptionPayload extends DialogueEventPayload {
+  optionId: string;
+  responseId: string;
+  score?: number;
+}
+
+/**
+ * Node Completion Payload
+ */
+export interface NodeCompletionPayload {
+  nodeId: string;
+  character?: string;
+  result?: {
+    relationshipChange?: number;
+    journalTier?: string;
+    isJournalAcquisition?: boolean;
+  };
+}
+
+/**
+ * State Change Payload
+ */
+export interface StateChangePayload {
+  from: string;
+  to: string;
+  reason?: string;
+}
+
+/**
+ * Journal Acquisition Payload
+ */
+export interface JournalAcquisitionPayload {
+  tier: 'base' | 'technical' | 'annotated';
+  character: string;
+  source?: string;
+  forced?: boolean;
+}
+
+/**
+ * Knowledge Gain Payload
+ */
+export interface KnowledgeGainPayload {
+  conceptId: string;
+  amount: number;
+  domainId?: string;
+  character?: string;
+  source?: string;
+}
+
+/**
+ * Knowledge Transfer Payload
+ */
+export interface KnowledgeTransferPayload {
+  conceptIds: string[];
+  source: string;
+  successful: boolean;
+}
+
+/**
+ * Transaction Payload
+ */
+export interface TransactionPayload {
+  transactionId: string;
+  type: string;
+  character?: string;
+  nodeId?: string;
+  metadata?: Record<string, any>;
+  duration?: number;
+  stuckDuration?: number;
+}
+
+/**
+ * Debug Command Payload
+ */
+export interface DebugCommandPayload {
+  command: string;
+  params?: Record<string, any>;
 }

@@ -4,55 +4,41 @@ import { useState, useEffect, useRef } from 'react';
 import { useGameStore } from '../store/gameStore';
 import { useKnowledgeStore } from '../store/knowledgeStore';
 import { PixelText, PixelButton } from './PixelThemeProvider';
-import { useGameEffects } from './GameEffects';
-import ConstellationView from './knowledge/ConstellationView';
-import PhaseTransition from './PhaseTransition';
 
 /**
  * HillHomeScene - Night phase component with constellation focus
  * 
- * This version emphasizes the constellation as the primary progression system
- * and creates a meaningful contrast to the hospital environment
+ * OPTION 1 IMPLEMENTATION: Core functionality only, with dependencies stubbed or removed
  */
 export default function HillHomeScene({ onComplete }: { onComplete: () => void }) {
   const { player, completedNodeIds, inventory, currentDay } = useGameStore();
-  const { 
-    pendingInsights, 
-    transferInsights, 
-    totalMastery, 
-    domainMastery,
-    nodes,
-    connections,
-    resetNewlyDiscovered
-  } = useKnowledgeStore();
-  const { playSound, flashScreen, showRewardEffect } = useGameEffects();
+  
+  // Simplified knowledge store integration
+  // In full implementation, this would connect to the constellation system
+  const knowledgeStore = {
+    pendingInsights: [],  // Hardcoded for now
+    totalMastery: 35,     // Hardcoded percentage
+    domainMastery: {
+      'clinical-practice': 40,
+      'quality-assurance': 30,
+      'theoretical': 25
+    },
+    transferInsights: () => console.log('Would transfer insights here'),
+    resetNewlyDiscovered: () => console.log('Would reset newly discovered')
+  };
   
   // Internal state
   const [showInventory, setShowInventory] = useState(false);
   const [showConstellation, setShowConstellation] = useState(false);
-  const [insightTransferred, setInsightTransferred] = useState(false);
-  const [constellationAnimating, setConstellationAnimating] = useState(false);
-  const [activeNodes, setActiveNodes] = useState<string[]>([]);
-  const [showTransition, setShowTransition] = useState(false);
+  const [insightTransferred, setInsightTransferred] = useState(true); // Hardcoded to true to simplify
   const [fadeIn, setFadeIn] = useState(false);
   
-  // Audio and animation refs
-  const backgroundAudioRef = useRef<HTMLAudioElement | null>(null);
+  // Simplified refs - no actual audio loading
   const componentMounted = useRef(true);
   
-  // Fade in effect on mount
+  // Fade in effect on mount - keeping this simple visual effect
   useEffect(() => {
     componentMounted.current = true;
-    
-    // Play ambient night sounds
-    if (typeof window !== 'undefined') {
-      backgroundAudioRef.current = new Audio('/audio/night-ambient.mp3');
-      if (backgroundAudioRef.current) {
-        backgroundAudioRef.current.volume = 0.2;
-        backgroundAudioRef.current.loop = true;
-        backgroundAudioRef.current.play().catch(e => console.log("Audio play prevented:", e));
-      }
-    }
     
     // Trigger fade-in effect
     setTimeout(() => {
@@ -61,99 +47,30 @@ export default function HillHomeScene({ onComplete }: { onComplete: () => void }
       }
     }, 100);
     
-    // Auto-show constellation if there are pending insights
-    if (pendingInsights.length > 0) {
-      setTimeout(() => {
-        if (componentMounted.current && !insightTransferred) {
-          setShowConstellation(true);
-        }
-      }, 1000);
-    }
-    
     return () => {
       componentMounted.current = false;
-      
-      // Clean up audio
-      if (backgroundAudioRef.current) {
-        backgroundAudioRef.current.pause();
-        backgroundAudioRef.current = null;
-      }
     };
-  }, [pendingInsights.length, insightTransferred]);
+  }, []);
   
-  useEffect(() => {
-    // Track whether there are pending insights to transfer
-    setInsightTransferred(pendingInsights.length === 0);
-  }, [completedNodeIds, pendingInsights.length]);
-  
-  // Start day phase with more deliberate transition
+  // Start day phase without transition effects
   const startDay = () => {
-    if (playSound) playSound('click');
-    
-    // Check if there are pending insights that haven't been transferred
-    if (pendingInsights.length > 0 && !insightTransferred) {
-      // Create a more styled confirmation
-      setShowConfirmation(true);
-    } else {
-      // No pending insights, proceed with transition
-      handleStartDayConfirmed();
-    }
+    // OPTION 1: Direct callback without animations or confirmations
+    console.log('Starting day phase');
+    onComplete();
   };
   
-  // Confirmation state for leaving with pending insights
-  const [showConfirmation, setShowConfirmation] = useState(false);
-  
-  const handleStartDayConfirmed = () => {
-    setShowConfirmation(false);
-    
-    // Stop background audio
-    if (backgroundAudioRef.current) {
-      backgroundAudioRef.current.pause();
-      backgroundAudioRef.current = null;
-    }
-    
-    // Show transition
-    setShowTransition(true);
-  };
-  
-  // Handle constellation transfer
+  // Simplified constellation view with no animations
   const handleTransferInsights = () => {
-    // Connect to animation sequence
-    setConstellationAnimating(true);
-    
-    // Track newly discovered nodes for highlighting
-    const newNodes = pendingInsights.map(insight => insight.conceptId);
-    setActiveNodes(newNodes);
-    
-    // Visual effects
-    if (playSound) playSound('success');
-    if (flashScreen) flashScreen('blue');
-    
-    // Create centered reward effect for larger insight transfers
-    const totalInsight = pendingInsights.reduce((sum, item) => sum + item.amount, 0);
-    if (showRewardEffect && totalInsight > 0) {
-      showRewardEffect(totalInsight, window.innerWidth / 2, window.innerHeight / 2);
-    }
-    
-    // Complete the knowledge transfer
-    transferInsights();
+    console.log('Transferring insights (simplified)');
+    knowledgeStore.transferInsights();
     setInsightTransferred(true);
-    
-    // Reset animation state after delay to allow visualization
-    setTimeout(() => {
-      if (componentMounted.current) {
-        setConstellationAnimating(false);
-        resetNewlyDiscovered();
-        setActiveNodes([]);
-      }
-    }, 5000);
   };
 
   return (
     <div 
       className={`h-full w-full bg-gradient-to-b from-black via-indigo-950 to-black flex flex-col items-center justify-center p-6 transition-opacity duration-1000 ${fadeIn ? 'opacity-100' : 'opacity-0'}`}
     >
-      {/* Stars background effect */}
+      {/* Stars background effect - keeping this for visual identity */}
       <div className="stars-bg fixed inset-0 z-0"></div>
       
       {/* Simplified header */}
@@ -166,9 +83,9 @@ export default function HillHomeScene({ onComplete }: { onComplete: () => void }
       
       {/* Main interaction grid - now 3 buttons in a row */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-8 w-full max-w-4xl mb-8 relative z-10">
-        {/* Constellation button - now larger and more prominent */}
+        {/* Constellation button - simplified */}
         <div 
-          className={`p-8 col-span-3 bg-surface-dark pixel-borders flex flex-col items-center justify-center min-h-[200px] transition-all duration-300 hover:bg-surface cursor-pointer ${!insightTransferred ? 'animate-pulse' : ''}`}
+          className="p-8 col-span-3 bg-surface-dark pixel-borders flex flex-col items-center justify-center min-h-[200px] transition-all duration-300 hover:bg-surface cursor-pointer"
           onClick={() => setShowConstellation(true)}
         >
           <div className="text-4xl mb-4">🌠</div>
@@ -176,11 +93,6 @@ export default function HillHomeScene({ onComplete }: { onComplete: () => void }
           <PixelText className="text-sm text-text-secondary mb-2">
             View your growing understanding of medical physics
           </PixelText>
-          {!insightTransferred && (
-            <span className="px-3 py-1 bg-clinical text-white text-sm mt-2">
-              {pendingInsights.length} New Insights!
-            </span>
-          )}
         </div>
         
         {/* Inventory button */}
@@ -195,7 +107,7 @@ export default function HillHomeScene({ onComplete }: { onComplete: () => void }
           </span>
         </div>
         
-        {/* Start day button - made more visual and narrative */}
+        {/* Start day button - direct call with no confirmation */}
         <div 
           className="p-8 bg-surface-dark pixel-borders flex flex-col items-center justify-center min-h-[200px] transition-all duration-300 hover:bg-surface cursor-pointer col-span-2 group relative overflow-hidden"
           onClick={startDay}
@@ -205,22 +117,6 @@ export default function HillHomeScene({ onComplete }: { onComplete: () => void }
           <span className="px-3 py-1 bg-clinical text-white text-sm mt-2 group-hover:bg-clinical-light transition-colors">
             Begin Day {currentDay}
           </span>
-          
-          {/* Subtle indicator about where you're going */}
-          <div className="absolute bottom-3 right-3 opacity-50 text-xs">
-            <PixelText className="text-text-secondary">
-              Morning awaits...
-            </PixelText>
-          </div>
-          
-          {/* Warning about pending insights */}
-          {pendingInsights.length > 0 && !insightTransferred && (
-            <div className="absolute top-3 right-3 text-warning-light text-xs animate-pulse">
-              <PixelText>
-                ⚠️ Insights pending
-              </PixelText>
-            </div>
-          )}
         </div>
       </div>
       
@@ -243,19 +139,19 @@ export default function HillHomeScene({ onComplete }: { onComplete: () => void }
           <div className="pixel-progress-bg">
             <div 
               className="h-full bg-educational" 
-              style={{ width: `${totalMastery}%` }}
+              style={{ width: `${knowledgeStore.totalMastery}%` }}
             ></div>
           </div>
         </div>
         
         <div className="text-xs text-text-secondary flex justify-between">
-          <span>Clinical: {domainMastery['clinical-practice'] || 0}%</span>
-          <span>Technical: {domainMastery['quality-assurance'] || 0}%</span>
-          <span>Theory: {domainMastery['theoretical'] || 0}%</span>
+          <span>Clinical: {knowledgeStore.domainMastery['clinical-practice'] || 0}%</span>
+          <span>Technical: {knowledgeStore.domainMastery['quality-assurance'] || 0}%</span>
+          <span>Theory: {knowledgeStore.domainMastery['theoretical'] || 0}%</span>
         </div>
       </div>
       
-      {/* Inventory panel */}
+      {/* Simplified inventory panel */}
       {showInventory && (
         <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-50">
           <div className="bg-surface p-6 max-w-md w-full pixel-borders">
@@ -291,82 +187,42 @@ export default function HillHomeScene({ onComplete }: { onComplete: () => void }
         </div>
       )}
       
-      {/* Knowledge Constellation Overlay */}
+      {/* Simplified constellation overlay */}
       {showConstellation && (
         <div className="fixed inset-0 bg-black/95 flex items-center justify-center z-50">
-          <div className="relative max-w-4xl w-full h-[80vh]">
-            <ConstellationView 
-              onClose={() => setShowConstellation(false)}
-              width={800}
-              height={600}
-              interactive={true}
-              enableJournal={true}
-              activeNodes={activeNodes}
-              nightMode={true}
-            />
-            
-            {/* Insight transfer controls */}
-            {!insightTransferred && pendingInsights.length > 0 && (
-              <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 bg-surface pixel-borders p-4 z-10">
-                <div className="flex items-center mb-2">
-                  <div className="w-3 h-3 rounded-full bg-clinical animate-pulse mr-2"></div>
-                  <PixelText className="text-clinical-light">
-                    {pendingInsights.length} New Insight{pendingInsights.length !== 1 ? 's' : ''} to Transfer
-                  </PixelText>
-                </div>
-                
-                <PixelButton
-                  className="bg-clinical hover:bg-clinical-light text-white w-full"
-                  onClick={handleTransferInsights}
-                  disabled={constellationAnimating}
-                >
-                  {constellationAnimating 
-                    ? 'Transferring...' 
-                    : `Transfer Insight${pendingInsights.length !== 1 ? 's' : ''} to Constellation`
-                  }
-                </PixelButton>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-      
-      {/* Confirmation modal for leaving with pending insights */}
-      {showConfirmation && (
-        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
-          <div className="bg-surface pixel-borders p-6 max-w-md w-full">
-            <PixelText className="text-xl mb-4">Unreviewed Insights</PixelText>
-            
-            <PixelText className="text-text-secondary mb-6">
-              You have {pendingInsights.length} unreviewed insight{pendingInsights.length !== 1 ? 's' : ''} that will be lost if you leave now. Are you sure you want to continue to the hospital?
-            </PixelText>
-            
-            <div className="flex space-x-4 justify-end">
+          <div className="bg-surface p-6 max-w-4xl w-full pixel-borders">
+            <div className="flex justify-between items-center mb-4">
+              <PixelText className="text-2xl">Knowledge Constellation</PixelText>
               <PixelButton 
-                className="bg-surface-dark hover:bg-surface text-text-primary"
-                onClick={() => setShowConfirmation(false)}
+                className="bg-red-600 hover:bg-red-500 text-white" 
+                onClick={() => setShowConstellation(false)}
               >
-                Stay
+                Close
               </PixelButton>
-              
+            </div>
+            
+            {/* OPTION 1: Simplified constellation placeholder */}
+            <div className="bg-indigo-950 w-full h-[60vh] flex items-center justify-center">
+              <div className="text-center">
+                <div className="text-5xl mb-4">✨🌟💫</div>
+                <PixelText className="text-xl mb-4">Constellation View</PixelText>
+                <PixelText className="text-text-secondary">
+                  Your growing understanding of medical physics concepts
+                </PixelText>
+              </div>
+            </div>
+            
+            {/* Basic button to close */}
+            <div className="mt-4 flex justify-end">
               <PixelButton 
-                className="bg-danger hover:bg-red-500 text-white"
-                onClick={handleStartDayConfirmed}
+                className="bg-clinical hover:bg-clinical-light text-white"
+                onClick={() => setShowConstellation(false)}
               >
-                Leave Anyway
+                Return to Hill Home
               </PixelButton>
             </div>
           </div>
         </div>
-      )}
-      
-      {/* Phase transition */}
-      {showTransition && (
-        <PhaseTransition 
-          fromPhase="night" 
-          toPhase="day" 
-          onComplete={onComplete} 
-        />
       )}
     </div>
   );

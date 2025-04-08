@@ -1,7 +1,15 @@
 // app/store/journalStore.ts
+/**
+ * Journal Store for Vertical Slice
+ * 
+ * Streamlined implementation focused on the core vertical slice experience
+ * of obtaining and using a journal from Dr. Kapoor's interactions.
+ */
+
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
-import { GameEventType, legacyEventBus } from '../core/events/GameEvents';
+import { GameEventType } from '../core/events/EventTypes';
+import { useEventBus, safeDispatch } from '../core/events/CentralEventBus';
 
 export type JournalEntry = {
   id: string;
@@ -22,9 +30,7 @@ export type JournalCharacterNote = {
 export type JournalUpgrade = 
   | 'base'        // Basic notebook (all players)
   | 'technical'   // Technical upgrade from decent Kapoor performance
-  | 'annotated'   // Special upgrade from excellent Kapoor performance
-  | 'indexed'     // Better organization (after first boss)
-  | 'integrated'; // Special references from characters
+  | 'annotated';  // Special upgrade from excellent Kapoor performance
 
 type JournalState = {
   // Core journal properties
@@ -34,7 +40,7 @@ type JournalState = {
   characterNotes: JournalCharacterNote[];
   customAnnotations: Record<string, string>; // Custom player notes by category
   
-  // Journal upgrade items
+  // Journal upgrade items - focused on Kapoor for vertical slice
   hasKapoorReferenceSheets: boolean;
   hasKapoorAnnotatedNotes: boolean;
   
@@ -51,7 +57,7 @@ type JournalState = {
   toggleJournal: () => void;
   setCurrentPage: (page: 'knowledge' | 'characters' | 'notes' | 'references') => void;
   
-  // Special items
+  // Special items - focused on Kapoor for vertical slice
   addKapoorReferenceSheets: () => void;
   addKapoorAnnotatedNotes: () => void;
 };
@@ -97,17 +103,18 @@ export const useJournalStore = create<JournalState>()(
           ]
         });
         
-        // Emit event when journal is initialized
-        if (typeof window !== 'undefined') {
-          // Get event bus and emit event
-          const eventBus = legacyEventBus.getState();
-          if (eventBus) {
-            eventBus.dispatch(GameEventType.UI_JOURNAL_OPENED, {
+        // Emit simplified UI event when journal is initialized
+        safeDispatch(
+          GameEventType.UI_BUTTON_CLICKED, 
+          {
+            componentId: 'journal',
+            action: 'initialize',
+            metadata: {
               upgrade,
               source: 'initializeJournal'
-            });
+            }
           }
-        }
+        );
       },
       
       upgradeJournal: (upgrade) => {
@@ -171,23 +178,22 @@ export const useJournalStore = create<JournalState>()(
         const nextIsOpen = !get().isOpen;
         set({ isOpen: nextIsOpen });
         
-        // Emit events for journal open/close
-        if (typeof window !== 'undefined') {
-          const eventBus = legacyEventBus.getState();
-          if (eventBus) {
-            eventBus.dispatch(
-              nextIsOpen ? GameEventType.UI_JOURNAL_OPENED : GameEventType.UI_JOURNAL_CLOSED, 
-              { page: get().currentPage }
-            );
+        // Use UI_BUTTON_CLICKED instead of specific journal events
+        safeDispatch(
+          GameEventType.UI_BUTTON_CLICKED, 
+          { 
+            componentId: 'journal',
+            action: nextIsOpen ? 'open' : 'close',
+            metadata: { page: get().currentPage }
           }
-        }
+        );
       },
       
       setCurrentPage: (page) => set({
         currentPage: page
       }),
       
-      // Special items
+      // Special items - focused on Kapoor for vertical slice
       addKapoorReferenceSheets: () => {
         set({
           hasKapoorReferenceSheets: true
@@ -241,13 +247,38 @@ export const ensureJournalProgression = () => {
   // or after completing critical nodes, to ensure progression items exist
   
   const currentState = useJournalStore.getState();
+  const eventBus = useEventBus.getState();
   
-  // Add any critical progression checks and repairs here
-  // For example, ensuring the journal exists if we detect a completed calibration node
-  // in the event history
+  // Check for completed Kapoor node in recent event history
+  const recentNodeCompletions = eventBus.getEventHistory(GameEventType.NODE_COMPLETED, 20);
+  const hasCompletedKapoorNode = recentNodeCompletions.some(event => {
+    const payload = event.payload as any;
+    return payload.character === 'kapoor' && payload.result?.isJournalAcquisition;
+  });
   
-  // Return true if repairs were needed
-  return false;
+  // If we've completed a Kapoor journal node but don't have a journal, fix it
+  if (hasCompletedKapoorNode && !currentState.hasJournal) {
+    console.warn('[JournalProgression] Critical progression issue detected: Kapoor node completed but no journal found');
+    
+    // Fix by initializing journal
+    currentState.initializeJournal('technical');
+    
+    // Report fix through event system
+    safeDispatch(
+      GameEventType.JOURNAL_ACQUIRED,
+      {
+        tier: 'technical',
+        character: 'kapoor',
+        source: 'progression_recovery',
+        forced: true
+      },
+      'journal_progression_recovery'
+    );
+    
+    return true; // Repairs were needed
+  }
+  
+  return false; // No repairs needed
 };
 
 // Helper for other systems to easily check journal state

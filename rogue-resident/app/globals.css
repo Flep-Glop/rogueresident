@@ -1,5 +1,4 @@
 @import "tailwindcss";
-@import "./styles/pixel-assets.css"; /* Add this line */
 
 /* Pixel font imports */
 @font-face {

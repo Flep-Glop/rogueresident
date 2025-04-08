@@ -4,13 +4,13 @@
 │   ├── components
 │   │   ├── GameContainer.tsx
 │   │   ├── HillHomeScene.tsx
+│   │   ├── PixelThemeProvider.tsx
 │   │   ├── PlayerStats.tsx
 │   │   ├── challenges
-│   │   │   ├── CalibrationChallenge.tsx
+│   │   │   ├── ChallengeRouter.tsx
 │   │   │   └── formats
 │   │   │       └── ConversationFormat.tsx
 │   │   ├── debug
-│   │   │   ├── DebugStatePanel.tsx
 │   │   │   └── VerticalSliceDebugPanel.tsx
 │   │   ├── journal
 │   │   │   └── Journal.tsx
@@ -26,17 +26,17 @@
 │   │   ├── events
 │   │   │   ├── CentralEventBus.ts
 │   │   │   ├── EventSubscriptionHooks.ts
-│   │   │   ├── EventTypes.ts
-│   │   │   └── InstallEmergencyHotfix.ts
+│   │   │   └── EventTypes.ts
 │   │   ├── init.ts
 │   │   ├── progression
-│   │   │   └── ProgressionService.ts
+│   │   │   └── ProgressionResolver.ts
 │   │   └── statemachine
 │   │       └── GameStateMachine.ts
 │   ├── data
-│   │   └── dialogues
-│   │       └── calibrations
-│   │           └── kapoor-calibration.ts
+│   │   ├── dialogues
+│   │   │   └── calibrations
+│   │   │       └── kapoor-calibration.ts
+│   │   └── items.ts
 │   ├── favicon.ico
 │   ├── globals.css
 │   ├── hooks
@@ -51,6 +51,8 @@
 │   ├── styles
 │   ├── types
 │   └── utils
+├── deprecated_events.txt
+├── deprecated_services.txt
 ├── eslint.config.mjs
 ├── filestructure.txt
 ├── jest-config.js
@@ -75,4 +77,4 @@
 │   └── testNodeAccessibility.js
 └── tsconfig.json
 
-22 directories, 53 files
+22 directories, 55 files
