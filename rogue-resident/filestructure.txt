@@ -23,7 +23,17 @@
 │   │   │   └── JournalAcquisitionAnimation.tsx
 │   │   ├── knowledge
 │   │   │   ├── ConstellationView.tsx
-│   │   │   └── KnowledgeUpdate.tsx
+│   │   │   ├── KnowledgeUpdate.tsx
+│   │   │   ├── constellationCanvasUtils.ts
+│   │   │   └── ui
+│   │   │       ├── ConnectionSuggestionsPanel.tsx
+│   │   │       ├── ConstellationActions.tsx
+│   │   │       ├── ConstellationControls.tsx
+│   │   │       ├── ConstellationInfoPanel.tsx
+│   │   │       ├── ConstellationLegend.tsx
+│   │   │       ├── HelpOverlay.tsx
+│   │   │       ├── JournalOverlay.tsx
+│   │   │       └── SelectedNodePanel.tsx
 │   │   └── vs
 │   │       └── SimplifiedKapoorMap.tsx
 │   ├── core
@@ -38,9 +48,10 @@
 │   │   ├── init.ts
 │   │   ├── progression
 │   │   │   └── ProgressionResolver.ts
-│   │   └── statemachine
-│   │       ├── GameStateMachine.ts
-│   │       └── TransitionGuarantor.ts
+│   │   ├── statemachine
+│   │   │   ├── GameStateMachine.ts
+│   │   │   └── TransitionGuarantor.ts
+│   │   └── themeConstants.ts
 │   ├── data
 │   │   ├── dialogues
 │   │   │   └── calibrations
@@ -49,19 +60,18 @@
 │   ├── favicon.ico
 │   ├── globals.css
 │   ├── hooks
+│   │   ├── useConstellationInteraction.ts
 │   │   ├── useDialogueFlow.ts
 │   │   ├── useGameplayEffects.ts
 │   │   └── useTypewriter.ts
 │   ├── layout.tsx
 │   ├── page.tsx
-│   ├── store
-│   │   ├── gameStore.ts
-│   │   ├── journalStore.ts
-│   │   ├── knowledgeStore.ts
-│   │   └── resourceStore.ts
-│   ├── styles
-│   ├── types
-│   └── utils
+│   └── store
+│       ├── gameStore.ts
+│       ├── journalStore.ts
+│       ├── knowledgeStore.ts
+│       └── resourceStore.ts
+├── combined_tsx.txt
 ├── eslint.config.mjs
 ├── filestructure.txt
 ├── jest-config.js
@@ -81,4 +91,4 @@
 │   └── verticalSliceIntegrationTest.js
 └── tsconfig.json
 
-23 directories, 58 files
+21 directories, 70 files
