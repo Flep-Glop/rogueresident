@@ -1,167 +1,205 @@
-/**
- * @file app/components/map/SimplifiedKapoorMap.tsx
- * @description React component for rendering the interactive game map.
- * Includes fixes for hydration errors and potential infinite update loops.
- * (This file is unchanged from the previous version provided)
- */
+// ==== START: app/components/map/SimplifiedKapoorMap.tsx ====
 'use client';
 
-import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { Stage, Layer, Circle, Line, Text } from 'react-konva';
+import { KonvaEventObject } from 'konva/lib/Node'; // Type import from konva
+
 import { useGameStore } from '@/app/store/gameStore';
 import { useJournalStore } from '@/app/store/journalStore';
 import { useKnowledgeStore } from '@/app/store/knowledgeStore';
-import { Button } from '@/app/components/ui/button'; // Assuming shadcn Button is setup
-// Import type definitions - Requires app/types/game.ts to exist
-import { MapNode } from '@/app/types/game';
-import CentralEventBus from '@/app/core/events/CentralEventBus';
-// import { useEventSubscription } from '@/app/core/events/EventSubscriptionHooks'; // Uncomment if needed later
-import { THEME_COLORS } from '@/app/core/themeConstants'; // Import theme colors
+import { Button } from '@/components/ui/button'; // Assuming shadcn Button is setup in [project_root]/components/ui
 
-// Interface for component props
-interface SimplifiedKapoorMapProps {
-  onNodeSelect?: (nodeId: string) => void; // Optional callback when a node is selected
-  autoSelectEnabled?: boolean; // Prop to control if a node should be auto-selected on load
-}
+// NOTE: If you still get errors below about MapNode or GameEvent not being exported,
+// ensure the corresponding files (app/types/game.ts, app/core/events/EventTypes.ts)
+// are saved correctly and try restarting your dev server and/or IDE.
+import { MapNode, JournalEntry } from '@/app/types/game'; // Import JournalEntry type too
+import CentralEventBus from '@/app/core/events/CentralEventBus';
+import { GameEvent } from '@/app/core/events/EventTypes';
 
 /**
  * SimplifiedKapoorMap Component
  *
- * Renders a basic representation of the game map and handles node interactions.
- * Addresses hydration errors and potential update loops.
+ * Renders a simplified version of the Kapoor Map for calibration/testing.
+ * Allows node interaction and potentially triggering events.
  */
-export function SimplifiedKapoorMap({
-  onNodeSelect,
-  autoSelectEnabled = true, // Default autoSelect to true if not provided
-}: SimplifiedKapoorMapProps) {
-  // --- State Hooks ---
-  const [isMounted, setIsMounted] = useState(false);
-  const [mapReady, setMapReady] = useState(false);
-  const containerRef = useRef<HTMLDivElement>(null);
+const SimplifiedKapoorMap: React.FC = () => {
+  // State for map nodes - simplified structure for testing
+  const [nodes, setNodes] = useState<MapNode[]>([
+    // Example nodes - replace with actual data loading/generation
+    { id: 'node-1', x: 100, y: 100, label: 'Start', type: 'system', connections: ['node-2'], data: {} },
+    { id: 'node-2', x: 300, y: 150, label: 'Midpoint', type: 'system', connections: ['node-3'], data: {} },
+    { id: 'node-3', x: 500, y: 100, label: 'End', type: 'system', connections: [], data: {} },
+  ]);
 
-  // --- Zustand Store Hooks ---
-  const { day, phase, mapData, selectedNodeId, selectNode, initializeMap } = useGameStore(
-    useCallback((state) => ({
-        day: state.day, phase: state.phase, mapData: state.mapData,
-        selectedNodeId: state.selectedNodeId, selectNode: state.selectNode,
-        initializeMap: state.initializeMap,
-      }), [])
-  );
-  const hasJournal = useJournalStore(useCallback((state) => state.hasJournal, []));
-  const completedNodes = useKnowledgeStore(useCallback((state) => state.completedNodes, []));
+  // Access relevant stores (example)
+  // NOTE: If you get TS errors on the lines below (e.g., property does not exist),
+  // ensure the store definitions (gameStore.ts, knowledgeStore.ts) are correct and saved,
+  // then try restarting your dev server / IDE, as it might be a caching issue.
+  const currentSystem = useGameStore((state) => state.currentSystem);
+  const addJournalEntry = useJournalStore((state) => state.addEntry);
+  const unlockKnowledge = useKnowledgeStore((state) => state.unlockKnowledge);
 
-  // --- Derived State and Memos ---
-  const nodes = useMemo(() => mapData?.nodes ?? [], [mapData]);
+  // --- Event Handling ---
 
-  // --- Effects ---
+  // Handle clicking on a map node
+  const handleNodeClick = useCallback((nodeId: string) => {
+    console.log(`Node clicked: ${nodeId}`);
+    const clickedNode = nodes.find(n => n.id === nodeId);
 
-  // Effect 1: Set isMounted flag (for hydration fix)
-  useEffect(() => { setIsMounted(true); }, []);
+    // Example interactions:
+    // 1. Update game state (if needed)
+    // useGameStore.setState({ currentNode: nodeId });
 
-  // Effect 2: Initialize map data if needed
+    // 2. Add journal entry
+    const newEntry: Omit<JournalEntry, 'isNew'> = { // Use Omit if isNew is optional and handled by the store
+      id: `journal-${nodeId}-${Date.now()}`,
+      title: `Visited ${clickedNode?.label || nodeId}`,
+      content: `Successfully navigated to ${clickedNode?.label || nodeId}.`,
+      // timestamp: Date.now(), // Removed: timestamp is not part of JournalEntry type in game.ts
+      tags: ['map', 'navigation', nodeId],
+    };
+    addJournalEntry(newEntry);
+
+    // 3. Unlock knowledge
+    unlockKnowledge(`knowledge-${nodeId}`); // Assumes knowledge ID follows this pattern
+
+    // 4. Emit a central event
+    // NOTE: If you get TS errors here (emit does not exist), ensure CentralEventBus.ts
+    // exports the singleton instance correctly and try restarting dev server / IDE.
+    CentralEventBus.emit(GameEvent.NODE_INTERACTION, { nodeId, interactionType: 'click' });
+
+    // Potentially trigger dialogue or other game events based on the node
+    // Example: if (nodeId === 'node-3') CentralEventBus.emit(GameEvent.START_DIALOGUE, { dialogueId: 'kapoor-calibration-end' });
+
+  }, [nodes, addJournalEntry, unlockKnowledge]); // Dependencies for useCallback
+
+  // Handle hovering over a node
+  const handleNodeHover = (nodeId: string, isHovering: boolean) => {
+    // Could be used for tooltips or visual feedback
+    // console.log(`Node ${nodeId} hover state: ${isHovering}`);
+    // Example: Update cursor style - ensure this runs client-side
+    if (typeof window !== 'undefined') {
+      document.body.style.cursor = isHovering ? 'pointer' : 'default';
+    }
+  };
+
+  // --- Rendering ---
+
+  // Find node coordinates for drawing lines
+  const getNodeCoords = (nodeId: string): { x: number; y: number } | null => {
+    const node = nodes.find(n => n.id === nodeId);
+    return node ? { x: node.x, y: node.y } : null;
+  };
+
+  // Effect to handle dynamic sizing (optional but good practice)
+  const [stageSize, setStageSize] = useState({ width: 800, height: 600 }); // Default size
+
   useEffect(() => {
-    if (!mapData) {
-      console.log('🗺️ Initializing simplified Kapoor map (useEffect)...');
-      initializeMap();
-    } else {
-      console.log('🗺️ Map data exists, marking as ready.');
-      setMapReady(true);
-    }
-  }, [mapData, initializeMap]);
+    const handleResize = () => {
+      // Example: Adjust stage size based on parent container or window
+      // You might need a reference to the container div for more accurate sizing
+      setStageSize({
+          width: window.innerWidth * 0.8, // Adjust multiplier as needed
+          height: window.innerHeight * 0.6 // Adjust multiplier as needed
+      });
+    };
 
-  // Effect 3: Mark map as ready once data/nodes are present
-  useEffect(() => {
-    if (mapData && nodes.length > 0) {
-      console.log('🗺️ Map data loaded, nodes available. Marking map as ready.');
-      setMapReady(true);
-    }
-  }, [mapData, nodes]);
+    // Set initial size
+    handleResize();
 
-  // Effect 4: Handle Auto-selection logic (Refined)
-  useEffect(() => {
-    if (isMounted && mapReady && autoSelectEnabled && !selectedNodeId && nodes.length > 0) {
-      const firstAvailableNode = nodes.find(node => !completedNodes.includes(node.id));
-      const targetNodeId = firstAvailableNode ? firstAvailableNode.id : nodes[0].id;
-      console.log(`[Map] Attempting auto-selection. Target: ${targetNodeId}. Current selection: ${selectedNodeId}`);
-
-      if (targetNodeId !== selectedNodeId) {
-         const targetNode = nodes.find(n => n.id === targetNodeId);
-         if (!targetNode) { console.warn(`[Map] Auto-select target node ${targetNodeId} not found.`); return; }
-         const journalRequired = targetNode.requiresJournal ?? false;
-         const requiredPhase = targetNode.phaseSpecific;
-         let canSelect = true;
-         if (journalRequired && !hasJournal) { console.log(`[Map] Cannot auto-select ${targetNodeId}: Journal required.`); canSelect = false; }
-         if (requiredPhase && requiredPhase !== phase) { console.log(`[Map] Cannot auto-select ${targetNodeId}: Requires ${requiredPhase} phase.`); canSelect = false; }
-         if(canSelect) {
-            console.log(`[Map] Auto-selecting node: ${targetNodeId}`);
-            selectNode(targetNodeId);
-            if (onNodeSelect) { onNodeSelect(targetNodeId); }
-         } else { console.log(`[Map] Auto-selection conditions not met for ${targetNodeId}.`); }
-      } else { console.log(`[Map] Auto-selection skipped: Target node ${targetNodeId} is already selected.`); }
-    }
-  }, [ isMounted, mapReady, autoSelectEnabled, selectedNodeId, nodes, completedNodes, hasJournal, phase, selectNode, onNodeSelect ]);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
 
-  // --- Event Handlers ---
-  const handleNodeClick = useCallback((nodeId: string, node: MapNode) => {
-    console.log(`[Map] Node clicked: ${nodeId}`);
-    const journalRequired = node.requiresJournal ?? false;
-    const requiredPhase = node.phaseSpecific;
-    if (journalRequired && !hasJournal) {
-      console.warn(`[Map] Cannot select ${nodeId}: Journal required.`);
-      CentralEventBus.emit('ui:show:toast', { message: "Requires Journal", type: "warning" }); return;
-    }
-    if (requiredPhase && requiredPhase !== phase) {
-        console.warn(`[Map] Cannot select ${nodeId}: Only available during ${requiredPhase} phase.`);
-        CentralEventBus.emit('ui:show:toast', { message: `Only available at ${requiredPhase}`, type: "warning" }); return;
-    }
-    if (nodeId !== selectedNodeId) {
-      selectNode(nodeId);
-      if (onNodeSelect) { onNodeSelect(nodeId); }
-      CentralEventBus.emit('ui:button:clicked', { element: 'map_node', nodeId: nodeId });
-    } else { console.log(`[Map] Node ${nodeId} is already selected.`); }
-  }, [selectNode, onNodeSelect, selectedNodeId, hasJournal, phase]);
-
-
-  // --- Rendering Logic ---
-
-  // Hydration Fix: Render placeholder until mounted client-side
-  if (!isMounted) {
-    return ( <div className="h-full w-full flex items-center justify-center" ref={containerRef}> <div className="text-center pixel-font text-lg text-gray-400">Initializing Map...</div> </div> );
-  }
-
-  // Loading state (after mount, before map ready)
-  if (!mapReady || !mapData) {
-    return ( <div className="h-full w-full flex items-center justify-center bg-background" ref={containerRef}> <div className="text-center pixel-font text-lg text-gray-400 animate-pulse">Loading Map Data...</div> </div> );
-  }
-
-  // Actual map render
   return (
-    <div ref={containerRef} className="relative h-full w-full overflow-hidden bg-gray-800 border-4 border-gray-600 shadow-inner" style={{ backgroundImage: `radial-gradient(${THEME_COLORS.map.gridDot} 1px, transparent 1px)`, backgroundSize: '20px 20px', }} >
-      {/* Map Nodes */}
-      {nodes.map((node) => {
-        const isSelected = node.id === selectedNodeId;
-        const isCompleted = completedNodes.includes(node.id);
-        const journalRequired = node.requiresJournal ?? false;
-        const requiredPhase = node.phaseSpecific;
-        let isDisabled = false;
-        let titleText = `Location: ${node.name}`;
-        if (journalRequired && !hasJournal) { isDisabled = true; titleText += " (Requires Journal)"; }
-        if (requiredPhase && requiredPhase !== phase) { isDisabled = true; titleText += ` (Available at ${requiredPhase})`; }
-        const left = `${node.x ?? 50}%`; const top = `${node.y ?? 50}%`;
-        return (
-          <Button key={node.id} variant="ghost"
-            className={` absolute transform -translate-x-1/2 -translate-y-1/2 p-2 rounded-full shadow-lg transition-all duration-200 ease-in-out border-2 ${isSelected ? 'ring-4 ring-offset-2 ring-yellow-400 scale-110 z-10' : ''} ${isCompleted ? 'border-green-500 bg-green-900 opacity-70' : 'border-blue-500 bg-blue-900'} ${isDisabled ? 'opacity-50 cursor-not-allowed filter grayscale' : 'hover:scale-105 hover:border-yellow-400 cursor-pointer'} `}
-            style={{ left: left, top: top, width: '40px', height: '40px', }}
-            onClick={() => !isDisabled && handleNodeClick(node.id, node)}
-            disabled={isDisabled} title={titleText} >
-            <span className={`block w-3 h-3 rounded-full ${isCompleted ? 'bg-green-400' : 'bg-blue-400'}`}></span>
-          </Button>
-        );
-      })}
-      {/* Selected Node Info Overlay */}
-      {selectedNodeId && ( <div className="absolute bottom-4 left-4 bg-black bg-opacity-70 text-white p-2 rounded pixel-font border border-gray-500 text-sm"> Selected: {nodes.find(n => n.id === selectedNodeId)?.name ?? 'Unknown'} </div> )}
-      {/* Day/Phase Info Overlay */}
-      <div className="absolute top-4 right-4 bg-black bg-opacity-70 text-white p-2 rounded pixel-font border border-gray-500 text-sm"> Day: {day} | Phase: {phase} </div>
+    <div className="w-full h-full border border-gray-700 rounded-lg overflow-hidden relative bg-gray-900 flex items-center justify-center">
+      {/* Konva Stage for drawing the map */}
+      {/* Wrap Stage in a div if more complex layout/sizing is needed */}
+      <Stage width={stageSize.width} height={stageSize.height}>
+        <Layer>
+          {/* Draw connection lines */}
+          {nodes.map(node =>
+            // Add explicit type for targetId to satisfy noImplicitAny
+            node.connections.map((targetId: string) => {
+              const startCoords = getNodeCoords(node.id);
+              const endCoords = getNodeCoords(targetId);
+              if (startCoords && endCoords) {
+                return (
+                  <Line
+                    key={`${node.id}-${targetId}`}
+                    points={[startCoords.x, startCoords.y, endCoords.x, endCoords.y]}
+                    stroke="rgba(100, 100, 255, 0.5)" // Use theme color later
+                    strokeWidth={2}
+                    listening={false} // Lines don't need interaction
+                  />
+                );
+              }
+              return null;
+            })
+          )}
+
+          {/* Draw nodes */}
+          {nodes.map(node => (
+            <Circle
+              key={node.id}
+              x={node.x}
+              y={node.y}
+              radius={15} // Adjust size
+              fill={node.id === useGameStore.getState().currentNode ? "rgba(255, 200, 0, 0.9)" : "rgba(0, 150, 255, 0.8)"} // Example: Highlight current node
+              stroke="white"
+              strokeWidth={1}
+              onClick={(e: KonvaEventObject<MouseEvent>) => {
+                  e.evt.preventDefault(); // Prevent default browser actions if any
+                  handleNodeClick(node.id)
+              }}
+              onTap={(e: KonvaEventObject<TouchEvent>) => { // For touch devices
+                  e.evt.preventDefault();
+                  handleNodeClick(node.id)
+              }}
+              onMouseEnter={() => handleNodeHover(node.id, true)}
+              onMouseLeave={() => handleNodeHover(node.id, false)}
+              hitStrokeWidth={20} // Increases clickable area without changing visual size
+            />
+          ))}
+
+          {/* Draw node labels */}
+          {nodes.map(node => (
+            <Text
+              key={`${node.id}-label`}
+              x={node.x + 20} // Position label next to node
+              y={node.y - 5}
+              text={node.label}
+              fontSize={12}
+              fill="white"
+              listening={false} // Labels don't need interaction
+            />
+          ))}
+        </Layer>
+      </Stage>
+
+      {/* Example UI Element - Button using shadcn */}
+      <div className="absolute bottom-4 right-4 z-10"> {/* Ensure button is above canvas */}
+        <Button
+          variant="outline" // Example variant
+          onClick={() => {
+            console.log("Map action button clicked!");
+            // NOTE: Check CentralEventBus note above if TS errors occur here
+            CentralEventBus.emit(GameEvent.DEBUG_COMMAND, { command: 'reset-map-view' });
+          }}
+        >
+          Map Action
+        </Button>
+      </div>
+
+      {/* Display current system (example) */}
+      <div className="absolute top-4 left-4 text-xs text-gray-400 z-10"> {/* Ensure text is above canvas */}
+        Current System: {currentSystem || 'None'}
+      </div>
     </div>
   );
-}
+};
+
+export default SimplifiedKapoorMap;
+// ==== END: app/components/map/SimplifiedKapoorMap.tsx ====
