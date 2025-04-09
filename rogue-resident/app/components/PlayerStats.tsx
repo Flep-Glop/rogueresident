@@ -8,9 +8,13 @@ import InsightMeter from './gameplay/InsightMeter';
 import MomentumCounter from './gameplay/MomentumCounter';
 import ResidentPortrait from './ResidentPortrait';
 import { motion, AnimatePresence } from 'framer-motion';
+import { PixelBox, PixelButton } from './PixelThemeProvider';
 
 /**
  * PlayerStats - Enhanced player stats sidebar with character representation
+ * 
+ * This component creates a cohesive "character sheet" that reinforces the game's
+ * knowledge acquisition loop through visual design and clear information hierarchy.
  */
 export default function PlayerStats() {
   // Global state
@@ -30,7 +34,7 @@ export default function PlayerStats() {
   
   // Animate insight changes
   useEffect(() => {
-    const handleInsightChange = () => {
+    if (player.insight > 50 && !showInsightAnimation) {
       setShowInsightAnimation(true);
       
       // Reset animation after delay
@@ -39,13 +43,8 @@ export default function PlayerStats() {
       }, 2000);
       
       return () => clearTimeout(timer);
-    };
-    
-    // Trigger initial animation if insight is high
-    if (player.insight > 50) {
-      handleInsightChange();
     }
-  }, [player.insight]);
+  }, [player.insight, showInsightAnimation]);
   
   // Show journal button animation when journal is first acquired
   useEffect(() => {
@@ -58,62 +57,79 @@ export default function PlayerStats() {
     }
   }, [hasJournal]);
   
+  // Determine phase color for theming elements
+  const getPhaseColor = () => {
+    return gamePhase === 'day' ? 'clinical' : 'educational';
+  };
+  
   return (
-    <div className="p-4 h-full flex flex-col space-y-4">
-      {/* Player info with portrait */}
-      <div className="pixel-borders bg-surface p-3">
-        <div className="flex items-center mb-2">
-          <ResidentPortrait 
-            showFullBody={shouldShowFullBody}
-            size="md"
-            className="mr-3"
-          />
-          <div>
-            <h2 className="text-lg font-pixel">Medical Physics Resident</h2>
-            <div className="text-sm text-text-secondary font-pixel">Day {dayCount}</div>
+    <div className="p-3 h-full flex flex-col space-y-3">
+      {/* 1. Character Identity Block - Always visible, defines player identity */}
+      <PixelBox className="p-3 flex items-center">
+        <ResidentPortrait 
+          showFullBody={shouldShowFullBody}
+          size="md"
+          className="mr-3"
+        />
+        <div>
+          <h2 className="text-lg font-pixel">Medical Physics Resident</h2>
+          <div className="flex items-center gap-2 mt-1">
+            <div className={`w-2 h-2 rounded-full bg-${getPhaseColor()}-light`}></div>
+            <div className="text-sm text-text-secondary font-pixel">
+              Day {dayCount} | {gamePhase === 'day' ? 'Hospital' : 'Hill Home'}
+            </div>
           </div>
         </div>
+      </PixelBox>
+      
+      {/* 2. Core Resources Block - Tactical resources for challenges */}
+      <div className="flex flex-col gap-3">
+        {/* Insight meter */}
+        <PixelBox 
+          className="p-3" 
+          variant={gamePhase === 'day' ? 'clinical' : 'default'}
+        >
+          <InsightMeter showAnimation={showInsightAnimation} />
+        </PixelBox>
+        
+        {/* Momentum counter */}
+        <PixelBox 
+          className="p-3" 
+          variant={player.momentum >= 2 ? 'dark' : 'default'}
+        >
+          <MomentumCounter 
+            level={player.momentum} 
+            consecutiveCorrect={player.momentum * 2} // Approximation
+            compact={true} 
+            className="w-full"
+          />
+        </PixelBox>
       </div>
       
-      {/* Phase indicator */}
-      <div className="pixel-borders bg-surface p-3">
-        <div className="text-sm text-text-secondary font-pixel mb-1">Current Phase</div>
-        <div className={`text-lg font-pixel ${gamePhase === 'day' ? 'text-clinical-light' : 'text-educational-light'}`}>
-          {gamePhase === 'day' ? 'Day - Hospital' : 'Night - Constellation'}
-        </div>
-      </div>
-      
-      {/* Insight meter */}
-      <div className="pixel-borders bg-surface p-3">
-        <InsightMeter showAnimation={showInsightAnimation} />
-      </div>
-      
-      {/* Momentum counter */}
-      <div className="pixel-borders bg-surface p-3">
-        <MomentumCounter 
-          level={player.momentum} 
-          consecutiveCorrect={player.momentum * 2} // Approximation
-          compact={true} 
-          className="w-full"
-        />
-      </div>
-      
-      {/* Knowledge status with visual progress */}
-      <div className="pixel-borders bg-surface p-3">
+      {/* 3. Knowledge Progression Block - Strategic long-term resources */}
+      <PixelBox 
+        className="p-3" 
+        variant={newlyDiscovered.length > 0 ? 'educational' : 'default'}
+      >
         <div className="text-sm text-text-secondary font-pixel mb-1">Knowledge Mastery</div>
         <div className="flex items-center">
-          <div className="text-educational-light text-lg font-pixel">
+          <div className={`text-${getPhaseColor()}-light text-lg font-pixel`}>
             {totalMastery}%
           </div>
           
-          {/* Visual progress bar */}
-          <div className="ml-2 flex-grow h-2 bg-surface-dark rounded overflow-hidden">
+          {/* Visual progress bar - pixel style */}
+          <div className="ml-2 flex-grow h-2 bg-surface-dark rounded-none overflow-hidden">
             <motion.div 
-              className="h-full bg-educational"
+              className={`h-full bg-${getPhaseColor()}`}
               initial={{ width: 0 }}
               animate={{ 
                 width: `${totalMastery}%`,
                 transition: { type: 'spring', damping: 15 }
+              }}
+              style={{
+                backgroundImage: `url("data:image/svg+xml,%3Csvg width='4' height='4' viewBox='0 0 4 4' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Crect width='4' height='4' fill='%23${gamePhase === 'day' ? '4f6bbb' : '2c9287'}'/%3E%3Crect width='1' height='1' fill='%23${gamePhase === 'day' ? '2a3a66' : '1f6e66'}'/%3E%3Crect x='2' y='2' width='1' height='1' fill='%23${gamePhase === 'day' ? '2a3a66' : '1f6e66'}'/%3E%3C/svg%3E")`,
+                backgroundSize: '4px 4px',
+                imageRendering: 'pixelated'
               }}
             />
           </div>
@@ -128,14 +144,20 @@ export default function PlayerStats() {
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0 }}
             >
-              {newlyDiscovered.length} new concept{newlyDiscovered.length !== 1 ? 's' : ''} discovered
+              <div className="flex items-center">
+                <div className="w-2 h-2 bg-educational-light mr-1 animate-pulse"></div>
+                {newlyDiscovered.length} new concept{newlyDiscovered.length !== 1 ? 's' : ''} discovered
+              </div>
             </motion.div>
           )}
         </AnimatePresence>
-      </div>
+      </PixelBox>
       
-      {/* Journal status with open button */}
-      <div className={`pixel-borders bg-surface p-3 ${showJournalButtonAnimation ? 'animate-pulse-subtle' : ''}`}>
+      {/* 4. Journal Block - The tangible manifestation of knowledge */}
+      <PixelBox 
+        className={`p-3 ${showJournalButtonAnimation ? 'animate-pulse-subtle' : ''}`}
+        variant={hasJournal ? 'clinical' : 'default'}
+      >
         <div className="text-sm text-text-secondary font-pixel mb-1">Journal</div>
         {hasJournal ? (
           <div className="flex flex-col">
@@ -149,12 +171,17 @@ export default function PlayerStats() {
             
             {/* Add journal open button */}
             <button 
-              className={`mt-2 px-3 py-1 bg-clinical text-white text-sm font-pixel hover:bg-clinical-light transition-colors
+              className={`mt-2 px-3 py-1 bg-${getPhaseColor()} text-white text-sm font-pixel
+                hover:bg-${getPhaseColor()}-light transition-colors
                 ${showJournalButtonAnimation ? 'animate-bounce-subtle' : ''}
+                pixel-button
               `}
               onClick={() => toggleJournal()}
             >
-              Open Journal
+              <div className="flex items-center justify-center">
+                <span className="mr-1 text-lg">📖</span>
+                Open Journal
+              </div>
             </button>
           </div>
         ) : (
@@ -162,16 +189,21 @@ export default function PlayerStats() {
             Not Acquired
           </div>
         )}
-      </div>
+      </PixelBox>
       
-      {/* Debug info in dev mode */}
+      {/* 5. Expandable Debug Panel - Only in dev mode */}
       {process.env.NODE_ENV !== 'production' && (
         <div className="mt-auto bg-black/30 p-2 rounded text-xs font-mono">
-          <div>Phase: {gamePhase}</div>
-          <div>Day: {dayCount}</div>
-          <div>Insight: {player.insight}</div>
-          <div>Momentum: {player.momentum}/{player.maxMomentum}</div>
-          <div>Node: {currentNodeId ? currentNodeId.substring(0, 8) + '...' : 'none'}</div>
+          <details>
+            <summary className="cursor-pointer hover:text-blue-300">Debug Info</summary>
+            <div className="pt-1 space-y-1">
+              <div>Phase: {gamePhase}</div>
+              <div>Day: {dayCount}</div>
+              <div>Insight: {player.insight}</div>
+              <div>Momentum: {player.momentum}/{player.maxMomentum}</div>
+              <div>Node: {currentNodeId ? currentNodeId.substring(0, 8) + '...' : 'none'}</div>
+            </div>
+          </details>
         </div>
       )}
       
@@ -193,6 +225,24 @@ export default function PlayerStats() {
         
         .animate-bounce-subtle {
           animation: bounce-subtle 2s infinite;
+        }
+        
+        .pixel-button {
+          position: relative;
+          image-rendering: pixelated;
+          border: none;
+          border-top: 1px solid rgba(255,255,255,0.3);
+          border-left: 1px solid rgba(255,255,255,0.3);
+          border-right: 1px solid rgba(0,0,0,0.2);
+          border-bottom: 1px solid rgba(0,0,0,0.2);
+        }
+        
+        .pixel-button:active {
+          transform: translateY(1px);
+          border-top: 1px solid rgba(0,0,0,0.2);
+          border-left: 1px solid rgba(0,0,0,0.2);
+          border-right: 1px solid rgba(255,255,255,0.3);
+          border-bottom: 1px solid rgba(255,255,255,0.3);
         }
       `}</style>
     </div>

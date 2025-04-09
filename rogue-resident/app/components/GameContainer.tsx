@@ -11,7 +11,6 @@ import HillHomeScene from './HillHomeScene';
 import PlayerStats from './PlayerStats';
 import VerticalSliceDebugPanel from './debug/VerticalSliceDebugPanel';
 import ChallengeRouter from './challenges/ChallengeRouter';
-import { ErrorBoundary } from 'react-error-boundary';
 
 // Constants for transition timing - these create the rhythm of the experience
 const TRANSITION_FADE_DURATION = 700;      // Time to fade to black (ms)
@@ -107,7 +106,7 @@ export default function GameContainer() {
     }
   }, [map, startGame, eventBus]);
   
-  // Diagnostic phase change logger - critical for debugging transition issues
+  // Emergency timer safety mechanism
   useEffect(() => {
     console.log(`%c[PHASE] ${gamePhase}`, 'color: orange; font-weight: bold');
     
@@ -199,12 +198,7 @@ export default function GameContainer() {
   }, [gamePhase, completeNight, transitionToPhase, eventBus]);
 
   /**
-   * SIMPLIFIED RENDER GAME CONTENT - The key fix for black screen issues
-   * 
-   * This streamlined implementation follows principles used in shipped games:
-   * 1. Direct, deterministic rendering with no complex wrappers
-   * 2. Explicit logging of rendering decisions
-   * 3. Clear fallback states for any edge cases
+   * SIMPLIFIED RENDER GAME CONTENT
    */
   const renderGameContent = () => {
     console.log(`[RENDERING] Current phase: ${gamePhase}, Node: ${currentNodeId}, Transitioning: ${isTransitioning}`);
@@ -245,7 +239,7 @@ export default function GameContainer() {
       );
     }
     
-    // 2. DIRECT PHASE RENDERING - The key fix for black screen issues
+    // 2. DIRECT PHASE RENDERING
     
     // Night phase - direct render
     if (gamePhase === 'night') {
@@ -350,19 +344,19 @@ export default function GameContainer() {
       data-game-container
       data-phase={gamePhase}
     >
-      {/* Main content layout */}
+      {/* Main content layout with RIGHT sidebar (modified from original) */}
       <div className="flex-grow flex overflow-hidden">
-        {/* Left sidebar */}
-        <div className="w-64 flex-shrink-0 border-r border-gray-800 overflow-hidden flex flex-col">
-          <div className="flex-1 overflow-y-auto overflow-x-hidden">
-            <PlayerStats />
-          </div>
-        </div>
-        
         {/* Main gameplay area */}
         <div className="flex-grow relative overflow-hidden">
           <div className="absolute inset-0 overflow-auto">
             {renderGameContent()}
+          </div>
+        </div>
+        
+        {/* Right sidebar - moved from left to right */}
+        <div className="w-64 flex-shrink-0 border-l border-gray-800 overflow-hidden flex flex-col">
+          <div className="flex-1 overflow-y-auto overflow-x-hidden">
+            <PlayerStats />
           </div>
         </div>
       </div>

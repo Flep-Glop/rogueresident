@@ -1,0 +1,199 @@
+/* app/styles/playerPanel.module.css */
+
+/* Main panel container - right side placement */
+.playerPanel {
+    width: 16rem; /* 256px */
+    height: 100%;
+    border-left: 1px solid var(--border);
+    background-color: var(--background);
+    transition: width 0.3s ease;
+    display: flex;
+    flex-direction: column;
+  }
+  
+  /* Compact mode for challenge screens */
+  .playerPanelCompact {
+    width: 12rem; /* 192px */
+  }
+  
+  /* Panel header with resident portrait */
+  .panelHeader {
+    display: flex;
+    align-items: center;
+    padding: 0.75rem;
+    border-bottom: 1px solid var(--border);
+  }
+  
+  /* Module container - standard styling for each UI block */
+  .module {
+    padding: 0.75rem;
+    border-radius: 0;
+    background-color: var(--surface);
+    position: relative;
+    margin-bottom: 0.75rem;
+    box-shadow: 0 -2px 0 0 var(--border),
+      0 2px 0 0 var(--border),
+      -2px 0 0 0 var(--border),
+      2px 0 0 0 var(--border);
+    image-rendering: pixelated;
+  }
+  
+  /* Module variants for day/night phases */
+  .moduleDay {
+    --accent-color: var(--clinical-color);
+    --accent-color-light: var(--clinical-color-light);
+    border-left: 2px solid var(--clinical-color);
+  }
+  
+  .moduleNight {
+    --accent-color: var(--educational-color);
+    --accent-color-light: var(--educational-color-light);
+    border-left: 2px solid var(--educational-color);
+  }
+  
+  /* Module with active highlighting */
+  .moduleActive {
+    background-color: color-mix(in srgb, var(--accent-color) 10%, var(--surface));
+    box-shadow: 0 0 10px rgba(var(--accent-color-rgb), 0.2);
+  }
+  
+  /* Module with alert state */
+  .moduleAlert {
+    animation: pulse-subtle 2s infinite;
+  }
+  
+  @keyframes pulse-subtle {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(var(--accent-color-rgb), 0.4); }
+    50% { box-shadow: 0 0 0 4px rgba(var(--accent-color-rgb), 0.4); }
+  }
+  
+  /* Module labels */
+  .moduleLabel {
+    font-family: var(--font-pixel);
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    margin-bottom: 0.25rem;
+  }
+  
+  /* Resource meters */
+  .meterContainer {
+    margin-bottom: 0.5rem;
+  }
+  
+  /* Panel scroll area */
+  .scrollArea {
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: 0.75rem;
+  }
+  
+  /* Button styling */
+  .actionButton {
+    font-family: var(--font-pixel);
+    width: 100%;
+    padding: 0.5rem;
+    background-color: var(--accent-color);
+    color: white;
+    border: none;
+    transition: background-color 0.2s, transform 0.1s;
+    position: relative;
+    image-rendering: pixelated;
+    border-top: 1px solid rgba(255,255,255,0.3);
+    border-left: 1px solid rgba(255,255,255,0.3);
+    border-right: 1px solid rgba(0,0,0,0.2);
+    border-bottom: 1px solid rgba(0,0,0,0.2);
+  }
+  
+  .actionButton:hover {
+    background-color: var(--accent-color-light);
+  }
+  
+  .actionButton:active {
+    transform: translateY(1px);
+    border-top: 1px solid rgba(0,0,0,0.2);
+    border-left: 1px solid rgba(0,0,0,0.2);
+    border-right: 1px solid rgba(255,255,255,0.3);
+    border-bottom: 1px solid rgba(255,255,255,0.3);
+  }
+  
+  /* Value display */
+  .valueDisplay {
+    font-family: var(--font-pixel);
+    font-size: 1rem;
+    color: var(--accent-color-light);
+  }
+  
+  /* Progress bar */
+  .progressBar {
+    width: 100%;
+    height: 0.5rem;
+    background-color: var(--surface-dark);
+    position: relative;
+    overflow: hidden;
+  }
+  
+  .progressFill {
+    height: 100%;
+    background-color: var(--accent-color);
+    position: absolute;
+    left: 0;
+    top: 0;
+    background-image: url("data:image/svg+xml,%3Csvg width='4' height='4' viewBox='0 0 4 4' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Crect width='4' height='4' fill='%234f6bbb'/%3E%3Crect width='1' height='1' fill='%232a3a66'/%3E%3Crect x='2' y='2' width='1' height='1' fill='%232a3a66'/%3E%3C/svg%3E");
+    background-size: 4px 4px;
+    image-rendering: pixelated;
+  }
+  
+  /* Debug area */
+  .debugArea {
+    margin-top: auto;
+    font-family: monospace;
+    font-size: 0.625rem;
+    padding: 0.5rem;
+    background-color: rgba(0,0,0,0.3);
+    border-radius: 0.25rem;
+  }
+  
+  /* Animation utilities */
+  .bounceSubtle {
+    animation: bounce-subtle 2s infinite;
+  }
+  
+  @keyframes bounce-subtle {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-3px); }
+  }
+  
+  /* Responsive adaptations */
+  @media (max-height: 768px) {
+    .module {
+      padding: 0.5rem;
+      margin-bottom: 0.5rem;
+    }
+    
+    .moduleLabel {
+      font-size: 0.7rem;
+    }
+    
+    .valueDisplay {
+      font-size: 0.875rem;
+    }
+  }
+  
+  /* Target 1366x768 laptops */
+  @media (max-height: 768px) and (max-width: 1366px) {
+    .playerPanel {
+      width: 14rem;
+    }
+    
+    .playerPanelCompact {
+      width: 11rem;
+    }
+  }
+  
+  /* CSS variables for colors to use with the modules */
+  :root {
+    --clinical-color-rgb: 79, 107, 187;
+    --educational-color-rgb: 44, 146, 135;
+    --qa-color-rgb: 90, 105, 120;
+  }
