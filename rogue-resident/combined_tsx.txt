@@ -4255,458 +4255,6 @@ export default function HillHomeScene({ onComplete }) {
 }
 ==== END: app/components/HillHomeScene.tsx ====
 
-==== START: app/components/vs/SimplifiedKapoorMap.tsx ====
-// app/components/vs/SimplifiedKapoorMap.tsx
-'use client';
-import React, { useEffect, useState, useRef, useCallback } from 'react'; // Added useCallback
-import { useGameStore } from '@/app/store/gameStore';
-import { useEventBus, safeDispatch } from '@/app/core/events/CentralEventBus';
-import { GameEventType } from '@/app/core/events/EventTypes';
-import { useGameState } from '@/app/core/statemachine/GameStateMachine';
-import { useJournalStore } from '@/app/store/journalStore';
-
-/**
- * SimplifiedKapoorMap
- *
- * A focused map component for the vertical slice, ensuring the critical path
- * through Dr. Kapoor's calibration node works reliably after state refactoring.
- */
-export default function SimplifiedKapoorMap() {
-  // Get state from the correct stores/hooks
-  const {
-    map,
-    currentNodeId,
-    setCurrentNode,
-    startGame,
-  } = useGameStore();
-
-  const {
-    gamePhase,
-    currentDay,
-    completedNodeIds,
-    beginDayCompletion
-   } = useGameState();
-
-  // Use a stable selector for hasJournal to prevent unnecessary updates if the store object changes ref
-  const hasJournal = useJournalStore(state => state.hasJournal);
-  const initializeJournal = useJournalStore(state => state.initializeJournal);
-  const journalCurrentUpgrade = useJournalStore(state => state.currentUpgrade); // Get upgrade for debug panel
-
-  // Local component state
-  const [kapoorNodeId, setKapoorNodeId] = useState<string | null>(null);
-  const [isMapReady, setIsMapReady] = useState(false);
-  const [autoSelectDisabled, setAutoSelectDisabled] = useState(false);
-  const [isEndDayProcessing, setIsEndDayProcessing] = useState(false);
-
-  // Refs
-  const mapContainerRef = useRef<HTMLDivElement>(null);
-  const nodeRef = useRef<HTMLDivElement>(null);
-  const instanceId = useRef(`vs-map-${Date.now()}`).current;
-  const endDayTimeoutRef = useRef<NodeJS.Timeout | null>(null); // Ref for end day timeout
-
-  // Initialize map if needed
-  useEffect(() => {
-    if (!useGameStore.getState().map) {
-      console.log('🗺️ Initializing simplified Kapoor map (useEffect)...');
-      try {
-        useGameStore.getState().startGame({
-          seed: 'vs-kapoor-calibration',
-          forceVerticalSlice: true
-        });
-      } catch (error) {
-        console.error('Error initializing map:', error);
-      }
-    } else {
-       // If map already exists, check readiness immediately
-       const currentMap = useGameStore.getState().map;
-       if (currentMap && !isMapReady) {
-            setIsMapReady(true);
-            console.log('🗺️ Map already exists, marking as ready.');
-       }
-    }
-  }, [isMapReady]); // Rerun if isMapReady changes (e.g., on HMR)
-
-  // Effect to react to map changes from gameStore
-  useEffect(() => {
-      const currentMap = useGameStore.getState().map;
-      // Only run if map exists and not ready yet
-      if (currentMap && !isMapReady) {
-           const timer = setTimeout(() => {
-                // Check again inside timeout
-                if (useGameStore.getState().map && !isMapReady) {
-                    setIsMapReady(true);
-                    console.log('🗺️ Map detected in store, marking as ready. Nodes:', currentMap.nodes.length);
-                }
-           }, 100);
-           return () => clearTimeout(timer);
-      }
-  }, [isMapReady]); // Re-check when isMapReady changes
-
-
-  // Find and set the Kapoor calibration node once map is ready
-  useEffect(() => {
-    const currentMap = useGameStore.getState().map;
-    // Only run if map is ready, nodes exist, and kapoorNodeId is not set yet
-    if (isMapReady && currentMap?.nodes && !kapoorNodeId) {
-      try {
-        const kapoorNode = currentMap.nodes.find(node =>
-          node.type === 'kapoorCalibration' || node.id.includes('calibration')
-        );
-
-        if (kapoorNode) {
-          console.log('🔍 Found Kapoor calibration node:', kapoorNode.id);
-          setKapoorNodeId(kapoorNode.id); // Set local state
-          safeDispatch(
-            GameEventType.UI_BUTTON_CLICKED,
-            { componentId: 'simplifiedKapoorMap', action: 'foundKapoorNode', metadata: { nodeId: kapoorNode.id } },
-            'SimplifiedKapoorMap.findNode'
-          );
-        } else {
-          console.warn('⚠️ Could not find Kapoor calibration node in map');
-           if (currentMap.nodes.length > 0) {
-                console.warn('⚠️ Using first node as fallback:', currentMap.nodes[0].id);
-                setKapoorNodeId(currentMap.nodes[0].id);
-           }
-        }
-      } catch (error) {
-        console.error('Error finding Kapoor node:', error);
-      }
-    }
-  }, [isMapReady, kapoorNodeId]); // Rerun only if map readiness or kapoorNodeId changes
-
-  // Check if auto-select should be disabled
-  useEffect(() => {
-    // Calculate completion status inside the effect
-    const isCompleted = kapoorNodeId && completedNodeIds && completedNodeIds.includes(kapoorNodeId);
-
-    // Determine if conditions for disabling are met
-    const shouldBeDisabled = isCompleted || currentDay > 1 || hasJournal;
-
-    // Only update state if the desired state differs from the current state
-    if (shouldBeDisabled && !autoSelectDisabled) {
-        console.log(`[Map] Disabling auto-select. Completed: ${isCompleted}, Day: ${currentDay}, Has Journal: ${hasJournal}`);
-        setAutoSelectDisabled(true);
-    } else if (!shouldBeDisabled && autoSelectDisabled) {
-        // This case is less likely but handles potential resets
-        console.log(`[Map] Re-enabling auto-select.`);
-        setAutoSelectDisabled(false);
-    }
-  // *** FIX: Depend on primitive values or stable references ***
-  // Use completedNodeIds?.length as a proxy for changes in completion status
-  }, [kapoorNodeId, completedNodeIds?.length, currentDay, hasJournal, autoSelectDisabled]);
-
-  // Auto-select logic for first-time experience
-  useEffect(() => {
-    let timer: NodeJS.Timeout | null = null;
-    // Check conditions: map ready, node found, no current node, and auto-select NOT disabled
-    if (isMapReady && kapoorNodeId && !currentNodeId && !autoSelectDisabled) {
-      timer = setTimeout(() => {
-        // Double-check conditions inside timeout
-        // Use direct state access inside timeout as component state might be stale
-        if (isMapReady && kapoorNodeId && !useGameStore.getState().currentNodeId && !autoSelectDisabled) {
-            try {
-                console.log('🎯 Auto-selecting Kapoor node:', kapoorNodeId);
-                setCurrentNode(kapoorNodeId);
-                // Setting autoSelectDisabled here might still trigger the other effect,
-                // but the check inside that effect should prevent the loop.
-                setAutoSelectDisabled(true);
-                safeDispatch(
-                    GameEventType.UI_BUTTON_CLICKED,
-                    { componentId: 'simplifiedKapoorMap', action: 'autoSelectNode', metadata: { nodeId: kapoorNodeId } },
-                    'SimplifiedKapoorMap.autoSelect'
-                );
-            } catch (error) {
-                console.error('Error auto-selecting node:', error);
-            }
-        }
-      }, 1200); // Keep delay for visual effect
-    }
-    // Cleanup function
-    return () => {
-        if (timer) clearTimeout(timer);
-    };
-  // Depend only on conditions that trigger the auto-select itself
-  }, [isMapReady, kapoorNodeId, currentNodeId, autoSelectDisabled, setCurrentNode]);
-
-  // Handle node click (wrapped in useCallback for stability if passed as prop)
-  const handleNodeClick = useCallback(() => {
-    if (kapoorNodeId && currentNodeId !== kapoorNodeId) {
-      try {
-        setCurrentNode(kapoorNodeId);
-        safeDispatch(
-          GameEventType.UI_NODE_CLICKED,
-          { componentId: 'simplifiedKapoorMap', action: 'nodeClicked', metadata: { nodeId: kapoorNodeId } },
-          'SimplifiedKapoorMap.nodeClick'
-        );
-      } catch (error) {
-        console.error('Error handling node click:', error);
-      }
-    }
-  }, [kapoorNodeId, currentNodeId, setCurrentNode]);
-
-  // Emergency journal acquisition function
-  const forceJournalAcquisition = useCallback(() => {
-    if (!hasJournal) { // Use stable state variable
-      try {
-        console.log('⚠️ Forcing emergency journal acquisition');
-        initializeJournal('technical'); // Use stable action
-        safeDispatch(
-          GameEventType.JOURNAL_ACQUIRED,
-          { tier: 'technical', character: 'kapoor', source: 'emergency_fallback', forced: true },
-          'SimplifiedKapoorMap.emergencyJournal'
-        );
-        return true;
-      } catch (error) {
-        console.error('Failed to force journal acquisition:', error);
-        return false;
-      }
-    }
-    return false;
-  }, [hasJournal, initializeJournal]); // Add stable dependencies
-
-  // Handle end day button click
-  const handleEndDay = useCallback(() => {
-    // Check processing state and game phase
-    if (isEndDayProcessing || gamePhase !== 'day') {
-      console.log('[Map] End day already processing or not in day phase.');
-      return;
-    }
-
-    // Ensure nodes are completed
-    if (completedNodeIds && completedNodeIds.length > 0) {
-      setIsEndDayProcessing(true);
-      console.log('[Map] Attempting to end day...');
-      forceJournalAcquisition(); // Ensure journal exists if needed
-      const success = beginDayCompletion(); // Trigger state machine action
-
-      if (!success) {
-        console.warn('[Map] beginDayCompletion call failed, resetting processing state.');
-        setIsEndDayProcessing(false);
-      } else {
-         // Only set timeout if transition started successfully
-         // Clear previous timeout if exists
-         if (endDayTimeoutRef.current) clearTimeout(endDayTimeoutRef.current);
-
-         endDayTimeoutRef.current = setTimeout(() => {
-             // Check state machine's transitioning flag directly
-             if (!useGameStateMachine.getState().isTransitioning) {
-                 setIsEndDayProcessing(false);
-                 console.log('[Map] End day processing safety timeout reached.');
-             } else {
-                 console.log('[Map] End day processing safety timeout reached, but state machine still transitioning.');
-                 // Optionally trigger another recovery check here if needed
-             }
-             endDayTimeoutRef.current = null; // Clear ref after execution
-         }, 5000); // 5 seconds
-      }
-    } else {
-      console.log('[Map] Cannot end day: No nodes completed.');
-      const button = mapContainerRef.current?.querySelector('.end-day-button');
-      if (button instanceof HTMLElement) {
-          button.animate([
-            { transform: 'translateX(-3px)' }, { transform: 'translateX(3px)' },
-            { transform: 'translateX(-3px)' }, { transform: 'translateX(0)' }
-          ], { duration: 300, easing: 'ease-in-out' });
-      }
-    }
-  }, [isEndDayProcessing, gamePhase, completedNodeIds, forceJournalAcquisition, beginDayCompletion]); // Add dependencies
-
-  // Cleanup timeout on unmount
-  useEffect(() => {
-      return () => {
-          if (endDayTimeoutRef.current) {
-              clearTimeout(endDayTimeoutRef.current);
-          }
-      };
-  }, []);
-
-  // Loading state
-  if (!isMapReady || !map) {
-    return (
-      <div className="h-full w-full flex items-center justify-center bg-background">
-        <div className="text-center">
-          <h1 className="text-2xl text-blue-300 mb-4">Initializing Calibration Session...</h1>
-          <div className="w-48 h-2 bg-gray-800 mx-auto overflow-hidden rounded-full">
-            <div className="h-full bg-blue-600 animate-pulse" style={{ width: '60%' }}></div>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // Node completion state
-  const isNodeCompleted = kapoorNodeId && completedNodeIds && completedNodeIds.includes(kapoorNodeId);
-
-  return (
-    <div
-      ref={mapContainerRef}
-      className="h-full w-full p-8 flex flex-col items-center justify-center bg-background starfield-bg relative"
-      data-component="simplified-kapoor-map"
-      data-instance-id={instanceId}
-    >
-      {/* Header */}
-      <div className="text-center mb-12">
-        <h1 className="text-4xl text-white font-bold mb-4 glow-text-blue">
-          LINAC Calibration Session
-        </h1>
-        <p className="text-xl text-blue-200">
-          Begin your medical physics journey with Dr. Kapoor
-        </p>
-      </div>
-
-      {/* Node visualization */}
-      <div className="relative w-full max-w-md h-64 flex items-center justify-center">
-        {kapoorNodeId ? (
-             <div
-                ref={nodeRef}
-                className={`w-80 h-36 relative cursor-pointer transition-all duration-300 transform hover:scale-105
-                ${currentNodeId === kapoorNodeId ? 'opacity-100 scale-105 ring-2 ring-blue-400' :
-                  isNodeCompleted ? 'opacity-60 filter grayscale' :
-                  'opacity-90 hover:opacity-100 animate-pulse-slow'
-                }`}
-                onClick={handleNodeClick}
-                style={{ perspective: '800px' }}
-             >
-                {/* Node container */}
-                <div className="absolute inset-0 overflow-hidden"
-                    style={{
-                    background: 'rgba(10, 12, 16, 0.92)',
-                    borderLeft: '3px solid #3b82f6',
-                    boxShadow: '0 0 20px rgba(59, 130, 246, 0.3)',
-                    transform: 'rotateY(-5deg)'
-                    }}
-                >
-                    {/* Highlight effect */}
-                    <div className="absolute inset-0"
-                    style={{
-                        background: 'linear-gradient(135deg, rgba(59, 130, 246, 0.1) 0%, transparent 50%, rgba(59, 130, 246, 0.05) 100%)',
-                        opacity: currentNodeId === kapoorNodeId ? 0.8 : isNodeCompleted ? 0.2 : 0.6
-                    }}
-                    ></div>
-                </div>
-
-                {/* Character portrait */}
-                <div className="absolute left-0 bottom-0 transform -translate-x-1/4 translate-y-1/4 z-10"
-                    style={{ width: '80px', height: '80px' }}
-                >
-                    <div className="w-full h-full rounded-full overflow-hidden border-2 border-blue-500 shadow-glow-blue">
-                    <img src="/characters/kapoor.png" alt="Dr. Kapoor" className="w-full h-full object-cover" onError={(e) => e.currentTarget.style.display = 'none'} />
-                    </div>
-                </div>
-
-                {/* Content */}
-                <div className="absolute inset-0 flex flex-col justify-center pl-20 pr-4">
-                    <h3 className="text-xl text-white font-medium mb-1">Dr. Kapoor</h3>
-                    <p className="text-sm text-gray-300 mb-2">Calibration Challenge</p>
-                    <div className="flex items-center text-xs">
-                    <div className="w-2 h-2 rounded-full bg-blue-500 mr-2"></div>
-                    <span className="text-gray-400">Clinical Training</span>
-                    {isNodeCompleted ? (
-                        <span className="ml-auto text-green-400 font-semibold">✓ Completed</span>
-                    ) : (
-                         <span className="ml-auto text-blue-400">+10 Insight</span>
-                    )}
-                    </div>
-                </div>
-
-                 {/* Pulse indicator */}
-                {!isNodeCompleted && currentNodeId !== kapoorNodeId && (
-                    <div className="absolute -top-1 -right-1 w-3 h-3 rounded-full bg-blue-500 animate-ping"></div>
-                )}
-
-            </div>
-        ) : (
-            <div className="text-center text-yellow-500">
-                <p>Loading map node...</p>
-            </div>
-        )}
-      </div>
-
-      {/* Emergency Journal Button */}
-      {completedNodeIds && completedNodeIds.length > 0 && !hasJournal && (
-        <div className="mt-4">
-          <button
-            className="px-4 py-2 bg-green-600 text-white text-sm rounded animate-pulse"
-            onClick={forceJournalAcquisition}
-            title="Use only if journal acquisition failed during dialogue"
-          >
-            Acquire Journal (Emergency)
-          </button>
-        </div>
-      )}
-
-      {/* Complete Day Button */}
-      <div className="mt-12">
-        <button
-          className={`end-day-button px-6 py-3 rounded-lg transition-all duration-300
-            ${
-              isEndDayProcessing
-                ? 'bg-gray-600 text-gray-400 cursor-not-allowed opacity-70'
-                : (completedNodeIds && completedNodeIds.length > 0)
-                  ? 'bg-blue-600 hover:bg-blue-500 text-white shadow-lg hover:shadow-blue-500/50'
-                  : 'bg-gray-700 text-gray-400 cursor-not-allowed'
-            }`}
-          onClick={handleEndDay}
-          disabled={!completedNodeIds || completedNodeIds.length === 0 || isEndDayProcessing}
-        >
-          {isEndDayProcessing ? (
-            <>
-              <span className="relative z-10 font-medium">Transitioning...</span>
-              <span className="ml-2 inline-block w-4 h-4 border-2 border-gray-300 border-t-blue-500 rounded-full animate-spin"></span>
-            </>
-          ) : (
-            <span className="relative z-10 font-medium">Return to Hill Home</span>
-          )}
-        </button>
-        {(!completedNodeIds || completedNodeIds.length === 0) && !isEndDayProcessing && (
-          <p className="text-center text-yellow-500 text-sm mt-2">
-            Complete the calibration challenge first
-          </p>
-        )}
-      </div>
-
-      {/* Day indicator */}
-      <div className="absolute top-4 left-4 bg-blue-600/70 text-white px-3 py-1 text-sm rounded-md">
-        Day {currentDay}
-      </div>
-
-      {/* Vertical slice indicator */}
-      <div className="absolute top-4 right-4 bg-blue-600 text-white px-3 py-1 text-sm rounded-md z-40">
-        Vertical Slice Mode
-      </div>
-
-      {/* Debug info */}
-      {process.env.NODE_ENV !== 'production' && (
-        <div className="fixed bottom-4 left-4 bg-black/70 text-white p-2 text-xs font-mono z-40 rounded max-w-xs overflow-auto max-h-40">
-          <div>Instance: {instanceId.slice(-6)}</div>
-          <div>Map Nodes: {map?.nodes?.length || 0}</div>
-          <div>Kapoor Node: {kapoorNodeId ? kapoorNodeId.slice(0, 10) + '...' : 'none'}</div>
-          <div>Current Node: {currentNodeId ? currentNodeId.slice(0, 10) + '...' : 'none'}</div>
-          <div>Completed: {completedNodeIds?.length ?? 'N/A'}</div>
-          <div>Journal: {hasJournal ? `${journalCurrentUpgrade}` : 'none'}</div>
-          <div>Auto-Select: {autoSelectDisabled ? 'Disabled' : 'Enabled'}</div>
-          <div>Phase: {gamePhase}</div>
-          <div>Processing End Day: {isEndDayProcessing ? 'Yes' : 'No'}</div>
-        </div>
-      )}
-
-      {/* Styles */}
-      <style jsx>{`
-        .glow-text-blue { text-shadow: 0 0 10px rgba(59, 130, 246, 0.6); }
-        .shadow-glow-blue { box-shadow: 0 0 15px rgba(59, 130, 246, 0.5); }
-        @keyframes pulseSlow { 0% { transform: scale(1); opacity: 0.9; } 50% { transform: scale(1.02); opacity: 1; } 100% { transform: scale(1); opacity: 0.9; } }
-        .animate-pulse-slow { animation: pulseSlow 3s infinite ease-in-out; }
-        .starfield-bg { background-color: #0f1117; }
-        @keyframes spin { to { transform: rotate(360deg); } }
-        .animate-spin { animation: spin 1s linear infinite; }
-        @keyframes ping { 75%, 100% { transform: scale(2); opacity: 0; } }
-        .animate-ping { animation: ping 1s cubic-bezier(0, 0, 0.2, 1) infinite; }
-      `}</style>
-    </div>
-  );
-}
-==== END: app/components/vs/SimplifiedKapoorMap.tsx ====
-
 ==== START: app/components/PlayerStats.tsx ====
 'use client';
 import { useEffect, useState } from 'react';
@@ -4970,7 +4518,7 @@ import { useGameState } from '@/app/core/statemachine/GameStateMachine';
 import { useEventBus, useEventSubscription } from '@/app/core/events/CentralEventBus'; // Import hook
 import { GameEventType } from '@/app/core/events/EventTypes';
 import { useCoreInitialization } from '@/app/core/init'; // Corrected path
-import SimplifiedKapoorMap from './vs/SimplifiedKapoorMap';
+import SimplifiedKapoorMap from './map/SimplifiedKapoorMap';
 import HillHomeScene from './HillHomeScene';
 import PlayerStats from './PlayerStats';
 import VerticalSliceDebugPanel from './debug/VerticalSliceDebugPanel';
@@ -5257,6 +4805,177 @@ export default function ResidentPortrait({
   );
 }
 ==== END: app/components/ResidentPortrait.tsx ====
+
+==== START: app/components/map/SimplifiedKapoorMap.tsx ====
+/**
+ * @file app/components/map/SimplifiedKapoorMap.tsx
+ * @description React component for rendering the interactive game map.
+ * Includes fixes for hydration errors and potential infinite update loops.
+ * (This file is unchanged from the previous version provided)
+ */
+'use client';
+
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { useGameStore } from '@/app/store/gameStore';
+import { useJournalStore } from '@/app/store/journalStore';
+import { useKnowledgeStore } from '@/app/store/knowledgeStore';
+import { Button } from '@/app/components/ui/button'; // Assuming shadcn Button is setup
+// Import type definitions - Requires app/types/game.ts to exist
+import { MapNode } from '@/app/types/game';
+import CentralEventBus from '@/app/core/events/CentralEventBus';
+// import { useEventSubscription } from '@/app/core/events/EventSubscriptionHooks'; // Uncomment if needed later
+import { THEME_COLORS } from '@/app/core/themeConstants'; // Import theme colors
+
+// Interface for component props
+interface SimplifiedKapoorMapProps {
+  onNodeSelect?: (nodeId: string) => void; // Optional callback when a node is selected
+  autoSelectEnabled?: boolean; // Prop to control if a node should be auto-selected on load
+}
+
+/**
+ * SimplifiedKapoorMap Component
+ *
+ * Renders a basic representation of the game map and handles node interactions.
+ * Addresses hydration errors and potential update loops.
+ */
+export function SimplifiedKapoorMap({
+  onNodeSelect,
+  autoSelectEnabled = true, // Default autoSelect to true if not provided
+}: SimplifiedKapoorMapProps) {
+  // --- State Hooks ---
+  const [isMounted, setIsMounted] = useState(false);
+  const [mapReady, setMapReady] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  // --- Zustand Store Hooks ---
+  const { day, phase, mapData, selectedNodeId, selectNode, initializeMap } = useGameStore(
+    useCallback((state) => ({
+        day: state.day, phase: state.phase, mapData: state.mapData,
+        selectedNodeId: state.selectedNodeId, selectNode: state.selectNode,
+        initializeMap: state.initializeMap,
+      }), [])
+  );
+  const hasJournal = useJournalStore(useCallback((state) => state.hasJournal, []));
+  const completedNodes = useKnowledgeStore(useCallback((state) => state.completedNodes, []));
+
+  // --- Derived State and Memos ---
+  const nodes = useMemo(() => mapData?.nodes ?? [], [mapData]);
+
+  // --- Effects ---
+
+  // Effect 1: Set isMounted flag (for hydration fix)
+  useEffect(() => { setIsMounted(true); }, []);
+
+  // Effect 2: Initialize map data if needed
+  useEffect(() => {
+    if (!mapData) {
+      console.log('🗺️ Initializing simplified Kapoor map (useEffect)...');
+      initializeMap();
+    } else {
+      console.log('🗺️ Map data exists, marking as ready.');
+      setMapReady(true);
+    }
+  }, [mapData, initializeMap]);
+
+  // Effect 3: Mark map as ready once data/nodes are present
+  useEffect(() => {
+    if (mapData && nodes.length > 0) {
+      console.log('🗺️ Map data loaded, nodes available. Marking map as ready.');
+      setMapReady(true);
+    }
+  }, [mapData, nodes]);
+
+  // Effect 4: Handle Auto-selection logic (Refined)
+  useEffect(() => {
+    if (isMounted && mapReady && autoSelectEnabled && !selectedNodeId && nodes.length > 0) {
+      const firstAvailableNode = nodes.find(node => !completedNodes.includes(node.id));
+      const targetNodeId = firstAvailableNode ? firstAvailableNode.id : nodes[0].id;
+      console.log(`[Map] Attempting auto-selection. Target: ${targetNodeId}. Current selection: ${selectedNodeId}`);
+
+      if (targetNodeId !== selectedNodeId) {
+         const targetNode = nodes.find(n => n.id === targetNodeId);
+         if (!targetNode) { console.warn(`[Map] Auto-select target node ${targetNodeId} not found.`); return; }
+         const journalRequired = targetNode.requiresJournal ?? false;
+         const requiredPhase = targetNode.phaseSpecific;
+         let canSelect = true;
+         if (journalRequired && !hasJournal) { console.log(`[Map] Cannot auto-select ${targetNodeId}: Journal required.`); canSelect = false; }
+         if (requiredPhase && requiredPhase !== phase) { console.log(`[Map] Cannot auto-select ${targetNodeId}: Requires ${requiredPhase} phase.`); canSelect = false; }
+         if(canSelect) {
+            console.log(`[Map] Auto-selecting node: ${targetNodeId}`);
+            selectNode(targetNodeId);
+            if (onNodeSelect) { onNodeSelect(targetNodeId); }
+         } else { console.log(`[Map] Auto-selection conditions not met for ${targetNodeId}.`); }
+      } else { console.log(`[Map] Auto-selection skipped: Target node ${targetNodeId} is already selected.`); }
+    }
+  }, [ isMounted, mapReady, autoSelectEnabled, selectedNodeId, nodes, completedNodes, hasJournal, phase, selectNode, onNodeSelect ]);
+
+
+  // --- Event Handlers ---
+  const handleNodeClick = useCallback((nodeId: string, node: MapNode) => {
+    console.log(`[Map] Node clicked: ${nodeId}`);
+    const journalRequired = node.requiresJournal ?? false;
+    const requiredPhase = node.phaseSpecific;
+    if (journalRequired && !hasJournal) {
+      console.warn(`[Map] Cannot select ${nodeId}: Journal required.`);
+      CentralEventBus.emit('ui:show:toast', { message: "Requires Journal", type: "warning" }); return;
+    }
+    if (requiredPhase && requiredPhase !== phase) {
+        console.warn(`[Map] Cannot select ${nodeId}: Only available during ${requiredPhase} phase.`);
+        CentralEventBus.emit('ui:show:toast', { message: `Only available at ${requiredPhase}`, type: "warning" }); return;
+    }
+    if (nodeId !== selectedNodeId) {
+      selectNode(nodeId);
+      if (onNodeSelect) { onNodeSelect(nodeId); }
+      CentralEventBus.emit('ui:button:clicked', { element: 'map_node', nodeId: nodeId });
+    } else { console.log(`[Map] Node ${nodeId} is already selected.`); }
+  }, [selectNode, onNodeSelect, selectedNodeId, hasJournal, phase]);
+
+
+  // --- Rendering Logic ---
+
+  // Hydration Fix: Render placeholder until mounted client-side
+  if (!isMounted) {
+    return ( <div className="h-full w-full flex items-center justify-center" ref={containerRef}> <div className="text-center pixel-font text-lg text-gray-400">Initializing Map...</div> </div> );
+  }
+
+  // Loading state (after mount, before map ready)
+  if (!mapReady || !mapData) {
+    return ( <div className="h-full w-full flex items-center justify-center bg-background" ref={containerRef}> <div className="text-center pixel-font text-lg text-gray-400 animate-pulse">Loading Map Data...</div> </div> );
+  }
+
+  // Actual map render
+  return (
+    <div ref={containerRef} className="relative h-full w-full overflow-hidden bg-gray-800 border-4 border-gray-600 shadow-inner" style={{ backgroundImage: `radial-gradient(${THEME_COLORS.map.gridDot} 1px, transparent 1px)`, backgroundSize: '20px 20px', }} >
+      {/* Map Nodes */}
+      {nodes.map((node) => {
+        const isSelected = node.id === selectedNodeId;
+        const isCompleted = completedNodes.includes(node.id);
+        const journalRequired = node.requiresJournal ?? false;
+        const requiredPhase = node.phaseSpecific;
+        let isDisabled = false;
+        let titleText = `Location: ${node.name}`;
+        if (journalRequired && !hasJournal) { isDisabled = true; titleText += " (Requires Journal)"; }
+        if (requiredPhase && requiredPhase !== phase) { isDisabled = true; titleText += ` (Available at ${requiredPhase})`; }
+        const left = `${node.x ?? 50}%`; const top = `${node.y ?? 50}%`;
+        return (
+          <Button key={node.id} variant="ghost"
+            className={` absolute transform -translate-x-1/2 -translate-y-1/2 p-2 rounded-full shadow-lg transition-all duration-200 ease-in-out border-2 ${isSelected ? 'ring-4 ring-offset-2 ring-yellow-400 scale-110 z-10' : ''} ${isCompleted ? 'border-green-500 bg-green-900 opacity-70' : 'border-blue-500 bg-blue-900'} ${isDisabled ? 'opacity-50 cursor-not-allowed filter grayscale' : 'hover:scale-105 hover:border-yellow-400 cursor-pointer'} `}
+            style={{ left: left, top: top, width: '40px', height: '40px', }}
+            onClick={() => !isDisabled && handleNodeClick(node.id, node)}
+            disabled={isDisabled} title={titleText} >
+            <span className={`block w-3 h-3 rounded-full ${isCompleted ? 'bg-green-400' : 'bg-blue-400'}`}></span>
+          </Button>
+        );
+      })}
+      {/* Selected Node Info Overlay */}
+      {selectedNodeId && ( <div className="absolute bottom-4 left-4 bg-black bg-opacity-70 text-white p-2 rounded pixel-font border border-gray-500 text-sm"> Selected: {nodes.find(n => n.id === selectedNodeId)?.name ?? 'Unknown'} </div> )}
+      {/* Day/Phase Info Overlay */}
+      <div className="absolute top-4 right-4 bg-black bg-opacity-70 text-white p-2 rounded pixel-font border border-gray-500 text-sm"> Day: {day} | Phase: {phase} </div>
+    </div>
+  );
+}
+
+==== END: app/components/map/SimplifiedKapoorMap.tsx ====
 
 ==== START: app/components/challenges/ChallengeRouter.tsx ====
 // app/components/challenges/ChallengeRouter.tsx

@@ -1,242 +1,507 @@
-/**
- * @file app/store/gameStore.ts
- * @description Zustand store for managing global game state like day, phase, map data, etc.
- * Includes persistence and hydration logic. Uses hardcoded map data.
- */
-
 import { create } from 'zustand';
-import { persist, createJSONStorage, StateStorage } from 'zustand/middleware';
-import CentralEventBus from '@/app/core/events/CentralEventBus';
-// Import type definitions - Assuming you create the types file
-import { GameMap, MapNode } from '@/app/types/game';
+import { immer } from 'zustand/middleware/immer';
+import {
+  GamePhase,
+  GameState,
+  Item,
+  PlayerState,
+  TimeState,
+  DialogueState,
+  MapState,
+  GameStateMachine,
+  ProgressionResolver,
+  DialogueStateMachine,
+  DialogueConfig,
+  NarrativeChoice,
+  NarrativeContext,
+  NarrativeEvent,
+} from '@/app/types/game';
+import { useEventBus } from '@/app/core/events/CentralEventBus'; // Assuming this is the correct import for your event bus hook
+import { useKnowledgeStore } from './knowledgeStore';
+import { useJournalStore } from './journalStore';
+import { useResourceStore } from './resourceStore';
+import kapoorCalibration from '@/app/data/dialogues/calibrations/kapoor-calibration'; // Example dialogue import
 
-// --- Define the Hardcoded Map Data Directly Here ---
-// Based on the data found in your original gameStore.ts startGame function
-const hardcodedMapData: GameMap = {
-  id: 'kapoor-calib',
-  name: 'Kapoor Calibration',
-  nodes: [
-      { id: 'calibration_node', name: 'Calibration Point', x: 50, y: 50, requiresJournal: true, phaseSpecific: 'day' },
-      { id: 'second_node', name: 'Observation Post', x: 75, y: 75 },
-      // Add more nodes as needed in the future
-  ]
+// --- Initial State ---
+
+const initialPlayerState: PlayerState = {
+  health: 100,
+  sanity: 100,
+  location: 'start_node', // Replace with actual starting location ID
+  statusEffects: [],
 };
-// ---------------------------------------------------
 
+const initialTimeState: TimeState = {
+  currentDay: 1,
+  currentTime: 0, // 0-23 representing hours
+  isDay: true,
+};
 
-// Define the shape of the game state managed by this store
-interface GameState {
-  // Core State Properties
-  day: number;
-  phase: 'day' | 'night' | 'transition' | 'dialogue' | 'loading';
-  mapData: GameMap | null;
-  selectedNodeId: string | null;
-  isLoading: boolean;
-  error: string | null;
+const initialDialogueState: DialogueState = {
+  isActive: false,
+  currentDialogueId: null,
+  currentNodeId: null,
+  currentText: '',
+  choices: [],
+  speaker: null,
+  characterMood: 'neutral',
+  dialogueHistory: [],
+};
 
-  // Actions - Functions to modify the state
-  initializeMap: () => void;
-  selectNode: (nodeId: string | null) => void;
-  advanceDay: () => void;
-  setPhase: (newPhase: GameState['phase']) => void;
+const initialMapState: MapState = {
+  nodes: {}, // Populated by game data
+  currentNodeId: 'start_node', // Should match player's initial location
+};
+
+const initialGameState: GameState = {
+  gamePhase: GamePhase.INITIALIZING,
+  player: initialPlayerState,
+  time: initialTimeState,
+  inventory: [],
+  dialogue: initialDialogueState,
+  map: initialMapState, // Added map state
+  completedNodeIds: [], // Track completed nodes/events
+  currentDay: 1, // Redundant? Kept for compatibility if used elsewhere
+  isTransitioning: false, // For day/night transitions
+  activeSystem: 'map', // Default active system view
+};
+
+// --- Store Slice ---
+
+export interface GameStoreActions {
+  // Initialization & Phase Transitions
+  initializeGame: (machine: GameStateMachine, resolver: ProgressionResolver) => void;
+  setGamePhase: (phase: GamePhase) => void;
   startGame: () => void;
-  resetGame: () => void;
-  setError: (message: string | null) => void;
-  setLoading: (loading: boolean) => void;
+  startDay: () => void;
+  startNight: () => void;
+  endDay: () => void; // Trigger transition to night
+  finalizeDayTransition: () => void; // Complete transition after effects/UI
+  endNight: () => void; // Trigger transition to day
+  finalizeNightTransition: () => void; // Complete transition after effects/UI
 
-  // Internal helper for hydration logic
-  _hydrate: () => void;
+  // Player Actions
+  updatePlayerHealth: (delta: number) => void;
+  updatePlayerSanity: (delta: number) => void;
+  movePlayer: (newNodeId: string) => void;
+  addItemToInventory: (item: Item) => void;
+  removeItemFromInventory: (itemId: string) => void;
+  applyStatusEffect: (effect: string) => void;
+  removeStatusEffect: (effect: string) => void;
+
+  // Time Actions
+  advanceTime: (hours: number) => void;
+
+  // Dialogue Actions
+  startDialogue: (dialogueId: string, config: DialogueConfig) => void;
+  advanceDialogue: (choice?: NarrativeChoice) => void;
+  endDialogue: () => void;
+
+  // Map Actions
+  markNodeCompleted: (nodeId: string) => void;
+  setActiveSystem: (system: 'map' | 'journal' | 'knowledge' | 'dialogue') => void;
+
+  // System References (Potentially set during init)
+  gameStateMachine?: GameStateMachine;
+  progressionResolver?: ProgressionResolver;
+  dialogueStateMachine?: DialogueStateMachine;
 }
 
-// Define the initial state values
-const initialState: Omit<GameState, 'initializeMap' | 'selectNode' | 'advanceDay' | 'setPhase' | 'startGame' | 'resetGame' | 'setError' | 'setLoading' | '_hydrate'> = {
-  day: 1,
-  phase: 'loading', // Start in 'loading' phase
-  mapData: null,    // Map data is null initially, loaded by initializeMap or startGame
-  selectedNodeId: null,
-  isLoading: true,   // Assume loading initially
-  error: null,
-};
+export const useGameStore = create<GameState & GameStoreActions>()(
+  immer((set, get) => ({
+    ...initialGameState,
 
-// Define a safe storage mechanism for persistence
-const safeLocalStorage: StateStorage = {
-  getItem: (name) => {
-    try {
-      if (typeof window !== 'undefined' && window.localStorage) {
-        return window.localStorage.getItem(name) || null;
+    // --- Initialization & Phase Transitions ---
+    initializeGame: (machine, resolver) => {
+      set((state) => {
+        state.gamePhase = GamePhase.INITIALIZED;
+        // Store references if needed, but avoid storing complex non-serializable objects if possible
+        // state.gameStateMachine = machine;
+        // state.progressionResolver = resolver;
+        console.log('Game Initialized');
+         // FIX: Access emit via getState()
+        useEventBus.getState().emit('gameInitialized', undefined);
+      });
+    },
+
+    setGamePhase: (phase) => {
+      set((state) => {
+        console.log(`Game phase changing from ${state.gamePhase} to ${phase}`);
+        state.gamePhase = phase;
+        // FIX: Access emit via getState()
+        useEventBus.getState().emit('gamePhaseChanged', { phase });
+      });
+    },
+
+    startGame: () => {
+      if (get().gamePhase === GamePhase.INITIALIZED) {
+        console.log('Starting game, transitioning to DAY_START');
+        get().setGamePhase(GamePhase.DAY_START);
+        // Potentially trigger the first day start sequence
+        get().startDay();
+      } else {
+        console.warn('Attempted to start game when not in INITIALIZED phase.');
       }
-    } catch (error) {
-      console.warn(`LocalStorage unavailable or error reading item "${name}":`, error);
-    }
-    return null;
-  },
-  setItem: (name, value) => {
-    try {
-      if (typeof window !== 'undefined' && window.localStorage) {
-        window.localStorage.setItem(name, value);
+    },
+
+    startDay: () => {
+      set((state) => {
+        state.gamePhase = GamePhase.DAY_EXPLORATION;
+        state.time.isDay = true;
+        state.time.currentTime = 8; // Example: Start day at 8 AM
+        state.isTransitioning = false;
+         // FIX: Access emit via getState()
+        useEventBus.getState().emit('dayStarted', { day: state.time.currentDay });
+        // FIX: Access emit via getState()
+        useEventBus.getState().emit('timeChanged', { ...state.time });
+        console.log(`Day ${state.time.currentDay} started.`);
+      });
+      // Trigger day-specific events or dialogues
+      // get().progressionResolver?.resolveDayStart(get().time.currentDay);
+    },
+
+    startNight: () => {
+      set((state) => {
+        state.gamePhase = GamePhase.NIGHT_EXPLORATION; // Or a specific night phase
+        state.time.isDay = false;
+        state.time.currentTime = 19; // Example: Start night at 7 PM
+        state.isTransitioning = false;
+        // FIX: Access emit via getState()
+        useEventBus.getState().emit('nightStarted', { day: state.time.currentDay });
+        // FIX: Access emit via getState()
+        useEventBus.getState().emit('timeChanged', { ...state.time });
+        console.log(`Night ${state.time.currentDay} started.`);
+      });
+      // Trigger night-specific events
+      // get().progressionResolver?.resolveNightStart(get().time.currentDay);
+    },
+
+    endDay: () => {
+      if (get().gamePhase === GamePhase.DAY_EXPLORATION) {
+        set(state => {
+          state.isTransitioning = true;
+          state.gamePhase = GamePhase.NIGHT_TRANSITION; // Indicate transition
+        });
+        // FIX: Access emit via getState()
+        useEventBus.getState().emit('dayEnded', { day: get().time.currentDay });
+        console.log(`Day ${get().time.currentDay} ending, transitioning to night.`);
+        // Allow time for UI effects before finalizeNightTransition is called
       }
-    } catch (error) {
-      console.warn(`LocalStorage unavailable or error setting item "${name}":`, error);
-    }
-  },
-  removeItem: (name) => {
-    try {
-      if (typeof window !== 'undefined' && window.localStorage) {
-        window.localStorage.removeItem(name);
+    },
+    finalizeNightTransition: () => {
+       if (get().gamePhase === GamePhase.NIGHT_TRANSITION) {
+         get().startNight();
+       }
+    },
+
+
+    endNight: () => {
+      if (get().gamePhase === GamePhase.NIGHT_EXPLORATION) {
+         set(state => {
+           state.isTransitioning = true;
+           state.gamePhase = GamePhase.DAY_TRANSITION; // Indicate transition
+         });
+         // FIX: Access emit via getState()
+         useEventBus.getState().emit('nightEnded', { day: get().time.currentDay });
+         console.log(`Night ${get().time.currentDay} ending, transitioning to day.`);
+         // Allow time for UI effects before finalizeDayTransition is called
       }
-    } catch (error) {
-      console.warn(`LocalStorage unavailable or error removing item "${name}":`, error);
-    }
-  },
-};
+    },
+    finalizeDayTransition: () => {
+      if (get().gamePhase === GamePhase.DAY_TRANSITION) {
+        set(state => {
+          state.time.currentDay += 1; // Increment day
+        });
+        // FIX: Access emit via getState()
+        useEventBus.getState().emit('newDayCycle', { day: get().time.currentDay });
+        get().startDay(); // Start the new day
+      }
+    },
+
+    // --- Player Actions ---
+    updatePlayerHealth: (delta) => {
+      set((state) => {
+        state.player.health = Math.max(0, Math.min(100, state.player.health + delta));
+         // FIX: Access emit via getState()
+        useEventBus.getState().emit('playerHealthChanged', { current: state.player.health, delta });
+        if (state.player.health <= 0) {
+          // FIX: Access emit via getState()
+          useEventBus.getState().emit('playerDefeated', { reason: 'health' });
+          get().setGamePhase(GamePhase.GAME_OVER);
+        }
+      });
+    },
+    updatePlayerSanity: (delta) => {
+      set((state) => {
+        state.player.sanity = Math.max(0, Math.min(100, state.player.sanity + delta));
+        // FIX: Access emit via getState()
+        useEventBus.getState().emit('playerSanityChanged', { current: state.player.sanity, delta });
+         if (state.player.sanity <= 0) {
+          // FIX: Access emit via getState()
+          useEventBus.getState().emit('playerDefeated', { reason: 'sanity' });
+          get().setGamePhase(GamePhase.GAME_OVER);
+        }
+      });
+    },
+    movePlayer: (newNodeId) => {
+      set((state) => {
+        const previousNodeId = state.player.location;
+        state.player.location = newNodeId;
+        state.map.currentNodeId = newNodeId; // Keep map state consistent
+        // FIX: Access emit via getState()
+        useEventBus.getState().emit('playerMoved', { previousNodeId, newNodeId });
+        console.log(`Player moved from ${previousNodeId} to ${newNodeId}`);
+        // Optionally advance time on move
+        // get().advanceTime(1);
+      });
+    },
+    addItemToInventory: (item) => {
+      set((state) => {
+        state.inventory.push(item);
+        // FIX: Access emit via getState()
+        useEventBus.getState().emit('inventoryChanged', { action: 'add', item });
+      });
+    },
+    removeItemFromInventory: (itemId) => {
+      set((state) => {
+        const itemIndex = state.inventory.findIndex(i => i.id === itemId);
+        if (itemIndex > -1) {
+          const removedItem = state.inventory[itemIndex];
+          state.inventory.splice(itemIndex, 1);
+           // FIX: Access emit via getState()
+          useEventBus.getState().emit('inventoryChanged', { action: 'remove', item: removedItem });
+        }
+      });
+    },
+    applyStatusEffect: (effect) => set((state) => {
+      if (!state.player.statusEffects.includes(effect)) {
+        state.player.statusEffects.push(effect);
+        // FIX: Access emit via getState()
+        useEventBus.getState().emit('statusEffectApplied', { effect });
+      }
+    }),
+    removeStatusEffect: (effect) => set((state) => {
+      const index = state.player.statusEffects.indexOf(effect);
+      if (index > -1) {
+        state.player.statusEffects.splice(index, 1);
+        // FIX: Access emit via getState()
+        useEventBus.getState().emit('statusEffectRemoved', { effect });
+      }
+    }),
 
 
-// Create the Zustand store with persistence middleware
-export const useGameStore = create<GameState>()(
-  persist(
-    (set, get) => ({
-      ...initialState,
+    // --- Time Actions ---
+    advanceTime: (hours) => {
+      set((state) => {
+        const oldTime = state.time.currentTime;
+        const newTime = (state.time.currentTime + hours); // Calculate new time potentially across days
 
-      // --- Actions Implementation ---
+        // Check if day/night boundary crossed
+        const wasDay = state.time.isDay;
+        const isNowDay = newTime % 24 >= 8 && newTime % 24 < 19; // Example: 8 AM to 7 PM is day
 
-      /**
-       * Initializes the map data using the hardcoded structure.
-       * Ensures loading state is managed correctly.
-       */
-      initializeMap: () => {
-         if (get().mapData) {
-            console.log('🗺️ Map already initialized in store.');
-             if (get().isLoading) {
-                set({ isLoading: false });
-             }
+        state.time.currentTime = newTime % 24; // Update time within 0-23 range
+        state.time.isDay = isNowDay;
+
+        console.log(`Time advanced by ${hours} hours. Current time: ${state.time.currentTime}:00`);
+        // FIX: Access emit via getState()
+        useEventBus.getState().emit('timeChanged', { ...state.time });
+
+        // Handle transitions if the boundary was crossed
+        if (wasDay && !isNowDay) {
+          console.log("Day ended due to time advancement.");
+          get().endDay(); // Trigger the day end sequence
+        } else if (!wasDay && isNowDay) {
+           console.log("Night ended due to time advancement.");
+           // Note: Ending the night typically increments the day counter
+           get().endNight(); // Trigger the night end sequence
+        }
+
+        // Check for time-based events (simplified example)
+        // get().progressionResolver?.resolveTimeEvents(state.time.currentDay, state.time.currentTime);
+      });
+    },
+
+    // --- Dialogue Actions ---
+     startDialogue: (dialogueId, config) => {
+      set((state) => {
+        // Reset dialogue state
+        state.dialogue.isActive = true;
+        state.dialogue.currentDialogueId = dialogueId;
+        state.dialogue.currentNodeId = config.startNodeId;
+        state.dialogue.currentText = '';
+        state.dialogue.choices = [];
+        state.dialogue.speaker = config.initialSpeaker;
+        state.dialogue.characterMood = config.initialMood || 'neutral';
+        state.dialogue.dialogueHistory = []; // Clear history for new dialogue
+
+        // TODO: Instantiate or reset DialogueStateMachine here if it's managed within the store
+        // state.dialogueStateMachine = new DialogueStateMachine(config, get()); // Pass necessary state/actions
+
+        console.log(`Starting dialogue: ${dialogueId}`);
+        // FIX: Access emit via getState()
+        useEventBus.getState().emit('dialogueStarted', { dialogueId });
+
+        // Immediately advance to the first node
+         get().advanceDialogue();
+         get().setActiveSystem('dialogue'); // Switch UI focus
+      });
+    },
+
+    advanceDialogue: (choice?: NarrativeChoice) => {
+       // TODO: Integrate with DialogueStateMachine instance
+       // This is a placeholder - replace with actual state machine logic
+       set(state => {
+         // 1. Determine next node based on current node and choice (if any)
+         // const nextNodeId = state.dialogueStateMachine?.determineNextNode(state.dialogue.currentNodeId, choice);
+         const nextNodeId = 'placeholder_next_node'; // Replace with actual logic
+
+         if (!nextNodeId) {
+           console.log("Dialogue ended: No next node.");
+           get().endDialogue();
+           return;
+         }
+
+         // 2. Get content for the next node (text, choices, speaker, etc.)
+         // const nodeContent = state.dialogueStateMachine?.getNodeContent(nextNodeId);
+         const nodeContent = { // Replace with actual logic
+              id: nextNodeId,
+              text: `This is text for ${nextNodeId}.`,
+              speaker: state.dialogue.speaker || 'Narrator',
+              mood: 'neutral',
+              choices: [{ text: "Continue...", nextNodeId: 'placeholder_end' }],
+              events: [] as NarrativeEvent[],
+         };
+
+
+         if (!nodeContent) {
+            console.error(`Dialogue error: Could not find content for node ${nextNodeId}`);
+            get().endDialogue();
             return;
          }
-         console.log('🗺️ Initializing map data in store (using hardcoded)...');
-         set({ isLoading: true, error: null });
-         try {
-           // Use the hardcoded map data defined above
-           const loadedMapData = hardcodedMapData;
-           if (!loadedMapData) { throw new Error("Hardcoded map data is missing."); }
 
-           set({
-             mapData: loadedMapData,
-             isLoading: false,
-             phase: get().phase === 'loading' ? 'day' : get().phase,
-             error: null,
-           });
-           console.log('🗺️ Hardcoded map data loaded successfully in store.');
-           CentralEventBus.emit('map:loaded', { mapId: loadedMapData.id });
-
-         } catch (err) {
-           console.error("🗺️ Error loading hardcoded map data into store:", err);
-           const errorMessage = err instanceof Error ? err.message : 'Failed to load map data.';
-           set({ isLoading: false, error: errorMessage, phase: get().phase === 'loading' ? 'day' : get().phase, mapData: null });
-         }
-      },
-
-      /**
-       * Sets the currently selected map node ID.
-       */
-      selectNode: (nodeId: string | null) => {
-        const currentNodeId = get().selectedNodeId;
-        if (currentNodeId !== nodeId) {
-            console.log(`[Store] Selecting node: ${nodeId ?? 'None'}`);
-            set({ selectedNodeId: nodeId });
-            if (nodeId) { CentralEventBus.emit('map:node:selected', { nodeId }); }
-            else { CentralEventBus.emit('map:node:deselected', {}); }
-        }
-      },
-
-      /**
-       * Advances the game day by one, resets phase to 'day'.
-       */
-      advanceDay: () => {
-        const currentDay = get().day;
-        console.log(`[Store] Advancing day from ${currentDay} to ${currentDay + 1}`);
-        set((state) => ({ day: state.day + 1, phase: 'day', selectedNodeId: null }));
-        CentralEventBus.emit('state:day:changed', { newDay: get().day });
-        CentralEventBus.emit('state:phase:changed', { newPhase: 'day' });
-      },
-
-      /**
-       * Explicitly sets the game phase.
-       */
-      setPhase: (newPhase: GameState['phase']) => {
-        const currentPhase = get().phase;
-        if (currentPhase !== newPhase) {
-            console.log(`[Store] Setting phase from ${currentPhase} to ${newPhase}`);
-            set({ phase: newPhase });
-            CentralEventBus.emit('state:phase:changed', { newPhase });
-        }
-      },
-
-      /**
-       * Resets the game state to initial values and loads the hardcoded starting map.
-       */
-       startGame: () => {
-         console.log('🎮 Starting new game (GameStore)...');
-         // Use the hardcoded map data defined at the top of the file
-         const startingMapData = hardcodedMapData;
-         set({
-           ...initialState, // Reset state properties
-           mapData: startingMapData, // Load the hardcoded map
-           isLoading: false,
-           phase: 'day', // Start in 'day' phase
+         // 3. Update state
+         state.dialogue.currentNodeId = nextNodeId;
+         state.dialogue.currentText = nodeContent.text;
+         state.dialogue.choices = nodeContent.choices || [];
+         state.dialogue.speaker = nodeContent.speaker || state.dialogue.speaker;
+         state.dialogue.characterMood = nodeContent.mood || 'neutral';
+         state.dialogue.dialogueHistory.push({ // Add previous node to history
+            nodeId: state.dialogue.currentNodeId, // This should be the *previous* node before update
+            text: state.dialogue.currentText,
+            speaker: state.dialogue.speaker,
+            choiceMade: choice?.text
          });
-         console.log('🗺️ Using starting map with', startingMapData?.nodes?.length ?? 0, 'nodes');
-         CentralEventBus.emit('game:started', {});
-         CentralEventBus.emit('state:phase:changed', { newPhase: 'day' });
-       },
 
-      /**
-       * Force resets the entire store state back to its defined initial values.
-       */
-      resetGame: () => {
-        console.warn('🔄 Resetting game state forcefully...');
-        set(initialState);
-         get().initializeMap(); // Re-initialize map after reset
-        CentralEventBus.emit('game:reset', {});
-      },
 
-      /** Sets the global error message state. */
-      setError: (message: string | null) => set({ error: message }),
+         // 4. Process events/actions associated with the new node
+         nodeContent.events?.forEach(event => {
+            // FIX: Access emit via getState()
+            useEventBus.getState().emit(event.type, event.payload);
+            // Or directly call store actions if appropriate
+            // handleNarrativeEvent(event, get, set);
+         });
 
-      /** Sets the global loading state. */
-      setLoading: (loading: boolean) => set({ isLoading: loading }),
+         // FIX: Access emit via getState()
+         useEventBus.getState().emit('dialogueAdvanced', { nodeId: nextNodeId, text: nodeContent.text });
 
-      /** Internal helper for post-hydration checks. */
-      _hydrate: () => {
-         console.log('🔄 Hydrating gameStore from persisted state...');
-         const state = get();
-         if (!state.mapData && !state.isLoading) {
-             console.warn('🗺️ Hydrated state has no map data, attempting re-initialization.');
-             get().initializeMap();
-         } else if (state.mapData && state.isLoading) {
-             console.warn('🗺️ Hydrated state has map data but isLoading is true. Correcting.');
-             set({ isLoading: false });
+         // Check if this node ends the dialogue
+         if (nodeContent.choices.length === 0 && !nodeContent.isPauseNode) { // Assuming an 'isPauseNode' concept
+            console.log(`Dialogue node ${nextNodeId} has no choices, ending dialogue.`);
+            get().endDialogue();
          }
-         if (state.phase === 'loading' && !state.isLoading) {
-             console.warn("🗺️ Hydrated state phase is 'loading' but not actively loading. Setting to 'day'.");
-             set({ phase: 'day' });
-             CentralEventBus.emit('state:phase:changed', { newPhase: 'day' });
-         }
-         console.log('💧 Hydration checks complete.');
-      },
-    }),
-    // --- Persistence Configuration ---
-    {
-      name: 'game-storage', // Key used in localStorage
-      storage: createJSONStorage(() => safeLocalStorage), // Use safe localStorage wrapper
-      onRehydrateStorage: () => (state, error) => {
-        if (error) {
-          console.error('🚨 Failed to hydrate gameStore:', error);
-        } else {
-          console.log('💧 gameStore hydration process starting...');
-           if (state) {
-               setTimeout(() => state._hydrate(), 0); // Run checks after hydration settles
-           }
+       });
+    },
+
+    endDialogue: () => {
+      set((state) => {
+        if (!state.dialogue.isActive) return; // Avoid ending multiple times
+
+        const endedDialogueId = state.dialogue.currentDialogueId;
+        console.log(`Ending dialogue: ${endedDialogueId}`);
+
+        state.dialogue.isActive = false;
+        state.dialogue.currentDialogueId = null;
+        state.dialogue.currentNodeId = null;
+        state.dialogue.currentText = '';
+        state.dialogue.choices = [];
+        state.dialogue.speaker = null;
+        // state.dialogueStateMachine = undefined; // Clean up state machine instance
+
+        // FIX: Access emit via getState()
+        useEventBus.getState().emit('dialogueEnded', { dialogueId: endedDialogueId });
+        get().setActiveSystem('map'); // Switch back to map view (or previous)
+      });
+    },
+
+
+    // --- Map Actions ---
+    markNodeCompleted: (nodeId) => {
+      set((state) => {
+        if (!state.completedNodeIds.includes(nodeId)) {
+          state.completedNodeIds.push(nodeId);
+           // FIX: Access emit via getState()
+          useEventBus.getState().emit('nodeCompleted', { nodeId });
         }
-      },
-    }
-  )
+      });
+    },
+
+    // --- UI/System Actions ---
+     setActiveSystem: (system) => {
+        set((state) => {
+            if (state.activeSystem !== system) {
+                console.log(`Setting active system to: ${system}`);
+                state.activeSystem = system;
+                 // FIX: Access emit via getState()
+                useEventBus.getState().emit('activeSystemChanged', { system });
+            }
+        });
+     },
+
+  })),
 );
+
+// --- Selectors ---
+// Optional: Define selectors for common state access patterns
+export const selectPlayerLocation = (state: GameState & GameStoreActions) => state.player.location;
+export const selectCurrentDay = (state: GameState & GameStoreActions) => state.time.currentDay;
+export const selectIsDay = (state: GameState & GameStoreActions) => state.time.isDay;
+export const selectInventory = (state: GameState & GameStoreActions) => state.inventory;
+export const selectDialogueState = (state: GameState & GameStoreActions) => state.dialogue;
+export const selectGamePhase = (state: GameState & GameStoreActions) => state.gamePhase;
+export const selectCompletedNodes = (state: GameState & GameStoreActions) => state.completedNodeIds;
+export const selectIsTransitioning = (state: GameState & GameStoreActions) => state.isTransitioning;
+export const selectActiveSystem = (state: GameState & GameStoreActions) => state.activeSystem;
+
+// --- Hooks for convenience ---
+// export const usePlayerLocation = () => useGameStore(selectPlayerLocation);
+// export const useCurrentDay = () => useGameStore(selectCurrentDay);
+// export const useIsDay = () => useGameStore(selectIsDay);
+// etc.
+
+
+// --- Helper for handling narrative events ---
+// Example of how you might handle events triggered by dialogue
+function handleNarrativeEvent(event: NarrativeEvent, get: () => GameState & GameStoreActions, set: (fn: (state: GameState & GameStoreActions) => void) => void) {
+    switch (event.type) {
+        case 'updatePlayerHealth':
+            get().updatePlayerHealth(event.payload.delta);
+            break;
+        case 'addItem':
+             // Assuming payload has item details or an itemId to look up
+             // const item = findItemById(event.payload.itemId);
+             // if(item) get().addItemToInventory(item);
+            break;
+        case 'updateKnowledge':
+            // Use knowledge store actions
+            useKnowledgeStore.getState().addInsight(event.payload.insightId, event.payload.data);
+            break;
+        case 'updateJournal':
+            // Use journal store actions
+            useJournalStore.getState().addEntry(event.payload.entryId, event.payload.content);
+            break;
+        // Add more event types as needed
+        default:
+            console.warn(`Unhandled narrative event type: ${event.type}`);
+    }
+}
