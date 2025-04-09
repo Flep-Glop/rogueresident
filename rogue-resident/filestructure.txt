@@ -7,6 +7,7 @@
 │   │   ├── HillHomeScene.tsx
 │   │   ├── PixelThemeProvider.tsx
 │   │   ├── PlayerStats.tsx
+│   │   ├── ResidentPortrait.tsx
 │   │   ├── challenges
 │   │   │   ├── ChallengeRouter.tsx
 │   │   │   └── formats
@@ -15,7 +16,8 @@
 │   │   │   └── VerticalSliceDebugPanel.tsx
 │   │   ├── gameplay
 │   │   │   ├── InsightMeter.tsx
-│   │   │   └── MomentumCounter.tsx
+│   │   │   ├── MomentumCounter.tsx
+│   │   │   └── StrategicActions.tsx
 │   │   ├── journal
 │   │   │   ├── Journal.tsx
 │   │   │   └── JournalAcquisitionAnimation.tsx
@@ -26,6 +28,7 @@
 │   │       └── SimplifiedKapoorMap.tsx
 │   ├── core
 │   │   ├── dialogue
+│   │   │   ├── ActionIntegration.ts
 │   │   │   ├── DialogueStateMachine.ts
 │   │   │   └── NarrativeTransaction.ts
 │   │   ├── events
@@ -54,7 +57,8 @@
 │   ├── store
 │   │   ├── gameStore.ts
 │   │   ├── journalStore.ts
-│   │   └── knowledgeStore.ts
+│   │   ├── knowledgeStore.ts
+│   │   └── resourceStore.ts
 │   ├── styles
 │   ├── types
 │   └── utils
@@ -77,4 +81,4 @@
 │   └── verticalSliceIntegrationTest.js
 └── tsconfig.json
 
-23 directories, 54 files
+23 directories, 58 files

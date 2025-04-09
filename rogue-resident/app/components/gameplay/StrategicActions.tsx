@@ -109,7 +109,7 @@ export default function StrategicActions({
     return (
       <motion.button
         className={`
-          w-14 h-14 relative 
+          w-16 h-16 relative 
           ${def.bgClass} ${def.borderClass}
           border-2 box-content
           flex items-center justify-center
@@ -131,11 +131,11 @@ export default function StrategicActions({
           transition: { repeat: Infinity, duration: 1.5 }
         } : { scale: 1 }}
       >
-        <PixelIcon path={def.iconPath} />
+        <PixelIcon path={def.iconPath} className="w-8 h-8" />
         
         {/* Cost indicator */}
         {def.cost > 0 && (
-          <div className="absolute -bottom-1 -right-1 text-xs bg-black/80 px-1 rounded-sm">
+          <div className="absolute -bottom-1 -right-1 text-sm bg-black/80 px-1 rounded-sm">
             {def.cost}◆
           </div>
         )}
@@ -156,7 +156,7 @@ export default function StrategicActions({
         <AnimatePresence>
           {hoveredAction === type && !isActive && (
             <motion.div
-              className="absolute top-full mt-2 left-1/2 -translate-x-1/2 w-40 z-50
+              className="absolute top-full mt-2 left-1/2 -translate-x-1/2 w-48 z-50
                         bg-gray-900/95 border border-gray-700 pixel-borders-thin shadow-lg"
               initial={{ opacity: 0, y: -5, scale: 0.95 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
@@ -185,10 +185,9 @@ export default function StrategicActions({
   
   // Render the action buttons with proper spacing
   return (
-    <div className={`flex items-center gap-5 ${className}`}>
+    <div className={`flex items-center gap-3 ${className}`}>
       {availableActions.reframe && <ActionButton type="reframe" isAvailable={availableActions.reframe} />}
       {availableActions.extrapolate && <ActionButton type="extrapolate" isAvailable={availableActions.extrapolate} />}
-      {availableActions.boast && <ActionButton type="boast" isAvailable={availableActions.boast} />}
       {availableActions.synthesis && <ActionButton type="synthesis" isAvailable={availableActions.synthesis} />}
     </div>
   );

@@ -6,9 +6,11 @@ import { useKnowledgeStore } from '@/app/store/knowledgeStore';
 import { useJournalStore } from '@/app/store/journalStore';
 import InsightMeter from './gameplay/InsightMeter';
 import MomentumCounter from './gameplay/MomentumCounter';
+import ResidentPortrait from './ResidentPortrait';
+import { motion, AnimatePresence } from 'framer-motion';
 
 /**
- * PlayerStats - Enhanced player stats sidebar with insight and momentum
+ * PlayerStats - Enhanced player stats sidebar with character representation
  */
 export default function PlayerStats() {
   // Global state
@@ -20,6 +22,11 @@ export default function PlayerStats() {
   // Local state for animations
   const [showInsightAnimation, setShowInsightAnimation] = useState(false);
   const [showJournalButtonAnimation, setShowJournalButtonAnimation] = useState(false);
+  
+  // Determine when to use full body portrait
+  const shouldShowFullBody = 
+    gamePhase === 'night' || // Always show full body at night
+    (!currentNodeId && gamePhase === 'day'); // Show full body on the map screen
   
   // Animate insight changes
   useEffect(() => {
@@ -53,10 +60,19 @@ export default function PlayerStats() {
   
   return (
     <div className="p-4 h-full flex flex-col space-y-4">
-      {/* Player info */}
+      {/* Player info with portrait */}
       <div className="pixel-borders bg-surface p-3">
-        <h2 className="text-lg mb-1 font-pixel">Medical Physics Resident</h2>
-        <div className="text-sm text-text-secondary font-pixel">Day {dayCount}</div>
+        <div className="flex items-center mb-2">
+          <ResidentPortrait 
+            showFullBody={shouldShowFullBody}
+            size="md"
+            className="mr-3"
+          />
+          <div>
+            <h2 className="text-lg font-pixel">Medical Physics Resident</h2>
+            <div className="text-sm text-text-secondary font-pixel">Day {dayCount}</div>
+          </div>
+        </div>
       </div>
       
       {/* Phase indicator */}
@@ -82,17 +98,40 @@ export default function PlayerStats() {
         />
       </div>
       
-      {/* Knowledge status */}
+      {/* Knowledge status with visual progress */}
       <div className="pixel-borders bg-surface p-3">
         <div className="text-sm text-text-secondary font-pixel mb-1">Knowledge Mastery</div>
-        <div className="text-educational-light text-lg font-pixel">
-          {totalMastery}%
-        </div>
-        {newlyDiscovered.length > 0 && (
-          <div className="mt-2 text-xs text-educational font-pixel">
-            {newlyDiscovered.length} new concept{newlyDiscovered.length !== 1 ? 's' : ''} discovered
+        <div className="flex items-center">
+          <div className="text-educational-light text-lg font-pixel">
+            {totalMastery}%
           </div>
-        )}
+          
+          {/* Visual progress bar */}
+          <div className="ml-2 flex-grow h-2 bg-surface-dark rounded overflow-hidden">
+            <motion.div 
+              className="h-full bg-educational"
+              initial={{ width: 0 }}
+              animate={{ 
+                width: `${totalMastery}%`,
+                transition: { type: 'spring', damping: 15 }
+              }}
+            />
+          </div>
+        </div>
+        
+        {/* Newly discovered animation */}
+        <AnimatePresence>
+          {newlyDiscovered.length > 0 && (
+            <motion.div 
+              className="mt-2 text-xs text-educational font-pixel"
+              initial={{ opacity: 0, y: -5 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0 }}
+            >
+              {newlyDiscovered.length} new concept{newlyDiscovered.length !== 1 ? 's' : ''} discovered
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
       
       {/* Journal status with open button */}

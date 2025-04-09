@@ -332,6 +332,23 @@ export default function ConversationFormat({
     }
   };
   
+  // Render the option for Boast when momentum is maxed
+  const renderBoastOption = (option: DialogueOptionView & {
+    approach?: string;
+    insightGain?: number;
+  }) => {
+    // Check if option has the 'confidence' approach and momentum is maxed
+    if (momentum === 3 && option.approach === 'confidence' && option.insightGain) {
+      return (
+        <div className="absolute -left-4 top-1/2 transform -translate-y-1/2 bg-orange-600 text-white px-2 py-1 rounded-l text-xs font-pixel">
+          CHALLENGE
+        </div>
+      );
+    }
+    
+    return null;
+  };
+  
   // Loading state while dialogue initializes
   if (!isInitialized) {
     return (
@@ -349,8 +366,8 @@ export default function ConversationFormat({
       {/* Character header - Enhanced with more space */}
       <div className="flex justify-between items-start mb-8">
         <div className="flex items-start">
-          {/* Character portrait with dedicated space */}
-          <div className="w-24 h-24 mr-6 relative pixel-borders">
+          {/* Character portrait with dedicated space - 200% larger */}
+          <div className="w-70 h-70 mr-6 relative pixel-borders">
             <div 
               className="absolute inset-0 bg-cover bg-center"
               style={{
@@ -362,11 +379,11 @@ export default function ConversationFormat({
           </div>
           
           {/* Character info - now with more space */}
-          <div className="mt-2">
-            <PixelText className={`text-xl ${charData.textClass} pixel-glow mb-1`}>
+          <div className="mt-4">
+            <PixelText className={`text-2xl ${charData.textClass} pixel-glow mb-1`}>
               {charData.name}
             </PixelText>
-            <PixelText className="text-text-secondary">
+            <PixelText className="text-lg text-text-secondary">
               {charData.title}
             </PixelText>
           </div>
@@ -375,19 +392,36 @@ export default function ConversationFormat({
         {/* Empty spacer div to push things to sides */}
         <div className="flex-grow"></div>
         
-        {/* Resource meters - now in header with more space */}
-        <div className="flex flex-col gap-3 w-60">
-          <InsightMeter size="lg" />
-          <MomentumCounter 
-            level={momentum}
-            consecutiveCorrect={consecutiveCorrect}
-            showLabel={true}
-          />
+        {/* Resource meters - now in header with more space and 200% larger */}
+        <div className="flex flex-col gap-5 w-80">
+          <InsightMeter size="lg" showValue={true} />
+          <div className="flex items-center gap-4">
+            <MomentumCounter 
+              level={momentum}
+              consecutiveCorrect={consecutiveCorrect}
+              showLabel={true}
+            />
+            
+            {/* Conditional boast button when momentum is maxed */}
+            {momentum === 3 && (
+              <motion.div 
+                className="bg-orange-700 border-orange-800 border-2 w-12 h-12 flex items-center justify-center pixel-borders"
+                whileHover={{ y: -2 }}
+                whileTap={{ y: 1 }}
+                animate={{ 
+                  scale: [1, 1.05, 1],
+                  transition: { repeat: Infinity, duration: 1.5 }
+                }}
+              >
+                <PixelText className="text-xs text-white">CHAL</PixelText>
+              </motion.div>
+            )}
+          </div>
         </div>
       </div>
       
-      {/* Strategic actions panel - now with more prominence */}
-      <div className="absolute top-6 right-6 z-10">
+      {/* Strategic actions panel - moved to below the character header */}
+      <div className="flex justify-center mb-6">
         <StrategicActionsContainer 
           characterId={character}
           stageId={currentStageId}
@@ -460,12 +494,12 @@ export default function ConversationFormat({
         
         {/* Show backstory or main content */}
         {showBackstory ? (
-          <PixelText className="italic text-lg leading-relaxed">
+          <PixelText className="italic text-xl leading-relaxed">
             {displayedBackstoryText}{isTypingBackstory ? '|' : ''}
           </PixelText>
         ) : (
           <div>
-            <PixelText className="text-lg leading-relaxed">
+            <PixelText className="text-xl leading-relaxed">
               {displayedText}{isTyping ? '|' : ''}
             </PixelText>
             
@@ -504,6 +538,9 @@ export default function ConversationFormat({
                 whileHover={{ x: 3 }}
                 whileTap={{ scale: 0.99 }}
               >
+                {/* Render boast badge if applicable */}
+                {renderBoastOption(option)}
+                
                 <div className="flex justify-between">
                   <PixelText className="text-base">{option.text}</PixelText>
                   

@@ -63,19 +63,19 @@ export default function MomentumCounter({
     : 0;
   
   return (
-    <div className={`flex items-center ${className} ${compact ? 'space-x-1' : 'space-x-2'}`}>
+    <div className={`flex items-center ${className} ${compact ? 'space-x-2' : 'space-x-4'}`}>
       {showLabel && (
-        <div className={`font-pixel ${compact ? 'text-xs' : 'text-sm'} text-orange-300`}>
-          {compact ? 'Mom.' : 'Momentum'}
+        <div className={`font-pixel ${compact ? 'text-sm' : 'text-base'} text-orange-300`}>
+          {compact ? 'MOM.' : 'MOMENTUM'}
         </div>
       )}
       
-      <div className="flex space-x-1">
-        {/* Render momentum pips */}
+      <div className="flex space-x-2">
+        {/* Render momentum pips - 200% larger */}
         {momentumPips.map((filled, index) => (
           <div 
             key={`pip-${index}`}
-            className={`relative ${compact ? 'w-3 h-3' : 'w-4 h-4'} rounded-full border ${
+            className={`relative ${compact ? 'w-6 h-6' : 'w-8 h-8'} rounded-full border-2 ${
               filled 
                 ? 'bg-orange-600 border-orange-400' 
                 : 'bg-gray-900 border-gray-700'
@@ -122,7 +122,7 @@ export default function MomentumCounter({
         <AnimatePresence mode="wait">
           <motion.div 
             key={consecutiveCorrect}
-            className="ml-1 font-pixel text-xs text-orange-300/80 tabular-nums"
+            className="ml-2 font-pixel text-sm text-orange-300/80 tabular-nums"
             initial={{ opacity: 0, y: -5 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 5 }}
@@ -135,7 +135,7 @@ export default function MomentumCounter({
       {/* "Max" indicator when at max momentum */}
       {momentum === MAX_MOMENTUM_LEVEL && !compact && (
         <motion.div 
-          className="ml-1 font-pixel text-xs text-orange-300 font-bold"
+          className="ml-2 font-pixel text-sm text-orange-300 font-bold"
           initial={{ opacity: 0 }}
           animate={{ 
             opacity: [0.7, 1, 0.7],
@@ -150,7 +150,7 @@ export default function MomentumCounter({
       <AnimatePresence>
         {momentum === 1 && consecutiveCorrect === 2 && !compact && (
           <motion.div
-            className="absolute -bottom-6 left-0 right-0 text-center text-xs font-pixel text-orange-300"
+            className="absolute -bottom-6 left-0 right-0 text-center text-sm font-pixel text-orange-300"
             initial={{ opacity: 0, y: -5 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 5 }}
@@ -165,7 +165,7 @@ export default function MomentumCounter({
       <AnimatePresence>
         {momentum === MAX_MOMENTUM_LEVEL && consecutiveCorrect === MAX_MOMENTUM_LEVEL * 2 && !compact && (
           <motion.div
-            className="absolute -bottom-6 left-0 right-0 text-center text-xs font-pixel text-orange-300 font-bold"
+            className="absolute -bottom-6 left-0 right-0 text-center text-sm font-pixel text-orange-300 font-bold"
             initial={{ opacity: 0, y: -5 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 5 }}
