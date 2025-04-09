@@ -1,11 +1,48 @@
 // app/components/knowledge/ConstellationView.tsx
 'use client';
-import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { PixelText, PixelButton } from '../PixelThemeProvider';
-import { useKnowledgeStore, KnowledgeDomain, ConceptNode, ConceptConnection, KNOWLEDGE_DOMAINS } from '../../store/knowledgeStore';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { useKnowledgeStore, ConceptNode, ConceptConnection, KNOWLEDGE_DOMAINS, KnowledgeDomain } from '../../store/knowledgeStore';
+import { DOMAIN_COLORS, DOMAIN_COLORS_LIGHT } from '../../core/themeConstants'; // Import theme constants
 
-// Re-export KNOWLEDGE_DOMAINS for consistency with imports elsewhere
+// Import Drawing Utilities
+import {
+  drawStarryBackground,
+  drawConnections,
+  drawNodes,
+  drawPendingConnection,
+  drawParticles
+} from './constellationCanvasUtils';
+
+// Import Interaction Hook
+import { useConstellationInteraction } from '../../hooks/useConstellationInteraction';
+
+// Import UI Sub-components
+import ConstellationInfoPanel from './ui/ConstellationInfoPanel';
+import ConstellationLegend from './ui/ConstellationLegend';
+import ConstellationControls from './ui/ConstellationControls';
+import ConstellationActions from './ui/ConstellationActions';
+import SelectedNodePanel from './ui/SelectedNodePanel';
+import ConnectionSuggestionsPanel from './ui/ConnectionSuggestionsPanel';
+import JournalOverlay from './ui/JournalOverlay';
+import HelpOverlay from './ui/HelpOverlay';
+
+// Re-export KNOWLEDGE_DOMAINS for consistency if needed elsewhere
 export { KNOWLEDGE_DOMAINS };
+
+// Helper type for particle effects (ensure consistency with utils)
+type ParticleEffect = {
+  id: string;
+  x: number;
+  y: number;
+  targetX: number;
+  targetY: number;
+  color: string;
+  size: number;
+  life: number;
+  maxLife: number;
+  opacity?: number;
+  velocity?: { x: number, y: number }
+};
 
 interface ConstellationViewProps {
   nightMode?: boolean;
@@ -19,42 +56,18 @@ interface ConstellationViewProps {
   enableJournal?: boolean;
 }
 
-// Domain color map for direct use in canvas - avoids CSS variable issues
-const DOMAIN_COLORS = {
-  'radiation-physics': '#3b82f6', // Blue
-  'quality-assurance': '#10b981', // Green
-  'clinical-practice': '#ec4899', // Pink
-  'radiation-protection': '#f59e0b', // Amber
-  'technical': '#6366f1', // Indigo
-  'theoretical': '#8b5cf6', // Violet
-  'general': '#6b7280', // Gray
-};
-
-// Light variant colors for highlights
-const DOMAIN_COLORS_LIGHT = {
-  'radiation-physics': '#93c5fd', // Light blue
-  'quality-assurance': '#5eead4', // Light green
-  'clinical-practice': '#fbcfe8', // Light pink
-  'radiation-protection': '#fcd34d', // Light amber
-  'technical': '#a5b4fc', // Light indigo
-  'theoretical': '#c4b5fd', // Light violet
-  'general': '#9ca3af', // Light gray
-};
-
 /**
- * ConstellationView - The interactive knowledge visualization system for medical physics concepts
- * 
- * This streamlined version removes dependencies on external effect systems
- * and connection suggestions, making it more self-contained and resilient.
+ * ConstellationView - Refactored interactive knowledge visualization system.
+ * Uses extracted utilities, hooks, and sub-components for better organization.
  */
-export default function ConstellationView({ 
-  onClose, 
-  width, 
-  height, 
+export default function ConstellationView({
+  onClose,
+  width,
+  height,
   interactive = true,
   enableJournal = true,
   activeNodes = [],
-  fullscreen = true, // Default to fullscreen
+  fullscreen = true,
   nightMode = false,
   showLabels = true
 }: ConstellationViewProps) {
@@ -62,14 +75,13 @@ export default function ConstellationView({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const animationFrameRef = useRef<number | null>(null);
-  const isComponentMounted = useRef(true);
-  
-  // STORE ACCESS - Use stable selectors with useCallback
+  const isComponentMountedRef = useRef(true); // Use ref for mount status
+
+  // STORE ACCESS
   const nodes = useKnowledgeStore(useCallback(state => state.nodes, []));
   const connections = useKnowledgeStore(useCallback(state => state.connections, []));
   const totalMastery = useKnowledgeStore(useCallback(state => state.totalMastery, []));
-  const domainMastery = useKnowledgeStore(useCallback(state => state.domainMastery, [])); 
-  const pendingInsights = useKnowledgeStore(useCallback(state => state.pendingInsights, []));
+  const domainMastery = useKnowledgeStore(useCallback(state => state.domainMastery, []));
   const newlyDiscovered = useKnowledgeStore(useCallback(state => state.newlyDiscovered, []));
   const journalEntries = useKnowledgeStore(useCallback(state => state.journalEntries, []));
   const resetNewlyDiscovered = useKnowledgeStore(useCallback(state => state.resetNewlyDiscovered, []));
@@ -83,162 +95,86 @@ export default function ConstellationView({
   const [showHelp, setShowHelp] = useState(false);
   const [zoomLevel, setZoomLevel] = useState(0.8);
   const [cameraPosition, setCameraPosition] = useState({ x: 0, y: 0 });
-  
-  // INTERACTION STATE
-  const [isDragging, setIsDragging] = useState(false);
-  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
-  const [isConnecting, setIsConnecting] = useState(false);
   const [dimensions, setDimensions] = useState({ width: 800, height: 600 });
-  
-  // VISUAL EFFECTS STATE
-  const [particleEffects, setParticleEffects] = useState<Array<{
-    id: string,
-    x: number,
-    y: number, 
-    targetX: number,
-    targetY: number,
-    color: string,
-    size: number,
-    life: number,
-    maxLife: number,
-    opacity?: number,
-    velocity?: { x: number, y: number }
-  }>>([]);
-  
-  // Initialize dimensions based on window size or provided dimensions
+  const [particleEffects, setParticleEffects] = useState<ParticleEffect[]>([]);
+
+  // Use Interaction Hook
+  const interactionHandlers = useConstellationInteraction({
+    canvasRef,
+    interactive,
+    discoveredNodes: useMemo(() => nodes.filter(node => node.discovered), [nodes]), // Pass memoized nodes
+    discoveredConnections: useMemo(() => connections.filter(conn => conn.discovered), [connections]), // Pass memoized connections
+    zoomLevel,
+    setZoomLevel,
+    cameraPosition,
+    setCameraPosition,
+    activeNode,
+    setActiveNode,
+    selectedNode,
+    setSelectedNode,
+    pendingConnection,
+    setPendingConnection,
+    setParticleEffects,
+    isComponentMountedRef,
+  });
+
+  // Initialize dimensions
   useEffect(() => {
     if (fullscreen) {
       const updateDimensions = () => {
-        // Calculate available space (accounting for margins/padding)
-        // Using window.innerWidth and window.innerHeight as fallbacks
         const containerWidth = containerRef.current?.parentElement?.clientWidth || window.innerWidth;
         const containerHeight = containerRef.current?.parentElement?.clientHeight || window.innerHeight;
-        
-        // Subtract some padding to avoid touching the edge of the screen
         const padding = 24;
         setDimensions({
           width: Math.max(800, containerWidth - padding * 2),
           height: Math.max(600, containerHeight - padding * 2)
         });
       };
-      
-      // Set initial dimensions
       updateDimensions();
-      
-      // Update dimensions on window resize
       window.addEventListener('resize', updateDimensions);
-      
-      return () => {
-        window.removeEventListener('resize', updateDimensions);
-      };
+      return () => window.removeEventListener('resize', updateDimensions);
     } else if (width && height) {
-      // Use provided dimensions if not fullscreen
       setDimensions({ width, height });
     }
   }, [fullscreen, width, height]);
-  
-  // MEMOIZE DATA FOR RENDERING
-  // Memoize discovered nodes 
-  const discoveredNodes = useMemo(() => 
-    nodes.filter(node => node.discovered), 
-    [nodes]
-  );
-  
-  // Memoize discovered connections
-  const discoveredConnections = useMemo(() => 
-    connections.filter(conn => conn.discovered), 
-    [connections]
-  );
-  
-  // Create a safer version of resetNewlyDiscovered that won't cause update loops
-  const safeResetNewlyDiscovered = useCallback(() => {
-    // Only call if there are actually newly discovered nodes to reset
-    if (newlyDiscovered.length > 0) {
-      resetNewlyDiscovered();
-    }
-  }, [newlyDiscovered, resetNewlyDiscovered]);
 
-  // Track component mounted state for cleanup
+  // Memoize discovered data
+  const discoveredNodes = useMemo(() => nodes.filter(node => node.discovered), [nodes]);
+  const discoveredConnections = useMemo(() => connections.filter(conn => conn.discovered), [connections]);
+
+  // Track component mount status
   useEffect(() => {
-    isComponentMounted.current = true;
-    
+    isComponentMountedRef.current = true;
     return () => {
-      isComponentMounted.current = false;
-      
-      // Cleanup any active animation frame
+      isComponentMountedRef.current = false;
       if (animationFrameRef.current !== null) {
         cancelAnimationFrame(animationFrameRef.current);
-        animationFrameRef.current = null;
       }
     };
   }, []);
 
-  // Focus on active nodes passed from parent
+  // Focus on active/newly discovered nodes and create particle effects
   useEffect(() => {
-    if (!isComponentMounted.current || activeNodes.length === 0 || nodes.length === 0) return;
-    
-    // Find the first active node that exists in our nodes list
-    const nodeToFocus = nodes.find(n => activeNodes.includes(n.id));
-    if (nodeToFocus) {
-      setSelectedNode(nodeToFocus);
-      
-      // Create particle effects for all active nodes
-      const newParticles: typeof particleEffects = [];
-      
-      activeNodes.forEach(nodeId => {
-        const node = nodes.find(n => n.id === nodeId);
-        if (node?.position) {
-          // Create multiple particles for each active node
-          for (let i = 0; i < 15; i++) {
-            const angle = Math.random() * Math.PI * 2;
-            const distance = Math.random() * 100 + 50;
-            
-            // Use the direct color map instead of CSS variables
-            const color = DOMAIN_COLORS[node.domain] || DOMAIN_COLORS.general;
-            
-            newParticles.push({
-              id: `particle-${nodeId}-${i}-${Date.now()}`,
-              x: node.position.x + Math.cos(angle) * distance,
-              y: node.position.y + Math.sin(angle) * distance,
-              targetX: node.position.x,
-              targetY: node.position.y,
-              color: color,
-              size: Math.random() * 3 + 1,
-              life: 100,
-              maxLife: 100
-            });
-          }
-        }
-      });
-      
-      if (newParticles.length > 0) {
-        setParticleEffects(prev => [...prev, ...newParticles]);
-        
-        // Play success sound effect - REMOVED DEPENDENCY
-        // Simply log for now - we'll handle sound elsewhere in the architecture
-        console.log('Would play success sound');
-      }
+    if (!isComponentMountedRef.current || nodes.length === 0) return;
+
+    const nodesToHighlight = [...activeNodes, ...newlyDiscovered];
+    if (nodesToHighlight.length === 0) return;
+
+    // Focus on the first highlighted node if none is selected
+    if (!selectedNode) {
+         const nodeToFocus = nodes.find(n => nodesToHighlight.includes(n.id));
+         if (nodeToFocus) setSelectedNode(nodeToFocus);
     }
-  }, [activeNodes, nodes]);
-  
-  // Also highlight newly discovered nodes from knowledgeStore
-  useEffect(() => {
-    if (!isComponentMounted.current || newlyDiscovered.length === 0 || nodes.length === 0) return;
-    
-    // Create particle effects for newly discovered nodes
-    const newParticles: typeof particleEffects = [];
-    
-    newlyDiscovered.forEach(nodeId => {
+
+
+    const newParticles: ParticleEffect[] = [];
+    nodesToHighlight.forEach(nodeId => {
       const node = nodes.find(n => n.id === nodeId);
       if (node?.position) {
-        // Create multiple particles for each newly discovered node
         for (let i = 0; i < 15; i++) {
           const angle = Math.random() * Math.PI * 2;
           const distance = Math.random() * 100 + 50;
-          
-          // Use the direct color map instead of CSS variables
           const color = DOMAIN_COLORS[node.domain] || DOMAIN_COLORS.general;
-          
           newParticles.push({
             id: `particle-${nodeId}-${i}-${Date.now()}`,
             x: node.position.x + Math.cos(angle) * distance,
@@ -253,1041 +189,192 @@ export default function ConstellationView({
         }
       }
     });
-    
+
     if (newParticles.length > 0) {
       setParticleEffects(prev => [...prev, ...newParticles]);
+       if (activeNodes.length > 0) { // Only play sound for externally activated nodes
+           console.log('Would play success sound');
+       }
     }
-  }, [newlyDiscovered, nodes]);
-  
-  // Track recent insights for journal
+  }, [activeNodes, newlyDiscovered, nodes, selectedNode]); // Add selectedNode dependency
+
+
+  // Track recent insights for Journal Overlay
   useEffect(() => {
-    if (!isComponentMounted.current) return;
-    
-    // Extract most recent journal entries for display
+    if (!isComponentMountedRef.current) return;
     if (journalEntries.length > 0) {
-      const recentEntries = journalEntries
+      const recent = journalEntries
         .sort((a, b) => b.timestamp - a.timestamp)
         .slice(0, 5)
-        .map(entry => ({
-          conceptId: entry.conceptId,
-          amount: entry.masteryGained
-        }));
-        
-      setRecentInsights(recentEntries);
+        .map(entry => ({ conceptId: entry.conceptId, amount: entry.masteryGained }));
+      setRecentInsights(recent);
     } else {
-      // For demonstration, we'll use placeholder data
-      setRecentInsights([
-        { conceptId: 'electron-equilibrium', amount: 15 },
-        { conceptId: 'radiation-safety', amount: 30 }
-      ]);
+       // Placeholder if no entries
+       setRecentInsights([
+         { conceptId: 'electron-equilibrium', amount: 15 },
+         { conceptId: 'radiation-safety', amount: 30 }
+       ]);
     }
   }, [journalEntries]);
 
-  // ANIMATION LOOP
-  // Handle particle animations and movement with proper cleanup
+  // Particle Animation Loop
   useEffect(() => {
-    if (!isComponentMounted.current || particleEffects.length === 0) return;
-    
+    if (!isComponentMountedRef.current || particleEffects.length === 0) return;
+
     let active = true;
-    
     const animate = () => {
-      if (!active || !isComponentMounted.current) return;
-      
+      if (!active || !isComponentMountedRef.current) return;
       let animating = false;
-      
       setParticleEffects(prev => {
-        // Skip update if component unmounted during animation frame
         if (!active) return prev;
-        
-        const updatedParticles = prev.map(particle => {
-          // Move particle toward target
-          const dx = particle.targetX - particle.x;
-          const dy = particle.targetY - particle.y;
-          const distance = Math.sqrt(dx * dx + dy * dy);
-          
-          if (distance > 5) {
-            // Still moving toward target
+        const updated = prev.map(p => {
+          const dx = p.targetX - p.x;
+          const dy = p.targetY - p.y;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          if (dist > 5) {
             animating = true;
-            return {
-              ...particle,
-              x: particle.x + dx * 0.05,
-              y: particle.y + dy * 0.05,
-              life: particle.life - 1
-            };
+            return { ...p, x: p.x + dx * 0.05, y: p.y + dy * 0.05, life: p.life - 1 };
           } else {
-            // At target, handle differently
-            if (particle.velocity) {
-              // For particles with velocity, continue moving
-              return {
-                ...particle,
-                x: particle.x + particle.velocity.x,
-                y: particle.y + particle.velocity.y,
-                life: particle.life - 1
-              };
-            } else {
-              // For targeted particles, decay faster once at destination
-              return {
-                ...particle,
-                life: particle.life - 3
-              };
-            }
+            return { ...p, life: p.life - 3 }; // Decay faster at target
           }
-        }).filter(p => p.life > 0); // Remove dead particles
-        
-        return updatedParticles;
+        }).filter(p => p.life > 0);
+        return updated;
       });
-      
-      // Continue animation if particles still exist or stop
-      if (animating && active && isComponentMounted.current) {
+      if (animating && active && isComponentMountedRef.current) {
         animationFrameRef.current = requestAnimationFrame(animate);
       } else {
         animationFrameRef.current = null;
       }
     };
-    
-    // Start animation
     animationFrameRef.current = requestAnimationFrame(animate);
-    
-    // Cleanup function
     return () => {
       active = false;
       if (animationFrameRef.current !== null) {
         cancelAnimationFrame(animationFrameRef.current);
-        animationFrameRef.current = null;
       }
     };
-  }, [particleEffects.length]); // Only depends on length changing
+  }, [particleEffects.length]); // Re-run only if particle count changes
 
-  // RENDERING FUNCTIONS
-
-  // Draw constellation on canvas
+  // Main Canvas Drawing Loop
   useEffect(() => {
-    if (!canvasRef.current || !isComponentMounted.current) return;
-    
+    if (!canvasRef.current || !isComponentMountedRef.current) return;
     const canvas = canvasRef.current;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
-    
+
     // Clear canvas
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    
-    // Apply zoom and camera position transform
+
+    // Apply transformations
     ctx.save();
     ctx.translate(canvas.width / 2 + cameraPosition.x, canvas.height / 2 + cameraPosition.y);
     ctx.scale(zoomLevel, zoomLevel);
     ctx.translate(-canvas.width / 2, -canvas.height / 2);
-    
-    // Draw deep space background
+
+    // Call drawing utilities
     drawStarryBackground(ctx, canvas.width, canvas.height);
-    
-    // Draw connections
-    drawConnections(ctx);
-    
-    // Draw nodes
-    drawNodes(ctx);
-    
-    // Draw connecting line when establishing new connection
-    drawPendingConnection(ctx);
-    
-    // Draw particles
-    drawParticles(ctx);
-    
-    // Restore transform
+    drawConnections(ctx, discoveredConnections, discoveredNodes, selectedNode, pendingConnection);
+    drawNodes(ctx, discoveredNodes, activeNode, selectedNode, pendingConnection, activeNodes, newlyDiscovered, showLabels);
+    drawPendingConnection(ctx, discoveredNodes, pendingConnection, activeNode);
+    drawParticles(ctx, particleEffects);
+
+    // Restore transformations
     ctx.restore();
+
   }, [
-    discoveredNodes, 
-    discoveredConnections, 
-    activeNode, 
-    selectedNode, 
-    pendingConnection, 
-    activeNodes, 
-    newlyDiscovered, 
-    particleEffects,
-    zoomLevel,
-    cameraPosition
+    discoveredNodes, discoveredConnections, activeNode, selectedNode, pendingConnection,
+    activeNodes, newlyDiscovered, particleEffects, zoomLevel, cameraPosition, dimensions, showLabels // Add dimensions and showLabels
   ]);
 
-  // Helper: Draw starry background
-  const drawStarryBackground = (ctx: CanvasRenderingContext2D, width: number, height: number) => {
-    // Fill with deep space color
-    ctx.fillStyle = '#000000';
-    ctx.fillRect(0, 0, width, height);
-    
-    // Create distant stars with various brightness
-    for (let i = 0; i < 300; i++) {
-      const x = Math.random() * width;
-      const y = Math.random() * height;
-      const radius = Math.random() * 1.2;
-      const opacity = Math.random() * 0.3 + 0.1;
-      
-      ctx.beginPath();
-      ctx.arc(x, y, radius, 0, Math.PI * 2);
-      ctx.fillStyle = `rgba(255, 255, 255, ${opacity})`;
-      ctx.fill();
-    }
-    
-    // Add a subtle nebula effect in the background
-    for (let i = 0; i < 5; i++) {
-      const x = Math.random() * width;
-      const y = Math.random() * height;
-      const radius = Math.random() * 150 + 100;
-      
-      // Random domain color for nebula with very low opacity
-      const domainKeys = Object.keys(DOMAIN_COLORS);
-      const randomDomain = domainKeys[Math.floor(Math.random() * domainKeys.length)] as KnowledgeDomain;
-      const color = DOMAIN_COLORS[randomDomain];
-      
-      // Create radial gradient for nebula - using direct rgba values
-      const nebula = ctx.createRadialGradient(
-        x, y, 0,
-        x, y, radius
-      );
-      
-      // Convert hex to rgba with 0.05 opacity for start
-      const colorRgba = hexToRgba(color, 0.05);
-      
-      nebula.addColorStop(0, colorRgba);
-      nebula.addColorStop(1, 'rgba(0,0,0,0)');
-      
-      ctx.fillStyle = nebula;
-      ctx.fillRect(0, 0, width, height);
-    }
-  };
-
-  // Helper: Convert hex color to rgba
-  const hexToRgba = (hex: string, alpha: number = 1) => {
-    // Remove # if present
-    hex = hex.replace('#', '');
-    
-    // Parse the hex values
-    const r = parseInt(hex.substring(0, 2), 16);
-    const g = parseInt(hex.substring(2, 4), 16);
-    const b = parseInt(hex.substring(4, 6), 16);
-    
-    // Return rgba string
-    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
-  };
-  
-  // Helper: Draw all connections
-  const drawConnections = (ctx: CanvasRenderingContext2D) => {
-    discoveredConnections.forEach(connection => {
-      const sourceNode = discoveredNodes.find(n => n.id === connection.source);
-      const targetNode = discoveredNodes.find(n => n.id === connection.target);
-      
-      if (sourceNode && targetNode && sourceNode.position && targetNode.position) {
-        const isActive = 
-          (selectedNode?.id === sourceNode.id || selectedNode?.id === targetNode.id) ||
-          (pendingConnection === sourceNode.id || pendingConnection === targetNode.id);
-          
-        // Connection strength affects width and opacity
-        const opacity = connection.strength / 200 + 0.3; // 0.3 - 0.8 range
-        const width = connection.strength / 100 * 2 + 1; // 1 - 3 range
-        
-        // Get domain colors from our direct color map
-        const sourceColor = DOMAIN_COLORS[sourceNode.domain];
-        const targetColor = DOMAIN_COLORS[targetNode.domain];
-        
-        // Create gradient between the two domain colors
-        const gradient = ctx.createLinearGradient(
-          sourceNode.position.x, sourceNode.position.y,
-          targetNode.position.x, targetNode.position.y
-        );
-        gradient.addColorStop(0, sourceColor);
-        gradient.addColorStop(1, targetColor);
-        
-        // Draw connection line
-        ctx.beginPath();
-        ctx.moveTo(sourceNode.position.x, sourceNode.position.y);
-        ctx.lineTo(targetNode.position.x, targetNode.position.y);
-        
-        // Style based on active state
-        if (isActive) {
-          ctx.strokeStyle = 'white';
-          ctx.lineWidth = width + 1;
-          ctx.globalAlpha = opacity + 0.2;
-          
-          // Add glow for active connections
-          ctx.shadowColor = 'white';
-          ctx.shadowBlur = 8;
-        } else {
-          ctx.strokeStyle = gradient;
-          ctx.lineWidth = width;
-          ctx.globalAlpha = opacity;
-          ctx.shadowBlur = 0;
-        }
-        
-        // Draw the line
-        ctx.stroke();
-        
-        // Reset shadow and opacity
-        ctx.shadowBlur = 0;
-        ctx.globalAlpha = 1;
-      }
-    });
-  };
-  
-  // Helper: Draw all nodes
-  const drawNodes = (ctx: CanvasRenderingContext2D) => {
-    discoveredNodes.forEach(node => {
-      if (!node.position) return;
-      
-      // Get domain colors from our direct color maps
-      const domainColor = DOMAIN_COLORS[node.domain];
-      const domainLightColor = DOMAIN_COLORS_LIGHT[node.domain];
-      
-      const isActiveNode = activeNode?.id === node.id;
-      const isSelectedNode = selectedNode?.id === node.id;
-      const isPendingConnection = pendingConnection === node.id;
-      const isHighlighted = activeNodes.includes(node.id) || newlyDiscovered.includes(node.id);
-      
-      // Calculate node size based on mastery (10-20px range)
-      const baseSize = 10 + (node.mastery / 100) * 10;
-      
-      // Increase size if active/selected/highlighted
-      const size = isActiveNode || isSelectedNode || isPendingConnection || isHighlighted
-        ? baseSize * 1.3
-        : baseSize;
-        
-      // Draw glow for active/highlighted nodes
-      if (isActiveNode || isSelectedNode || isPendingConnection || isHighlighted) {
-        ctx.beginPath();
-        
-        // Extra strong glow for highlighted nodes
-        const glowRadius = isHighlighted ? size * 2.5 : size * 1.8;
-        ctx.arc(node.position.x, node.position.y, glowRadius, 0, Math.PI * 2);
-        
-        // Create radial gradient for glow
-        const glow = ctx.createRadialGradient(
-          node.position.x, node.position.y, size * 0.5,
-          node.position.x, node.position.y, glowRadius
-        );
-        
-        // Use domain color for glow (direct color references, not CSS vars)
-        const color = isHighlighted ? domainLightColor : domainColor;
-        
-        glow.addColorStop(0, color);
-        glow.addColorStop(1, 'rgba(0,0,0,0)');
-        
-        ctx.fillStyle = glow;
-        ctx.fill();
-        
-        // Add pulsing animation for highlighted nodes
-        if (isHighlighted) {
-          // Second larger glow
-          ctx.beginPath();
-          ctx.arc(node.position.x, node.position.y, glowRadius * 1.5, 0, Math.PI * 2);
-          
-          const outerGlow = ctx.createRadialGradient(
-            node.position.x, node.position.y, glowRadius,
-            node.position.x, node.position.y, glowRadius * 1.5
-          );
-          
-          // Use rgba directly for outer glow
-          outerGlow.addColorStop(0, hexToRgba(domainColor, 0.3));
-          outerGlow.addColorStop(1, 'rgba(0,0,0,0)');
-          
-          ctx.fillStyle = outerGlow;
-          ctx.fill();
-          
-          // Add extra shadow for highlighted nodes
-          ctx.shadowColor = domainColor;
-          ctx.shadowBlur = 15;
-        }
-      }
-      
-      // Draw primary node
-      ctx.beginPath();
-      ctx.arc(node.position.x, node.position.y, size, 0, Math.PI * 2);
-      
-      // Fill based on mastery and domain
-      if (isHighlighted) {
-        // Brighter color for highlighted nodes
-        ctx.fillStyle = domainLightColor;
-      } else {
-        // Normal fill with domain color
-        ctx.fillStyle = domainColor;
-      }
-      
-      ctx.fill();
-      ctx.shadowBlur = 0; // Reset shadow
-      
-      // Add inner highlight
-      ctx.beginPath();
-      ctx.arc(
-        node.position.x - size * 0.3, 
-        node.position.y - size * 0.3, 
-        size * 0.4, 
-        0, Math.PI * 2
-      );
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
-      ctx.fill();
-      
-      // Add mastery indicator ring
-      if (node.mastery > 0) {
-        ctx.beginPath();
-        ctx.arc(
-          node.position.x, 
-          node.position.y, 
-          size + 2, 
-          -Math.PI / 2, // Start at top
-          (Math.PI * 2) * (node.mastery / 100) - Math.PI / 2 // End based on mastery %
-        );
-        
-        // Get light color for domain
-        ctx.strokeStyle = domainLightColor;
-        ctx.lineWidth = 2;
-        ctx.stroke();
-      }
-      
-      // Draw labels for active/selected nodes or when showLabels is true
-      if ((isActiveNode || isSelectedNode || isHighlighted || showLabels)) {
-        const isTemporaryLabel = isActiveNode && !isSelectedNode && !isHighlighted && !showLabels;
-        
-        // Text background
-        ctx.font = '12px Arial, sans-serif';
-        const textWidth = ctx.measureText(node.name).width;
-        const padding = 4;
-        const rectX = node.position.x - textWidth / 2 - padding;
-        const rectY = node.position.y + 15 - padding;
-        
-        ctx.fillStyle = isTemporaryLabel ? 'rgba(26, 30, 36, 0.6)' : 'rgba(26, 30, 36, 0.8)';
-        ctx.fillRect(
-          rectX, 
-          rectY, 
-          textWidth + padding * 2, 
-          18
-        );
-        
-        // Text
-        ctx.fillStyle = isHighlighted ? '#FFFFFF' : domainColor;
-        ctx.textAlign = 'center';
-        ctx.fillText(node.name, node.position.x, node.position.y + 28);
-        
-        // Domain indicator
-        ctx.fillStyle = domainColor;
-        ctx.fillRect(node.position.x - textWidth / 2 - padding, rectY, 3, 18);
-      }
-    });
-  };
-  
-  // Helper: Draw pending connection line
-  const drawPendingConnection = (ctx: CanvasRenderingContext2D) => {
-    if (pendingConnection && activeNode) {
-      const sourceNode = discoveredNodes.find(n => n.id === pendingConnection);
-      if (sourceNode && sourceNode.position && activeNode.position) {
-        ctx.beginPath();
-        ctx.moveTo(sourceNode.position.x, sourceNode.position.y);
-        ctx.lineTo(activeNode.position.x, activeNode.position.y);
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.6)';
-        ctx.lineWidth = 2;
-        ctx.setLineDash([5, 3]); // Create dashed line
-        ctx.stroke();
-        ctx.setLineDash([]); // Reset dash
-      }
-    }
-  };
-  
-  // Helper: Draw particles
-  const drawParticles = (ctx: CanvasRenderingContext2D) => {
-    particleEffects.forEach(particle => {
-      ctx.beginPath();
-      
-      // Fade particles as they near the end of their life
-      const opacity = particle.opacity !== undefined 
-        ? particle.opacity 
-        : particle.life / particle.maxLife;
-      
-      // Draw particle
-      ctx.arc(particle.x, particle.y, particle.size, 0, Math.PI * 2);
-      
-      // Use RGBA directly
-      ctx.fillStyle = hexToRgba(particle.color, opacity);
-      
-      ctx.fill();
-    });
-  };
-
-  // INTERACTION HANDLERS - With left-click drag panning
-
-  // Handle mouse movement for node hover and dragging
-  const handleMouseMove = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (!canvasRef.current || !interactive || !isComponentMounted.current) return;
-    
-    const canvas = canvasRef.current;
-    const rect = canvas.getBoundingClientRect();
-    
-    // Handle dragging to move the camera
-    if (isDragging) {
-      const dx = e.clientX - dragStart.x;
-      const dy = e.clientY - dragStart.y;
-      
-      // Update camera position
-      setCameraPosition(prev => ({
-        x: prev.x + dx,
-        y: prev.y + dy
-      }));
-      
-      // Update drag start position
-      setDragStart({
-        x: e.clientX,
-        y: e.clientY
-      });
-      
-      return;
-    }
-    
-    // Apply inverse transforms to get the correct mouse position in the canvas space
-    const canvasX = (e.clientX - rect.left);
-    const canvasY = (e.clientY - rect.top);
-    
-    // Convert to scene coordinates
-    const sceneX = (canvasX - (canvas.width / 2 + cameraPosition.x)) / zoomLevel + canvas.width / 2;
-    const sceneY = (canvasY - (canvas.height / 2 + cameraPosition.y)) / zoomLevel + canvas.height / 2;
-    
-    // Check if mouse is over any node
-    const hoveredNode = discoveredNodes.find(node => {
-      if (!node.position) return false;
-      
-      const baseSize = 10 + (node.mastery / 100) * 10;
-      const distance = Math.sqrt(
-        Math.pow(node.position.x - sceneX, 2) + 
-        Math.pow(node.position.y - sceneY, 2)
-      );
-      
-      return distance <= baseSize + 5; // Add margin for easier hovering
-    });
-    
-    // Update active node
-    setActiveNode(hoveredNode || null);
-    
-    // Update cursor style based on context
-    if (hoveredNode) {
-      canvas.style.cursor = 'pointer';
-    } else if (isDragging) {
-      canvas.style.cursor = 'grabbing';
-    } else {
-      canvas.style.cursor = 'grab';
-    }
-  }, [isDragging, dragStart, cameraPosition, zoomLevel, discoveredNodes, interactive]);
-
-  // Handle mouse down for both left-click interactions and dragging
-  const handleMouseDown = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (!canvasRef.current || !interactive || !isComponentMounted.current) return;
-    
-    // Determine if we're over a node
-    const isOverNode = activeNode != null;
-    
-    // Use left button (0) for both node selection and dragging
-    if (e.button === 0) {
-      if (!isOverNode) {
-        // Start dragging if not over a node
-        setIsDragging(true);
-        setDragStart({
-          x: e.clientX,
-          y: e.clientY
-        });
-        
-        if (canvasRef.current) {
-          canvasRef.current.style.cursor = 'grabbing';
-        }
-      } else {
-        // Note: We'll handle node selection in the click handler
-        // This prevents both dragging and node selection at the same time
-        setIsConnecting(true);
-      }
-    }
-    
-    // Middle button (1) or right button (2) for panning (keep existing behavior)
-    if (e.button === 1 || e.button === 2) {
-      e.preventDefault();
-      setIsDragging(true);
-      setDragStart({
-        x: e.clientX,
-        y: e.clientY
-      });
-      
-      if (canvasRef.current) {
-        canvasRef.current.style.cursor = 'grabbing';
-      }
-    }
-  }, [interactive, activeNode]);
-  
-  // Handle mouse up to end dragging
-  const handleMouseUp = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (!isComponentMounted.current) return;
-    
-    // End drag regardless of which button was released
-    setIsDragging(false);
-    setIsConnecting(false);
-    
-    if (canvasRef.current) {
-      canvasRef.current.style.cursor = activeNode ? 'pointer' : 'grab';
-    }
-  }, [activeNode]);
-
-  // Handle node click - Modified to work with the improved dragging
-  const handleClick = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (!canvasRef.current || !activeNode || !interactive || isDragging || !isComponentMounted.current) return;
-    
-    // Handle node interaction for connection making
-    if (pendingConnection) {
-      // Complete connection if clicking a different node
-      if (pendingConnection !== activeNode.id) {
-        const sourceNode = discoveredNodes.find(n => n.id === pendingConnection);
-        
-        if (sourceNode) {
-          // Check if connection already exists
-          const existingConnection = discoveredConnections.find(
-            conn => (conn.source === pendingConnection && conn.target === activeNode.id) ||
-                   (conn.source === activeNode.id && conn.target === pendingConnection)
-          );
-          
-          if (!existingConnection) {
-            // Create new connection with satisfying feedback
-            // Removed direct sound calls - log instead
-            console.log('Would play connection success sound');
-            
-            // Create new connection in store
-            useKnowledgeStore.getState().createConnection(pendingConnection, activeNode.id);
-            
-            // Grant insights based on nodes' mastery
-            const insightGain = Math.floor((sourceNode.mastery + activeNode.mastery) / 10) + 5;
-            
-            // Boost mastery for both nodes
-            useKnowledgeStore.getState().updateMastery(pendingConnection, Math.min(5, 100 - sourceNode.mastery));
-            useKnowledgeStore.getState().updateMastery(activeNode.id, Math.min(5, 100 - activeNode.mastery));
-            
-            // Create visual effect where connection is created
-            const midX = ((sourceNode.position?.x || 0) + (activeNode.position?.x || 0)) / 2;
-            const midY = ((sourceNode.position?.y || 0) + (activeNode.position?.y || 0)) / 2;
-            
-            // Create particle burst at connection point
-            const newParticles: typeof particleEffects = [];
-            
-            for (let i = 0; i < 20; i++) {
-              const angle = Math.random() * Math.PI * 2;
-              const distance = Math.random() * 30;
-              const startDistance = 5;
-              
-              newParticles.push({
-                id: `connection-particle-${i}-${Date.now()}`,
-                x: midX + Math.cos(angle) * startDistance,
-                y: midY + Math.sin(angle) * startDistance,
-                targetX: midX + Math.cos(angle) * distance,
-                targetY: midY + Math.sin(angle) * distance,
-                color: '#FFFFFF',
-                size: Math.random() * 3 + 1,
-                life: 50,
-                maxLife: 50
-              });
-            }
-            
-            setParticleEffects(prev => [...prev, ...newParticles]);
-          }
-        }
-        
-        // Reset pending connection state
-        setPendingConnection(null);
-      } else {
-        // Cancel if clicking the same node
-        setPendingConnection(null);
-      }
-    } else {
-      // Select node or start connection
-      if (selectedNode?.id === activeNode.id) {
-        // Start connection from selected node
-        setPendingConnection(activeNode.id);
-        
-        // Log click sound - removed direct sound call
-        console.log('Would play click sound');
-      } else {
-        // Select node
-        setSelectedNode(activeNode);
-        
-        // Log click sound - removed direct sound call
-        console.log('Would play click sound');
-      }
-    }
-  }, [activeNode, discoveredNodes, discoveredConnections, pendingConnection, selectedNode, isDragging, interactive]);
-
-  // Handle zoom with mouse wheel
-  const handleWheel = useCallback((e: React.WheelEvent<HTMLCanvasElement>) => {
-    if (!interactive || !isComponentMounted.current) return;
-    
-    // Prevent default scrolling
-    e.preventDefault();
-    
-    // Calculate new zoom level
-    const delta = e.deltaY > 0 ? -0.1 : 0.1;
-    const newZoom = Math.max(0.5, Math.min(2, zoomLevel + delta));
-    
-    setZoomLevel(newZoom);
-  }, [zoomLevel, interactive]);
-  
-  // Handle closing the constellation view
+  // Handle closing the view
   const handleClose = useCallback(() => {
-    if (!isComponentMounted.current || !onClose) return;
-    
-    // Reset selected nodes before closing
+    if (!isComponentMountedRef.current || !onClose) return;
     setSelectedNode(null);
     setActiveNode(null);
     setPendingConnection(null);
-    
-    // Let the parent component handle this reset to avoid
-    // causing update loops during unmount
+    resetNewlyDiscovered(); // Reset highlights on close
     onClose();
-  }, [onClose]);
-  
-  // A simplified version of connection suggestions specifically for use inside the component
-  // This replaces the external ConnectionSuggestions dependency
-  const renderConnectionSuggestions = () => {
-    if (!selectedNode) return null;
-    
-    // Find possible connections
-    const possibleConnections = discoveredNodes.filter(node => 
-      // Must be a different node than selected
-      node.id !== selectedNode.id && 
-      // Must not already be connected
-      !discoveredConnections.some(conn => 
-        (conn.source === selectedNode.id && conn.target === node.id) ||
-        (conn.target === selectedNode.id && conn.source === node.id)
-      )
-    );
+  }, [onClose, resetNewlyDiscovered]);
 
-    // If no suggestions, don't render anything
-    if (possibleConnections.length === 0) return null;
-    
-    // Take up to 3 suggestions
-    const suggestions = possibleConnections.slice(0, 3);
-    
-    return (
-      <div className="absolute top-4 right-4 w-64 z-10">
-        <div className="bg-surface-dark/80 p-3 pixel-borders-thin">
-          <PixelText className="text-text-primary mb-2">Suggested Connections</PixelText>
-          <div className="space-y-2">
-            {suggestions.map(node => (
-              <div 
-                key={node.id} 
-                className="bg-surface p-2 hover:bg-surface-dark cursor-pointer"
-                onClick={() => {
-                  setPendingConnection(selectedNode.id);
-                  setTimeout(() => {
-                    // Simulate clicking the suggested node
-                    const sourceNode = discoveredNodes.find(n => n.id === selectedNode.id);
-                    if (sourceNode) {
-                      useKnowledgeStore.getState().createConnection(selectedNode.id, node.id);
-                      
-                      // Boost mastery slightly for both nodes
-                      useKnowledgeStore.getState().updateMastery(selectedNode.id, 3);
-                      useKnowledgeStore.getState().updateMastery(node.id, 3);
-                      
-                      console.log('Would play connection success sound');
-                    }
-                  }, 100);
-                }}
-              >
-                <div className="flex items-center">
-                  <div 
-                    className="w-2 h-2 rounded-full mr-2"
-                    style={{ backgroundColor: DOMAIN_COLORS[node.domain] }}
-                  ></div>
-                  <PixelText className="text-sm">{node.name}</PixelText>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-    );
-  };
-  
   return (
-    <div 
+    <div
       ref={containerRef}
       className="relative bg-black pixel-borders"
-      style={{ 
-        width: dimensions.width, 
+      style={{
+        width: dimensions.width,
         height: dimensions.height,
         maxWidth: '100%',
         maxHeight: '100%'
       }}
     >
-      {/* Main canvas */}
+      {/* Main Canvas */}
       <canvas
         ref={canvasRef}
         width={dimensions.width}
         height={dimensions.height}
         className="w-full h-full"
-        onMouseMove={handleMouseMove}
-        onClick={handleClick}
-        onMouseDown={handleMouseDown}
-        onMouseUp={handleMouseUp}
-        onMouseLeave={() => {
-          setIsDragging(false);
-          setIsConnecting(false);
-        }}
-        onWheel={handleWheel}
-        onContextMenu={(e) => e.preventDefault()} // Prevent context menu on right-click
+        // Attach interaction handlers from the hook
+        onMouseMove={interactionHandlers.handleMouseMove}
+        onClick={interactionHandlers.handleClick}
+        onMouseDown={interactionHandlers.handleMouseDown}
+        onMouseUp={interactionHandlers.handleMouseUp}
+        onMouseLeave={interactionHandlers.handleMouseLeave}
+        onWheel={interactionHandlers.handleWheel}
+        onContextMenu={(e) => e.preventDefault()}
       />
-      
-      {/* Controls and info panels */}
-      <div className="absolute top-4 left-4 z-10">
-        <div className="bg-surface-dark/80 p-3 pixel-borders-thin text-sm">
-          <PixelText className="text-text-primary mb-1">Knowledge Constellation</PixelText>
-          <div className="text-text-secondary">
-            <div>Discovered: {discoveredNodes.length}/{nodes.length}</div>
-            <div>Connections: {discoveredConnections.length}</div>
-            <div>Mastery: {totalMastery}%</div>
-          </div>
-        </div>
-      </div>
-      
-      {/* Simplified connection suggestions panel - internal implementation */}
-      {interactive && selectedNode && renderConnectionSuggestions()}
-      
-      {/* Domains legend */}
-      <div className="absolute bottom-4 left-4 bg-surface-dark/80 p-3 pixel-borders-thin z-10">
-        <PixelText className="text-text-primary mb-2">Knowledge Domains</PixelText>
-        <div className="space-y-1 text-sm">
-          {Object.entries(domainMastery)
-            .filter(([_, mastery]) => mastery > 0)
-            .map(([key, mastery]) => {
-              const domain = KNOWLEDGE_DOMAINS[key as KnowledgeDomain];
-              if (!domain) return null;
-              
-              return (
-                <div key={key} className="flex items-center">
-                  <div 
-                    className="w-3 h-3 mr-2" 
-                    style={{ backgroundColor: DOMAIN_COLORS[key as KnowledgeDomain] }}
-                  ></div>
-                  <PixelText className="text-sm">{domain.name}: {mastery}%</PixelText>
-                </div>
-              );
-            })}
-        </div>
-      </div>
-      
-      {/* Zoom and camera controls */}
-      <div className="absolute bottom-20 right-4 flex flex-col space-y-2 z-10">
-        <PixelButton
-          className="w-8 h-8 flex items-center justify-center bg-surface-dark"
-          onClick={() => setZoomLevel(Math.min(2, zoomLevel + 0.1))}
-        >
-          +
-        </PixelButton>
-        <PixelButton
-          className="w-8 h-8 flex items-center justify-center bg-surface-dark"
-          onClick={() => setZoomLevel(Math.max(0.5, zoomLevel - 0.1))}
-        >
-          -
-        </PixelButton>
-        <PixelButton
-          className="w-8 h-8 flex items-center justify-center bg-surface-dark"
-          onClick={() => {
-            setZoomLevel(0.8); // Reset to initial zoom level
-            setCameraPosition({ x: 0, y: 0 }); // Reset camera position
-          }}
-        >
-          ↺
-        </PixelButton>
-      </div>
-      
-      {/* Bottom action buttons */}
-      <div className="absolute bottom-4 right-4 flex space-x-3 z-10">
-        {enableJournal && (
-          <PixelButton
-            className="bg-surface hover:bg-surface-dark text-text-primary"
-            onClick={() => setJournalVisible(true)}
-          >
-            Journal
-          </PixelButton>
-        )}
-        
-        <PixelButton
-          className="bg-surface hover:bg-surface-dark text-text-primary"
-          onClick={() => setShowHelp(true)}
-        >
-          Help
-        </PixelButton>
-        
-        {onClose && (
-          <PixelButton
-            className="bg-surface hover:bg-danger text-text-primary"
-            onClick={handleClose}
-          >
-            Close
-          </PixelButton>
-        )}
-      </div>
-      
-      {/* Selected node details */}
-      {selectedNode && (
-        <div className="absolute top-1/2 right-4 transform -translate-y-1/2 max-w-xs bg-surface-dark/90 p-3 pixel-borders z-10">
-          <div className="flex justify-between items-start">
-            <div>
-              <div className="flex items-center mb-1">
-                <div 
-                  className="w-3 h-3 mr-2" 
-                  style={{ backgroundColor: DOMAIN_COLORS[selectedNode.domain] }}
-                ></div>
-                <PixelText className="text-lg">
-                  {selectedNode.name}
-                </PixelText>
-              </div>
-              <PixelText className="text-sm text-text-secondary mb-2">{KNOWLEDGE_DOMAINS[selectedNode.domain].name}</PixelText>
-            </div>
-            
-            <div className="bg-surface px-2 py-1 text-sm">
-              <PixelText className="text-text-secondary">Mastery:</PixelText>
-              <PixelText>{selectedNode.mastery}%</PixelText>
-            </div>
-          </div>
-          
-          <PixelText className="text-sm mb-3">{selectedNode.description}</PixelText>
-          
-          <div className="flex justify-between items-center">
-            <PixelText className="text-text-secondary text-xs">
-              {pendingConnection === selectedNode.id 
-                ? 'Click another node to form connection' 
-                : 'Connections: ' + selectedNode.connections.filter(id => 
-                    discoveredNodes.some(n => n.id === id)
-                  ).length}
-            </PixelText>
-            
-            {!pendingConnection && (
-              <PixelButton
-                className="text-xs py-1 bg-blue-600 text-white"
-                onClick={() => setPendingConnection(selectedNode.id)}
-              >
-                Connect
-              </PixelButton>
-            )}
-          </div>
-        </div>
-      )}
-      
-      {/* Journal overlay */}
-      {journalVisible && (
-        <div className="absolute inset-0 bg-black/90 z-20 flex items-center justify-center">
-          <div className="bg-surface p-6 max-w-md w-full pixel-borders">
-            <div className="flex justify-between items-center mb-4">
-              <PixelText className="text-2xl">Research Journal</PixelText>
-              <PixelButton 
-                className="bg-red-600 hover:bg-red-500 text-white" 
-                onClick={() => setJournalVisible(false)}
-              >
-                Close
-              </PixelButton>
-            </div>
-            
-            <div className="mb-4">
-              <PixelText className="mb-2">Recent Insights</PixelText>
-              <div className="space-y-2">
-                {recentInsights.map((insight, index) => {
-                  const node = discoveredNodes.find(n => n.id === insight.conceptId);
-                  if (!node) return null;
-                  
-                  return (
-                    <div 
-                      key={`insight-${index}-${insight.conceptId}`}
-                      className="p-3 pixel-borders-thin bg-surface-dark"
-                    >
-                      <div className="flex justify-between items-start">
-                        <div className="flex items-center">
-                          <div 
-                            className="w-3 h-3 mr-2" 
-                            style={{ backgroundColor: DOMAIN_COLORS[node.domain] }}
-                          ></div>
-                          <PixelText>{node.name}</PixelText>
-                        </div>
-                        <div className="bg-surface px-2 py-0.5 text-sm">
-                          <PixelText>{insight.amount}%</PixelText>
-                        </div>
-                      </div>
-                      <PixelText className="text-sm text-text-secondary mt-1">
-                        {KNOWLEDGE_DOMAINS[node.domain].name}
-                      </PixelText>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-            
-            <div className="p-3 bg-surface-dark pixel-borders-thin">
-              <PixelText className="text-text-secondary text-sm italic">
-                As you learn and apply knowledge through challenges, your insights will be recorded here, then transferred to your constellation during the night phase.
-              </PixelText>
-            </div>
-          </div>
-        </div>
-      )}
-      
-      {/* Help overlay */}
-      {showHelp && (
-        <div className="absolute inset-0 bg-black/90 z-20 flex items-center justify-center">
-          <div className="bg-surface p-6 max-w-md w-full pixel-borders">
-            <div className="flex justify-between items-center mb-4">
-              <PixelText className="text-2xl">Constellation Help</PixelText>
-              <PixelButton 
-                className="bg-red-600 hover:bg-red-500 text-white" 
-                onClick={() => setShowHelp(false)}
-              >
-                Close
-              </PixelButton>
-            </div>
-            
-            <div className="space-y-4 mb-4">
-              <div>
-                <PixelText className="mb-1" style={{ color: DOMAIN_COLORS.theoretical }}>Viewing Knowledge</PixelText>
-                <PixelText className="text-sm text-text-secondary">
-                  Your constellation represents your knowledge in different domains of medical physics. 
-                  Each star is a concept you've learned, with brighter stars indicating higher mastery.
-                </PixelText>
-              </div>
-              
-              <div>
-                <PixelText className="mb-1" style={{ color: DOMAIN_COLORS.theoretical }}>Creating Connections</PixelText>
-                <PixelText className="text-sm text-text-secondary">
-                  1. Click on a concept to select it
-                  2. Click the "Connect" button or click the concept again to begin a connection
-                  3. Click another concept to form a connection
-                </PixelText>
-                <PixelText className="text-sm text-text-secondary mt-1">
-                  Connecting related concepts deepens your understanding and grants additional insight.
-                </PixelText>
-              </div>
-              
-              <div>
-                <PixelText className="mb-1" style={{ color: DOMAIN_COLORS.theoretical }}>Knowledge Application</PixelText>
-                <PixelText className="text-sm text-text-secondary">
-                  Your knowledge unlocks new dialogue options and challenge approaches during gameplay.
-                  Higher mastery in relevant domains improves your performance in challenges.
-                </PixelText>
-              </div>
-              
-              <div>
-                <PixelText className="mb-1" style={{ color: DOMAIN_COLORS.theoretical }}>Navigation Controls</PixelText>
-                <PixelText className="text-sm text-text-secondary">
-                  • Click and drag anywhere to pan the view
-                  • Use the mouse wheel to zoom in and out
-                  • Right-click and drag also works for panning
-                  • Use the +/- buttons to adjust zoom level
-                  • Click the ↺ button to reset zoom and position
-                </PixelText>
-              </div>
-            </div>
-            
-            <div className="p-3 bg-surface-dark pixel-borders-thin">
-              <PixelText className="mb-1" style={{ color: DOMAIN_COLORS['clinical-practice'] }}>Pro Tip</PixelText>
-              <PixelText className="text-sm text-text-secondary">
-                The most powerful insights come from connecting concepts across different domains.
-                Try connecting clinical knowledge with radiation physics principles!
-              </PixelText>
-            </div>
-          </div>
-        </div>
-      )}
+
+      {/* Render UI Sub-components */}
+      <ConstellationInfoPanel
+        discoveredNodes={discoveredNodes}
+        totalNodes={nodes.length}
+        discoveredConnections={discoveredConnections}
+        totalMastery={totalMastery}
+      />
+
+      <ConstellationLegend domainMastery={domainMastery} />
+
+      <ConstellationControls
+        zoomLevel={zoomLevel}
+        setZoomLevel={setZoomLevel}
+        setCameraPosition={setCameraPosition}
+      />
+
+      <ConstellationActions
+        enableJournal={enableJournal}
+        setJournalVisible={setJournalVisible}
+        setShowHelp={setShowHelp}
+        onClose={handleClose} // Use the wrapped handleClose
+      />
+
+      <SelectedNodePanel
+        selectedNode={selectedNode}
+        discoveredNodes={discoveredNodes}
+        pendingConnection={pendingConnection}
+        setPendingConnection={setPendingConnection}
+      />
+
+      {interactive && selectedNode && (
+         <ConnectionSuggestionsPanel
+           selectedNode={selectedNode}
+           discoveredNodes={discoveredNodes}
+           discoveredConnections={discoveredConnections}
+           setPendingConnection={setPendingConnection}
+         />
+       )}
+
+
+      {/* Render Overlays */}
+      <JournalOverlay
+        journalVisible={journalVisible}
+        setJournalVisible={setJournalVisible}
+        discoveredNodes={discoveredNodes}
+        recentInsights={recentInsights}
+      />
+
+      <HelpOverlay
+        showHelp={showHelp}
+        setShowHelp={setShowHelp}
+      />
     </div>
   );
 }
