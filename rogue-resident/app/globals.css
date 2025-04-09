@@ -1,3 +1,4 @@
+/* app/globals.css */
 @import "tailwindcss";
 
 /* Pixel font imports */
@@ -27,32 +28,32 @@
   --success: #4e9e6a;
   --warning: #d6b740;
   --danger: #cc4d4d;
-  
+
   /* Node type colors (muted versions) */
   --clinical-color: #4e83bd;
   --clinical-color-dark: #3a6590;
   --clinical-color-light: #63a0db;
-  
+
   --qa-color: #5a6978;
   --qa-color-dark: #464e59;
   --qa-color-light: #6d7c8a;
-  
+
   --educational-color: #2c9287;
   --educational-color-dark: #1f6e66;
   --educational-color-light: #3db3a6;
-  
+
   --storage-color: #bfb38b;
   --storage-color-dark: #a59970;
   --storage-color-light: #d8cca3;
-  
+
   --vendor-color: #323f4f;
   --vendor-color-dark: #25303d;
   --vendor-color-light: #3e4e61;
-  
+
   --boss-color: #cc4d4d;
   --boss-color-dark: #a33c3c;
   --boss-color-light: #e05e5e;
-  
+
   /* Font variables */
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -72,7 +73,7 @@ body {
 
 /* Pixel art utility classes */
 .pixel-borders {
-  box-shadow: 
+  box-shadow:
     0 -2px 0 0 var(--border),
     0 2px 0 0 var(--border),
     -2px 0 0 0 var(--border),
@@ -81,7 +82,7 @@ body {
 }
 
 .pixel-borders-thin {
-  box-shadow: 
+  box-shadow:
     0 -1px 0 0 var(--border),
     0 1px 0 0 var(--border),
     -1px 0 0 0 var(--border),
@@ -158,7 +159,7 @@ body {
   background-color: var(--surface);
   color: var(--text-primary);
   border: none;
-  box-shadow: 
+  box-shadow:
     inset -2px -2px 0 var(--border),
     inset 2px 2px 0 rgba(255, 255, 255, 0.1);
   padding: 0.5rem 1rem;
@@ -170,14 +171,14 @@ body {
   background-color: var(--accent-primary);
   color: var(--surface-dark);
   transform: translateY(-1px);
-  box-shadow: 
+  box-shadow:
     inset -2px -2px 0 rgba(0, 0, 0, 0.2),
     inset 2px 2px 0 rgba(255, 255, 255, 0.2);
 }
 
 .pixel-button:active {
   transform: translateY(1px);
-  box-shadow: 
+  box-shadow:
     inset 2px 2px 0 rgba(0, 0, 0, 0.2),
     inset -2px -2px 0 rgba(255, 255, 255, 0.1);
 }
@@ -185,7 +186,7 @@ body {
 /* Pixel card */
 .pixel-card {
   background-color: var(--surface);
-  box-shadow: 
+  box-shadow:
     0 0 0 1px var(--border),
     inset 0 0 0 1px rgba(255, 255, 255, 0.05);
   padding: 1rem;
@@ -254,9 +255,9 @@ body {
   height: 12px;
   margin: 0 1px;
   clip-path: polygon(
-    0% 0%, 
-    100% 0%, 
-    100% 100%, 
+    0% 0%,
+    100% 0%,
+    100% 100%,
     0% 100%
   );
 }
@@ -436,9 +437,144 @@ img.pixel-art,
   100% { transform: scale(1); }
 }
 
-.animate-pulse {
-  animation: pulse 0.8s ease-in-out infinite;
+/* Shared pulse animation definition */
+@keyframes pulse-shared {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
 }
+
+/* Animation for ping effect */
+@keyframes ping {
+  75%, 100% {
+    transform: scale(2);
+    opacity: 0;
+  }
+}
+
+/* Animation for floating effect */
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-5px); }
+}
+
+/* Animation for subtle float effect */
+@keyframes float-subtle {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-10px); }
+}
+
+/* Animation for glowing text */
+@keyframes glow {
+  0%, 100% { text-shadow: 0 0 5px rgba(255, 255, 255, 0.5); }
+  50% { text-shadow: 0 0 20px rgba(255, 255, 255, 0.8); }
+}
+
+/* Particle animations */
+@keyframes particle1 {
+  0% { transform: translate(0, 0); opacity: 1; }
+  100% { transform: translate(-20px, -50px); opacity: 0; }
+}
+
+@keyframes particle2 {
+  0% { transform: translate(0, 0); opacity: 1; }
+  100% { transform: translate(30px, -40px); opacity: 0; }
+}
+
+@keyframes particle3 {
+  0% { transform: translate(0, 0); opacity: 1; }
+  100% { transform: translate(-10px, 60px); opacity: 0; }
+}
+
+/* Animation for floating particles upwards */
+@keyframes float-up {
+  0% { transform: translateY(0); opacity: 0.8; }
+  100% { transform: translateY(-50vh); opacity: 0; }
+}
+
+/* Fade in/out animations */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes fadeOut {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+/* Animation for subtle pulse */
+@keyframes pulse-subtle {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(55, 145, 216, 0.4); } /* Use a neutral color or variable */
+  50% { box-shadow: 0 0 0 4px rgba(55, 145, 216, 0.4); }
+}
+
+/* Animation for subtle bounce */
+@keyframes bounce-subtle {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-3px); }
+}
+
+
+/* Utility classes using the keyframes */
+.animate-pulse {
+  animation: pulse-shared 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+.animate-ping {
+  animation: ping 1.5s cubic-bezier(0, 0, 0.2, 1) infinite;
+}
+
+.animate-float {
+  animation: float 3s ease-in-out infinite;
+}
+
+.animate-float-subtle {
+  animation: float-subtle 3s ease-in-out infinite;
+}
+
+.animate-glow {
+  animation: glow 2s ease-in-out infinite;
+}
+
+.animate-particle1 {
+  animation: particle1 2s ease-out infinite;
+}
+
+.animate-particle2 {
+  animation: particle2 2.5s ease-out infinite;
+}
+
+.animate-particle3 {
+  animation: particle3 3s ease-out infinite;
+}
+
+.animate-float-up {
+  animation: float-up 3s forwards ease-out;
+}
+
+.animate-fadeIn {
+  animation: fadeIn 1s forwards;
+}
+
+.animate-fadeOut {
+  animation: fadeOut 1s forwards;
+}
+
+.animate-pulse-subtle {
+  animation: pulse-subtle 2s infinite;
+}
+
+.animate-bounce-subtle {
+  animation: bounce-subtle 2s infinite;
+}
+
+
+/* Apply the global pulse animation */
+/* This class is shared across components */
+.animate-pulse {
+  animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
 
 @keyframes character-shake {
   0% { transform: translateX(0); }
@@ -532,121 +668,9 @@ img.pixel-art,
   animation: pulse 0.8s infinite alternate;
 }
 
-@keyframes pulse {
-  from { transform: translateY(-50%) scale(1); }
-  to { transform: translateY(-50%) scale(1.1); }
-}
+/* Re-use the pulse animation defined earlier */
+/* @keyframes pulse defined earlier */
 
-
-/* Add to app/globals.css or create a new stylesheet */
-
-/* Starfield background for the map */
-.starfield-bg {
-  background-color: #0f1117;
-  background-image: 
-    radial-gradient(1px 1px at 25% 25%, rgba(255, 255, 255, 0.1) 1px, transparent 0),
-    radial-gradient(1px 1px at 50% 50%, rgba(255, 255, 255, 0.15) 1px, transparent 0),
-    radial-gradient(1px 1px at 75% 75%, rgba(255, 255, 255, 0.1) 1px, transparent 0),
-    radial-gradient(2px 2px at 10% 80%, rgba(100, 155, 255, 0.12) 1px, transparent 0),
-    radial-gradient(2px 2px at 60% 10%, rgba(100, 155, 255, 0.12) 1px, transparent 0);
-  background-size: 50px 50px, 100px 100px, 150px 150px, 200px 200px, 250px 250px;
-}
-
-/* Add color variables for the different node types */
-:root {
-  /* Existing colors */
-  --clinical-color: #4f6bbb;
-  --clinical-light: #7b90d9;
-  --clinical-dark: #2a3a66;
-  
-  --qa-color: #58a1d8;
-  --qa-light: #79c0f3;
-  --qa-dark: #2c5272;
-  
-  --educational-color: #a45ec7;
-  --educational-light: #c78be6;
-  --educational-dark: #5c336f;
-  
-  --boss-color: #d95763;
-  --boss-light: #f27d87;
-  --boss-dark: #7a2f36;
-  
-  /* New colors */
-  --warning-color: #e6a23c;
-  --warning-light: #f8cc74;
-  --warning-dark: #8a611d;
-  
-  --clinical-alt-color: #3c8a75;
-  --clinical-alt-light: #58c9ad;
-  --clinical-alt-dark: #1f4a3e;
-  
-  --success: #34d399;
-}
-
-/* Pulse animations for path indicators */
-@keyframes pulse-slow {
-  0%, 100% {
-    opacity: 0.6;
-  }
-  50% {
-    opacity: 1;
-  }
-}
-
-.animate-pulse-slow {
-  animation: pulse-slow 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
-}
-
-/* Node hover transitions */
-.scale-115 {
-  transform: scale(1.15) translate(-50%, -50%);
-}
-
-/* Pixel borders for nodes */
-.pixel-borders {
-  border-style: solid;
-  border-width: 3px;
-  border-image: linear-gradient(45deg, var(--clinical-color), var(--clinical-light)) 1;
-  box-shadow: 
-    0 0 0 1px rgba(0, 0, 0, 0.4),
-    inset 0 0 0 1px rgba(255, 255, 255, 0.1);
-}
-
-.pixel-borders-thin {
-  border-style: solid;
-  border-width: 2px;
-  border-image: linear-gradient(45deg, #2a3a66, #4f6bbb) 1;
-  box-shadow: 
-    0 0 0 1px rgba(0, 0, 0, 0.4),
-    inset 0 0 0 1px rgba(255, 255, 255, 0.1);
-}
-
-/* Shadow effects for nodes */
-.shadow-pixel {
-  box-shadow: 
-    0 4px 6px -1px rgba(0, 0, 0, 0.5),
-    0 2px 4px -1px rgba(0, 0, 0, 0.6),
-    0 0 0 1px rgba(255, 255, 255, 0.05),
-    0 0 0 1px rgba(0, 0, 0, 0.6),
-    inset 0 0 20px rgba(100, 155, 255, 0.05);
-}
-
-.shadow-pixel-lg {
-  box-shadow: 
-    0 10px 15px -3px rgba(0, 0, 0, 0.6),
-    0 4px 6px -2px rgba(0, 0, 0, 0.7),
-    0 0 0 1px rgba(255, 255, 255, 0.1),
-    0 0 0 2px rgba(0, 0, 0, 0.5),
-    inset 0 0 30px rgba(100, 155, 255, 0.1);
-}
-
-/* Line clamp for truncating text */
-.line-clamp-1 {
-  display: -webkit-box;
-  -webkit-line-clamp: 1;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
 
 /* Add to app/globals.css */
 
@@ -669,7 +693,7 @@ img.pixel-art,
 
 .line-clamp-3 {
   display: -webkit-box;
-  -webkit-line-clamp: 3; 
+  -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
   overflow: hidden;
   line-clamp: 3;
@@ -684,7 +708,7 @@ img.pixel-art,
 /* Adjust this class to handle null ref elegantly */
 .starfield-bg {
   background-color: #0f1117;
-  background-image: 
+  background-image:
     radial-gradient(1px 1px at 25% 25%, rgba(255, 255, 255, 0.1) 1px, transparent 0),
     radial-gradient(1px 1px at 50% 50%, rgba(255, 255, 255, 0.15) 1px, transparent 0),
     radial-gradient(1px 1px at 75% 75%, rgba(255, 255, 255, 0.1) 1px, transparent 0),
@@ -730,12 +754,12 @@ img.pixel-art,
 
 /* Enhanced node container with lighting effects */
 .node-container {
-  background: linear-gradient(135deg, 
-    rgba(255,255,255,0.05) 0%, 
-    rgba(255,255,255,0) 50%, 
+  background: linear-gradient(135deg,
+    rgba(255,255,255,0.05) 0%,
+    rgba(255,255,255,0) 50%,
     rgba(0,0,0,0.1) 100%
   );
-  box-shadow: 
+  box-shadow:
     inset 0 1px 0 0 rgba(255,255,255,0.15),
     inset -1px -1px 0 0 rgba(0,0,0,0.3),
     0 4px 8px rgba(0,0,0,0.5);
@@ -743,13 +767,13 @@ img.pixel-art,
 
 /* Visual feedback for map interactions */
 @keyframes node-select-ripple {
-  0% { 
-    transform: scale(0.5); 
-    opacity: 0.8; 
+  0% {
+    transform: scale(0.5);
+    opacity: 0.8;
   }
-  100% { 
-    transform: scale(2); 
-    opacity: 0; 
+  100% {
+    transform: scale(2);
+    opacity: 0;
   }
 }
 
@@ -778,9 +802,9 @@ img.pixel-art,
   left: -100%;
   width: 100%;
   height: 100%;
-  background: linear-gradient(to right, 
-    rgba(255,255,255,0) 0%, 
-    rgba(255,255,255,0.2) 50%, 
+  background: linear-gradient(to right,
+    rgba(255,255,255,0) 0%,
+    rgba(255,255,255,0.2) 50%,
     rgba(255,255,255,0) 100%);
   transform: skewX(-25deg);
   transition: left 0.5s ease-out;
@@ -875,7 +899,7 @@ img.pixel-art,
 
 .line-clamp-3 {
   display: -webkit-box;
-  -webkit-line-clamp: 3; 
+  -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -884,9 +908,9 @@ img.pixel-art,
 
 /* Add to your CSS for that slick highlight effect */
 .node-highlight-glow {
-  background: linear-gradient(90deg, 
+  background: linear-gradient(90deg,
     transparent 0%,
-    rgba(255, 255, 255, 0.07) 49%, 
+    rgba(255, 255, 255, 0.07) 49%,
     rgba(255, 255, 255, 0.1) 50%,
     rgba(255, 255, 255, 0.07) 51%,
     transparent 100%
@@ -927,16 +951,16 @@ img.pixel-art,
 
 /* Knowledge acquisition animations */
 @keyframes particle-flow {
-  0% { 
-    transform: translate(0, 0); 
+  0% {
+    transform: translate(0, 0);
     opacity: 1;
   }
-  80% { 
-    transform: translate(-300px, 300px); 
+  80% {
+    transform: translate(-300px, 300px);
     opacity: 0.7;
   }
-  100% { 
-    transform: translate(-320px, 320px); 
+  100% {
+    transform: translate(-320px, 320px);
     opacity: 0;
   }
 }
@@ -1195,3 +1219,31 @@ img.pixel-art,
     animation: pulse-fast 0.5s ease-out;
 }
 
+@keyframes pulseFlow {
+  0% { width: 0%; }
+  50% { width: 100%; }
+  100% { width: 0%; }
+}
+
+.animate-pulse-flow {
+  animation: pulseFlow 2s ease-in-out infinite;
+}
+
+.transition-opacity {
+  transition: opacity 700ms ease-in-out;
+}
+/* Add the missing twinkle animation */
+@keyframes twinkle {
+  0%, 100% { opacity: var(--base-opacity, 0.6); }
+  50% { opacity: 1; }
+}
+
+.animate-twinkle {
+  animation: twinkle var(--duration, 3s) ease-in-out infinite;
+}
+
+
+/* Fallback base opacity */
+:root {
+  --base-opacity: 0.6;
+}
