@@ -1,40 +1,24 @@
-// app/store/resourceStore.ts
 import { create } from 'zustand';
 import { immer } from 'zustand/middleware/immer';
-import { useEventBus } from '../core/events/CentralEventBus';
+import { useEventBus, safeDispatch } from '../core/events/CentralEventBus';
 import { GameEventType } from '../core/events/EventTypes';
 
-/**
- * Strategic resource thresholds for action availability
- */
+// Constants
 export const RESOURCE_THRESHOLDS = {
   REFRAME: 25,
   EXTRAPOLATE: 50,
   SYNTHESIS: 75
 };
-
-/**
- * Maximum momentum level achievable
- */
 export const MAX_MOMENTUM_LEVEL = 3;
 
-/**
- * Types of resources in the game
- */
+// Types
 export type ResourceType = 'insight' | 'momentum';
+export type StrategicActionType =
+  | 'reframe'
+  | 'extrapolate'
+  | 'boast'
+  | 'synthesis';
 
-/**
- * Types of strategic actions available to the player
- */
-export type StrategicActionType = 
-  | 'reframe'      // Change conversation direction (25% insight)
-  | 'extrapolate'  // Form knowledge connections (50% insight)
-  | 'boast'        // High-risk, high-reward option (max momentum)
-  | 'synthesis';   // Discover new knowledge (75% insight)
-
-/**
- * History record of action usage for meta-progression
- */
 interface ActionHistoryRecord {
   actionType: StrategicActionType;
   timestamp: number;
@@ -45,9 +29,6 @@ interface ActionHistoryRecord {
   momentumRequired?: number;
 }
 
-/**
- * Visual effect state for resource changes
- */
 interface ResourceEffectState {
   active: boolean;
   intensity: 'low' | 'medium' | 'high';
@@ -56,9 +37,6 @@ interface ResourceEffectState {
   triggeredBy?: StrategicActionType | 'dialogue_choice' | 'system';
 }
 
-/**
- * Threshold visualization for anticipation zones
- */
 interface ResourceThreshold {
   value: number;
   label: string;
@@ -67,557 +45,395 @@ interface ResourceThreshold {
   isNearby: boolean;
 }
 
-/**
- * State for the resource store
- */
+// Corrected: Define the FULL state interface including properties and actions
 interface ResourceState {
-  // Core resources
+  // State Properties
   insight: number;
   insightMax: number;
   momentum: number;
   consecutiveCorrect: number;
-  
-  // Action states
   activeAction: StrategicActionType | null;
   actionHistory: ActionHistoryRecord[];
-  
-  // Visual effects
   insightEffect: ResourceEffectState;
   momentumEffect: ResourceEffectState;
-  
-  // Resource thresholds for visualization
   insightThresholds: ResourceThreshold[];
-  
-  // Derived availability (computed)
   availableActions: {
     reframe: boolean;
     extrapolate: boolean;
     boast: boolean;
     synthesis: boolean;
   };
-  
+
   // Actions
   updateInsight: (amount: number, source?: string) => void;
   setMomentum: (level: number, consecutive?: number) => void;
   incrementMomentum: () => void;
   resetMomentum: () => void;
-  
-  // Strategic action management
   activateAction: (actionType: StrategicActionType, context: any) => boolean;
   completeAction: (actionType: StrategicActionType, successful: boolean) => void;
   cancelAction: (actionType: StrategicActionType) => void;
-  
-  // Visual effect management  
   triggerEffect: (resourceType: ResourceType, intensity: 'low' | 'medium' | 'high', source?: string, duration?: number) => void;
   clearEffect: (resourceType: ResourceType) => void;
-  
-  // Threshold management
-  getThresholdProximity: (actionType: StrategicActionType) => number; // 0-1 value indicating proximity
+  getThresholdProximity: (actionType: StrategicActionType) => number;
+  resetResources: () => void;
 }
 
-/**
- * Central store for managing game resources and strategic actions
- * 
- * This uses the Zustand + Immer combination for immutable state updates
- * without the boilerplate. The store handles both the resources themselves
- * and the visual effects that accompany resource changes.
- */
-export const useResourceStore = create<ResourceState>()(
-  immer((set, get) => ({
-    // Initial resource values
+// Define the initial state structure separately for clarity
+// Corrected: Removed unnecessary 'as Type' assertions and fixed value errors
+const initialState: Omit<ResourceState, // Use Omit to base initial state on the full interface, excluding actions
+  'updateInsight' | 'setMomentum' | 'incrementMomentum' | 'resetMomentum' |
+  'activateAction' | 'completeAction' | 'cancelAction' | 'triggerEffect' |
+  'clearEffect' | 'getThresholdProximity' | 'resetResources'
+> = {
     insight: 0,
     insightMax: 100,
     momentum: 0,
     consecutiveCorrect: 0,
-    
-    // Action tracking
     activeAction: null,
     actionHistory: [],
-    
-    // Visual effect states
-    insightEffect: { 
-      active: false, 
+    insightEffect: {
+      active: false,
       intensity: 'low',
       startTime: 0,
-      duration: 2000
+      duration: 2000,
+      triggeredBy: undefined // Optional properties should be explicitly undefined or omitted if possible
     },
-    momentumEffect: { 
-      active: false, 
+    momentumEffect: {
+      active: false,
       intensity: 'low',
       startTime: 0,
-      duration: 2000
+      duration: 2000,
+      triggeredBy: undefined
     },
-    
-    // Threshold visualization
     insightThresholds: [
-      { 
-        value: RESOURCE_THRESHOLDS.REFRAME, 
-        label: 'R', 
-        actionType: 'reframe',
-        nearbyRange: 10,
-        isNearby: false
-      },
-      { 
-        value: RESOURCE_THRESHOLDS.EXTRAPOLATE, 
-        label: 'E', 
-        actionType: 'extrapolate',
-        nearbyRange: 15,
-        isNearby: false
-      },
-      { 
-        value: RESOURCE_THRESHOLDS.SYNTHESIS, 
-        label: 'S', 
-        actionType: 'synthesis',
-        nearbyRange: 20,
-        isNearby: false
-      }
+      // Correct: No 'as StrategicActionType' needed here, TS infers from ResourceThreshold type
+      { value: RESOURCE_THRESHOLDS.REFRAME, label: 'R', actionType: 'reframe', nearbyRange: 10, isNearby: false },
+      { value: RESOURCE_THRESHOLDS.EXTRAPOLATE, label: 'E', actionType: 'extrapolate', nearbyRange: 15, isNearby: false },
+      { value: RESOURCE_THRESHOLDS.SYNTHESIS, label: 'S', actionType: 'synthesis', nearbyRange: 20, isNearby: false }
     ],
-    
-    // Computed availability (will be derived in the getter)
     availableActions: {
-      reframe: false,
+      reframe: false, // Correct: Use boolean literal 'false'
       extrapolate: false,
       boast: false,
       synthesis: false
     },
-    
-    /**
-     * Updates the player's insight resource
-     * @param amount Amount to change (positive or negative)
-     * @param source Source of the change for tracking
-     */
+    // Correct: Removed trailing comma/syntax errors that might have caused 'number' error on line 94
+};
+
+
+export const useResourceStore = create<ResourceState>()(
+  immer((set, get) => ({
+    ...initialState, // Spread the initial state properties
+
+    // --- Action Implementations ---
+    // These should now type-check correctly against the full ResourceState interface
+
     updateInsight: (amount: number, source = 'dialogue_choice') => {
-      // Get current state
+      // Correct: Access properties directly from get() which returns ResourceState
       const { insight, insightMax } = get();
-      
-      // Calculate new value with bounds
       const newValue = Math.max(0, Math.min(insightMax, insight + amount));
-      
-      // Set new value and trigger appropriate effects
-      set(state => {
-        // Update value
+      const change = newValue - insight;
+
+      if (change === 0) return;
+
+      set((state: ResourceState) => { // Explicitly type Immer draft state
+        // Correct: Access properties on the draft state
         state.insight = newValue;
-        
-        // Determine effect intensity based on amount
         let intensity: 'low' | 'medium' | 'high' = 'low';
-        if (Math.abs(amount) >= 15) intensity = 'high';
-        else if (Math.abs(amount) >= 5) intensity = 'medium';
-        
-        // Only trigger effect for significant changes
-        if (Math.abs(amount) >= 2) {
+        if (Math.abs(change) >= 15) intensity = 'high';
+        else if (Math.abs(change) >= 5) intensity = 'medium';
+
+        if (Math.abs(change) >= 2) {
+          // Correct: Access effect property on draft state
           state.insightEffect = {
-            active: true,
-            intensity,
-            startTime: Date.now(),
-            duration: amount >= 15 ? 3000 : 2000, // Longer duration for major changes
-            triggeredBy: source as any
+            active: true, intensity, startTime: Date.now(),
+            duration: Math.abs(change) >= 15 ? 3000 : 2000,
+            triggeredBy: source as any // Cast source if needed, or ensure type alignment
           };
         }
-        
-        // Update threshold proximity indicators
-        updateThresholdProximity(state);
-        
-        // Recalculate available actions
-        updateAvailableActions(state);
-        
-        return state;
+        updateThresholdProximity(state); // Pass draft state to helper
+        updateAvailableActions(state); // Pass draft state to helper
       });
-      
-      // Log significant insight changes
-      if (Math.abs(amount) >= 5) {
-        try {
-          useEventBus.getState().dispatch(
+
+       if (Math.abs(change) >= 1) {
+          safeDispatch(
             GameEventType.RESOURCE_CHANGED,
             {
-              resourceType: 'insight',
-              previousValue: insight,
-              newValue,
-              change: amount,
-              source,
+              resourceType: 'insight', previousValue: insight, newValue,
+              change: change, source,
+              // Correct: Call getThresholdProximity via get()
               thresholdProximity: {
                 reframe: get().getThresholdProximity('reframe'),
                 extrapolate: get().getThresholdProximity('extrapolate'),
                 synthesis: get().getThresholdProximity('synthesis')
               }
             },
-            'resourceStore'
+            'resourceStore.updateInsight'
           );
-        } catch (error) {
-          console.error('Failed to dispatch insight change event:', error);
-        }
-      }
+       }
     },
-    
-    /**
-     * Sets momentum to a specific level
-     * @param level New momentum level (0-3)
-     * @param consecutive Optional consecutive correct answer count
-     */
+
     setMomentum: (level: number, consecutive?: number) => {
-      // Bound level to valid range
       const newLevel = Math.max(0, Math.min(MAX_MOMENTUM_LEVEL, level));
+      // Correct: Access properties via get()
       const currentLevel = get().momentum;
-      
-      // Set new values
-      set(state => {
-        // Update momentum
+      const currentConsecutive = get().consecutiveCorrect;
+      const newConsecutive = consecutive !== undefined ? consecutive : currentConsecutive;
+
+      if (newLevel === currentLevel && newConsecutive === currentConsecutive) return;
+
+      set((state: ResourceState) => {
+        // Correct: Access properties on draft state
         state.momentum = newLevel;
-        
-        // Update consecutive if provided
-        if (consecutive !== undefined) {
-          state.consecutiveCorrect = consecutive;
-        }
-        
-        // Set effect based on level change
+        state.consecutiveCorrect = newConsecutive;
+
         if (newLevel !== currentLevel) {
+          // Correct: Access effect property on draft state
           state.momentumEffect = {
             active: true,
             intensity: newLevel > currentLevel ? 'medium' : 'high',
             startTime: Date.now(),
-            duration: newLevel === MAX_MOMENTUM_LEVEL ? 3000 : 2000, // Longer duration for max momentum
+            duration: newLevel === MAX_MOMENTUM_LEVEL ? 3000 : 2000,
             triggeredBy: newLevel > currentLevel ? 'dialogue_choice' : 'system'
           };
         }
-        
-        // Recalculate available actions
-        updateAvailableActions(state);
-        
-        return state;
+        updateAvailableActions(state); // Pass draft state
       });
-      
-      // Log momentum level changes
+
       if (newLevel !== currentLevel) {
-        try {
-          useEventBus.getState().dispatch(
+          safeDispatch(
             GameEventType.RESOURCE_CHANGED,
             {
-              resourceType: 'momentum',
-              previousValue: currentLevel,
-              newValue: newLevel,
-              change: newLevel - currentLevel,
-              consecutive: consecutive || get().consecutiveCorrect
+              resourceType: 'momentum', previousValue: currentLevel, newValue: newLevel,
+              change: newLevel - currentLevel, consecutive: newConsecutive
             },
-            'resourceStore'
+            'resourceStore.setMomentum'
           );
-        } catch (error) {
-          console.error('Failed to dispatch momentum change event:', error);
-        }
       }
     },
-    
-    /**
-     * Increment momentum by one level and consecutive count by one
-     */
+
     incrementMomentum: () => {
-      const { momentum, consecutiveCorrect } = get();
-      
-      // Calculate new values
+      // Correct: Access property via get()
+      const { consecutiveCorrect } = get();
       const newConsecutive = consecutiveCorrect + 1;
-      // Every 2 correct answers = 1 momentum level, max 3
       const newMomentum = Math.min(MAX_MOMENTUM_LEVEL, Math.floor(newConsecutive / 2));
-      
-      // Set new state
+      // Correct: Call action via get()
       get().setMomentum(newMomentum, newConsecutive);
     },
-    
-    /**
-     * Reset momentum to zero
-     */
+
     resetMomentum: () => {
+      // Correct: Call action via get()
       get().setMomentum(0, 0);
     },
-    
-    /**
-     * Activate a strategic action
-     * @param actionType Type of action to activate
-     * @param context Additional context about where the action was activated
-     * @returns True if action was successfully activated
-     */
-    activateAction: (actionType: StrategicActionType, context: any) => {
-      // Get current state
+
+     activateAction: (actionType: StrategicActionType, context: any) => {
+      // Correct: Access properties via get()
       const { insight, momentum, activeAction, availableActions } = get();
-      
-      // Check if another action is already active
+
       if (activeAction !== null) {
         console.warn(`Cannot activate ${actionType} while ${activeAction} is active`);
         return false;
       }
-      
-      // Check if the requested action is available
+
+      // Correct: Access property via get()
       const isAvailable = availableActions[actionType] ?? false;
       if (!isAvailable) {
-        console.warn(`Cannot activate ${actionType} - not available`);
+        console.warn(`Cannot activate ${actionType} - not available (Insight: ${insight}, Momentum: ${momentum})`);
         return false;
       }
-      
-      // Check resource requirements and spend them
-      let successful = false;
+
+      let cost = 0;
+      let canAfford = false;
+
       switch (actionType) {
         case 'reframe':
-          if (insight >= RESOURCE_THRESHOLDS.REFRAME) {
-            get().updateInsight(-RESOURCE_THRESHOLDS.REFRAME, 'reframe');
-            successful = true;
-          }
+          cost = RESOURCE_THRESHOLDS.REFRAME;
+          canAfford = insight >= cost;
           break;
-          
         case 'extrapolate':
-          if (insight >= RESOURCE_THRESHOLDS.EXTRAPOLATE && momentum >= 2) {
-            get().updateInsight(-RESOURCE_THRESHOLDS.EXTRAPOLATE, 'extrapolate');
-            successful = true;
-          }
+          cost = RESOURCE_THRESHOLDS.EXTRAPOLATE;
+          canAfford = insight >= cost && momentum >= 2;
           break;
-          
         case 'synthesis':
-          if (insight >= RESOURCE_THRESHOLDS.SYNTHESIS) {
-            get().updateInsight(-RESOURCE_THRESHOLDS.SYNTHESIS, 'synthesis');
-            successful = true;
-          }
+          cost = RESOURCE_THRESHOLDS.SYNTHESIS;
+          canAfford = insight >= cost;
           break;
-          
         case 'boast':
-          // Boast doesn't cost insight, just requires max momentum
-          if (momentum === MAX_MOMENTUM_LEVEL) {
-            successful = true;
-          }
+          canAfford = momentum === MAX_MOMENTUM_LEVEL;
           break;
       }
-      
-      // If successful, set active action
-      if (successful) {
-        set(state => {
-          state.activeAction = actionType;
-          
-          // Add to history
-          state.actionHistory.push({
-            actionType,
-            timestamp: Date.now(),
-            characterId: context?.characterId || 'unknown',
-            stageId: context?.stageId || 'unknown',
-            successful: true,
-            insightCost: getInsightCost(actionType),
-            momentumRequired: getMomentumRequired(actionType)
-          });
-          
-          return state;
-        });
-        
-        // Log action activation
-        try {
-          useEventBus.getState().dispatch(
-            GameEventType.STRATEGIC_ACTION,
-            {
-              actionType,
-              state: 'activated',
-              insightCost: getInsightCost(actionType),
-              momentumRequired: getMomentumRequired(actionType),
-              context
-            },
-            'resourceStore'
-          );
-        } catch (error) {
-          console.error(`Failed to dispatch ${actionType} activation event:`, error);
-        }
+
+      if (!canAfford) {
+         console.warn(`Cannot activate ${actionType} - cannot afford (Insight: ${insight}, Momentum: ${momentum})`);
+         return false;
       }
-      
-      return successful;
+
+      if (cost > 0) {
+        // Correct: Call action via get()
+        get().updateInsight(-cost, actionType);
+      }
+
+      set((state: ResourceState) => {
+        // Correct: Access properties on draft state
+        state.activeAction = actionType;
+        state.actionHistory.push({
+          actionType, timestamp: Date.now(),
+          characterId: context?.characterId || 'unknown',
+          stageId: context?.stageId || 'unknown',
+          successful: true, // Activation successful, completion status updated later
+          insightCost: cost > 0 ? cost : undefined,
+          momentumRequired: getMomentumRequired(actionType) || undefined
+        });
+      });
+
+      safeDispatch(
+          GameEventType.STRATEGIC_ACTION,
+          { actionType, state: 'activated', insightCost: cost > 0 ? cost : undefined, momentumRequired: getMomentumRequired(actionType) || undefined, context },
+          'resourceStore.activateAction'
+      );
+
+      return true;
     },
-    
-    /**
-     * Complete an active strategic action
-     * @param actionType Type of action being completed
-     * @param successful Whether the action was successful
-     */
+
     completeAction: (actionType: StrategicActionType, successful: boolean) => {
-      // Get current state
+      // Correct: Access property via get()
       const { activeAction } = get();
-      
-      // Check if this action is actually active
       if (activeAction !== actionType) {
         console.warn(`Cannot complete ${actionType} - not currently active`);
         return;
       }
-      
-      // Update action history with completion status
-      set(state => {
-        // Clear active action
+
+      set((state: ResourceState) => {
+        // Correct: Access properties on draft state
         state.activeAction = null;
-        
-        // Update last history entry
+
         const lastIndex = state.actionHistory.length - 1;
         if (lastIndex >= 0 && state.actionHistory[lastIndex].actionType === actionType) {
           state.actionHistory[lastIndex].successful = successful;
         }
-        
-        // Handle boast completion specifically - reset momentum if failed
+
         if (actionType === 'boast' && !successful) {
           state.momentum = 0;
           state.consecutiveCorrect = 0;
-          
-          // Set momentum effect
           state.momentumEffect = {
-            active: true,
-            intensity: 'high',
-            startTime: Date.now(),
-            duration: 2500,
-            triggeredBy: 'boast'
+            active: true, intensity: 'high', startTime: Date.now(),
+            duration: 2500, triggeredBy: 'boast'
           };
         }
-        
-        // Recalculate available actions
-        updateAvailableActions(state);
-        
-        return state;
+        updateAvailableActions(state); // Pass draft state
       });
-      
-      // Log action completion
-      try {
-        useEventBus.getState().dispatch(
+
+      safeDispatch(
           GameEventType.STRATEGIC_ACTION,
-          {
-            actionType,
-            state: 'completed',
-            successful,
-            outcome: successful ? 'success' : 'failure'
-          },
-          'resourceStore'
-        );
-      } catch (error) {
-        console.error(`Failed to dispatch ${actionType} completion event:`, error);
-      }
+          { actionType, state: 'completed', successful, outcome: successful ? 'success' : 'failure' },
+          'resourceStore.completeAction'
+      );
     },
-    
-    /**
-     * Cancel an active strategic action
-     * @param actionType Type of action to cancel
-     */
-    cancelAction: (actionType: StrategicActionType) => {
-      // Get current state
+
+     cancelAction: (actionType: StrategicActionType) => {
+      // Correct: Access property via get()
       const { activeAction } = get();
-      
-      // Check if this action is actually active
       if (activeAction !== actionType) {
         console.warn(`Cannot cancel ${actionType} - not currently active`);
         return;
       }
-      
-      // Cancel the action
-      set(state => {
+
+      const insightCost = getInsightCost(actionType);
+
+      set((state: ResourceState) => {
+        // Correct: Access properties on draft state
         state.activeAction = null;
-        
-        // Refund insight cost for canceled actions
-        const insightCost = getInsightCost(actionType);
+
         if (insightCost > 0) {
-          state.insight = Math.min(state.insightMax, state.insight + insightCost);
-          
-          // Update threshold proximity
-          updateThresholdProximity(state);
+          const currentInsight = state.insight; // Read from draft state
+          state.insight = Math.min(state.insightMax, currentInsight + insightCost);
+          console.log(`Refunded ${insightCost} insight for canceled ${actionType}. New insight: ${state.insight}`);
+          updateThresholdProximity(state); // Pass draft state
         }
-        
-        // Recalculate available actions
-        updateAvailableActions(state);
-        
-        return state;
+        updateAvailableActions(state); // Pass draft state
       });
-      
-      // Log action cancellation
-      try {
-        useEventBus.getState().dispatch(
+
+      safeDispatch(
           GameEventType.STRATEGIC_ACTION,
-          {
-            actionType,
-            state: 'canceled',
-            insightRefunded: getInsightCost(actionType)
-          },
-          'resourceStore'
-        );
-      } catch (error) {
-        console.error(`Failed to dispatch ${actionType} cancellation event:`, error);
-      }
+          { actionType, state: 'canceled', insightRefunded: insightCost > 0 ? insightCost : undefined },
+          'resourceStore.cancelAction'
+      );
     },
-    
-    /**
-     * Trigger a visual effect for a resource change
-     * @param resourceType Type of resource being changed
-     * @param intensity How strong the effect should be
-     * @param source What triggered the effect
-     * @param duration How long the effect should last (ms)
-     */
-    triggerEffect: (
-      resourceType: ResourceType, 
-      intensity: 'low' | 'medium' | 'high' = 'medium',
-      source: string = 'system',
-      duration: number = 2000
-    ) => {
-      set(state => {
-        if (resourceType === 'insight') {
-          state.insightEffect = {
-            active: true,
-            intensity,
-            startTime: Date.now(),
-            duration,
-            triggeredBy: source as any
-          };
-        } else if (resourceType === 'momentum') {
-          state.momentumEffect = {
-            active: true,
-            intensity,
-            startTime: Date.now(),
-            duration,
-            triggeredBy: source as any
-          };
-        }
-        
-        return state;
+
+    triggerEffect: ( resourceType: ResourceType, intensity: 'low' | 'medium' | 'high' = 'medium', source: string = 'system', duration: number = 2000 ) => {
+      set((state: ResourceState) => {
+        // Correct: Use direct property access on draft state
+        const effectProp = resourceType === 'insight' ? 'insightEffect' : 'momentumEffect';
+        state[effectProp] = { // This should now work as ResourceState includes these properties
+          active: true, intensity, startTime: Date.now(), duration,
+          triggeredBy: source as any
+        };
       });
     },
-    
-    /**
-     * Clear any active effect for a resource
-     * @param resourceType Type of resource to clear effect for
-     */
+
     clearEffect: (resourceType: ResourceType) => {
-      set(state => {
-        if (resourceType === 'insight') {
-          state.insightEffect.active = false;
-        } else if (resourceType === 'momentum') {
-          state.momentumEffect.active = false;
+      set((state: ResourceState) => {
+        // Correct: Use direct property access on draft state
+        const effectProp = resourceType === 'insight' ? 'insightEffect' : 'momentumEffect';
+        if (state[effectProp].active) {
+            state[effectProp].active = false;
         }
-        
-        return state;
       });
     },
-    
-    /**
-     * Get proximity to a threshold for a given action (0-1 value)
-     * 0 = far away, 1 = at or past threshold
-     */
-    getThresholdProximity: (actionType: StrategicActionType): number => {
+
+     getThresholdProximity: (actionType: StrategicActionType): number => {
+      // Correct: Access property via get()
       const { insight } = get();
-      
-      // Get threshold for this action
       const thresholdValue = getInsightCost(actionType);
       if (thresholdValue <= 0) return 0;
-      
-      // Calculate proximity
       if (insight >= thresholdValue) return 1;
-      
-      // Get the threshold object to check proximity range
-      const threshold = get().insightThresholds.find(t => t.actionType === actionType);
+
+      // Correct: Access property via get() and add type annotation for 't'
+      const threshold = get().insightThresholds.find((t: ResourceThreshold) => t.actionType === actionType);
       if (!threshold) return 0;
-      
-      // Calculate relative proximity when within range
-      if (insight >= thresholdValue - threshold.nearbyRange) {
-        return (insight - (thresholdValue - threshold.nearbyRange)) / threshold.nearbyRange;
-      }
-      
-      return 0;
-    }
+
+      const proximityStart = thresholdValue - threshold.nearbyRange;
+      if (insight < proximityStart) return 0;
+
+      return (insight - proximityStart) / threshold.nearbyRange;
+    },
+
+    resetResources: () => {
+      console.log("Resetting resource store state...");
+      set(initialState); // Reset state properties to initial values
+      safeDispatch(GameEventType.RESOURCE_CHANGED, { resourceType: 'all', action: 'reset' }, 'resourceStore.resetResources');
+    },
+
   }))
 );
 
-/**
- * Helper function to get the insight cost of an action
- */
+// Helper functions should accept the state type
+function updateThresholdProximity(state: ResourceState) {
+  const { insight, insightThresholds } = state; // Access directly from passed state
+  for (const threshold of insightThresholds) {
+    if (insight >= threshold.value) {
+      threshold.isNearby = false;
+    } else {
+      threshold.isNearby = insight >= threshold.value - threshold.nearbyRange;
+    }
+  }
+}
+
+function updateAvailableActions(state: ResourceState) {
+  const { insight, momentum, activeAction } = state; // Access directly from passed state
+  if (activeAction !== null) {
+    state.availableActions = { reframe: false, extrapolate: false, boast: false, synthesis: false };
+    return;
+  }
+  state.availableActions = {
+    reframe: insight >= RESOURCE_THRESHOLDS.REFRAME,
+    extrapolate: insight >= RESOURCE_THRESHOLDS.EXTRAPOLATE && momentum >= 2,
+    boast: momentum === MAX_MOMENTUM_LEVEL,
+    synthesis: insight >= RESOURCE_THRESHOLDS.SYNTHESIS
+  };
+}
+
+// Keep these helpers outside the store creation
 function getInsightCost(actionType: StrategicActionType): number {
   switch (actionType) {
     case 'reframe': return RESOURCE_THRESHOLDS.REFRAME;
@@ -627,9 +443,6 @@ function getInsightCost(actionType: StrategicActionType): number {
   }
 }
 
-/**
- * Helper function to get the momentum requirement of an action
- */
 function getMomentumRequired(actionType: StrategicActionType): number {
   switch (actionType) {
     case 'boast': return MAX_MOMENTUM_LEVEL;
@@ -638,49 +451,5 @@ function getMomentumRequired(actionType: StrategicActionType): number {
   }
 }
 
-/**
- * Helper function to update threshold proximity indicators
- */
-function updateThresholdProximity(state: any) {
-  const { insight, insightThresholds } = state;
-  
-  // Update each threshold's proximity state
-  for (const threshold of insightThresholds) {
-    // Already past threshold
-    if (insight >= threshold.value) {
-      threshold.isNearby = false;
-      continue;
-    }
-    
-    // Check if we're within range of the threshold
-    threshold.isNearby = insight >= threshold.value - threshold.nearbyRange;
-  }
-}
-
-/**
- * Helper function to update the available actions based on current resources
- */
-function updateAvailableActions(state: any) {
-  const { insight, momentum, activeAction } = state;
-  
-  // If an action is active, no other actions are available
-  if (activeAction !== null) {
-    state.availableActions = {
-      reframe: false,
-      extrapolate: false,
-      boast: false,
-      synthesis: false
-    };
-    return;
-  }
-  
-  // Otherwise check each action's requirements
-  state.availableActions = {
-    reframe: insight >= RESOURCE_THRESHOLDS.REFRAME,
-    extrapolate: insight >= RESOURCE_THRESHOLDS.EXTRAPOLATE && momentum >= 2,
-    boast: momentum === MAX_MOMENTUM_LEVEL,
-    synthesis: insight >= RESOURCE_THRESHOLDS.SYNTHESIS
-  };
-}
 
 export default useResourceStore;
