@@ -1,65 +1,55 @@
 // app/core/statemachine/GameStateMachine.ts
 /**
- * Simplified Game State Machine for Vertical Slice
- * 
- * Focused exclusively on the day/night cycle for the vertical slice.
- * This version maintains reliable transitions and validation while
- * removing states and complexity not needed for the core experience.
- * 
- * Key improvements in this update:
- * - Enhanced resilience for phase transitions
- * - Added direct validation to prevent stuck states
- * - Improved logging for better debugging
- * - Added better recovery mechanisms for failed transitions
+ * Refactored Game State Machine for Vertical Slice
+ *
+ * Centralizes game state (gameState, gamePhase) and transition logic.
+ * Removes direct setTimeout for transitions, relying on events.
+ * Integrates basic recovery for stuck transitions.
  */
 
 import { create } from 'zustand';
-import { 
-  GameEventType, 
+import {
+  GameEventType,
   NodeCompletionPayload,
-  UIEventPayload,
-  StateChangePayload
+  StateChangePayload,
+  RecoveryEventPayload
 } from '../events/EventTypes';
-import { 
-  useEventBus, 
-  changeGameState, 
+import {
+  useEventBus,
+  changeGameState,
   changeGamePhase,
   safeDispatch
 } from '../events/CentralEventBus';
 
 // ======== State & Phase Definitions ========
 
-// Simplified game states for vertical slice
-export type GameState = 
-  | 'not_started'  // Initial state, showing title screen
-  | 'in_progress'; // Active gameplay
+export type GameState =
+  | 'not_started'
+  | 'in_progress';
 
-// Game phases focused on day/night cycle
-export type GamePhase = 
-  | 'day'                // Active gameplay at hospital
-  | 'night'              // Knowledge constellation at home
-  | 'transition_to_day'  // Visual transition animation 
-  | 'transition_to_night'; // Visual transition animation
+export type GamePhase =
+  | 'day'
+  | 'night'
+  | 'transition_to_day'
+  | 'transition_to_night';
 
 // ======== Transition Validators ========
 
-// Define valid state transitions
 const VALID_STATE_TRANSITIONS: Record<GameState, GameState[]> = {
   'not_started': ['in_progress'],
-  'in_progress': ['not_started'] // Simplified to allow restart
+  'in_progress': ['not_started']
 };
 
-// Define valid phase transitions - VERY PERMISSIVE for robust recovery
+// More restrictive phase transitions, recovery handled separately
 const VALID_PHASE_TRANSITIONS: Record<GamePhase, GamePhase[]> = {
-  'day': ['transition_to_night', 'night'], // Allow direct transition for recovery
-  'night': ['transition_to_day', 'day'], // Allow direct transition for recovery
-  'transition_to_night': ['night', 'day', 'transition_to_day'], // Allow any transition for recovery
-  'transition_to_day': ['day', 'night', 'transition_to_night'], // Allow any transition for recovery
+  'day': ['transition_to_night'],
+  'night': ['transition_to_day'],
+  'transition_to_night': ['night'], // Only allow completing the transition
+  'transition_to_day': ['day'],     // Only allow completing the transition
 };
 
 // ======== Transition Tracking ========
 
-// Track transitions for debugging and recovery
 interface TransitionRecord {
   from: GamePhase;
   to: GamePhase;
@@ -69,620 +59,323 @@ interface TransitionRecord {
   emergency?: boolean;
 }
 
+// Timeout duration for transition recovery
+const TRANSITION_TIMEOUT_MS = 5000; // 5 seconds
+
 // ======== State Machine Store ========
 
 interface GameStateMachineState {
-  // Current states
   gameState: GameState;
   gamePhase: GamePhase;
-  
-  // Transition flags
-  isTransitioning: boolean;
-  transitionData: {
-    from: GamePhase;
-    to: GamePhase;
-    startTime: number;
-    duration: number;
-  } | null;
-  
-  // Debugging and recovery
+  isTransitioning: boolean; // True during transition_to_* phases
   transitionHistory: TransitionRecord[];
   stuckTransitionChecks: number;
-  
-  // Progress tracking data for vertical slice
-  completedNodeIds: string[];
-  currentDay: number;
-  
-  // State transition methods with validation
+  completedNodeIds: string[]; // Moved from gameStore
+  currentDay: number;       // Moved from gameStore
+
+  // Methods
   transitionToState: (newState: GameState, reason?: string) => boolean;
   transitionToPhase: (newPhase: GamePhase, reason?: string) => boolean;
-  
-  // Core phase transition methods
-  completeDay: () => boolean;
-  completeNight: () => boolean;
-  
-  // Node completion tracking
+  beginDayCompletion: () => boolean;
+  beginNightCompletion: () => boolean;
+  finalizeDayTransition: () => void; // Called by animation/timer completion
+  finalizeNightTransition: () => void; // Called by animation/timer completion
   markNodeCompleted: (nodeId: string) => void;
-  
-  // System checks
   checkForStuckTransitions: () => boolean;
-  
+  resetState: (preserveMeta?: boolean) => void; // Added for resetting
+
   // Getters
   getCompletedNodeIds: () => string[];
   getTransitionHistory: () => TransitionRecord[];
 }
 
-export const useGameStateMachine = create<GameStateMachineState>((set, get) => ({
-  // Initial state values
-  gameState: 'not_started',
-  gamePhase: 'day',
-  isTransitioning: false,
-  transitionData: null,
-  transitionHistory: [],
-  stuckTransitionChecks: 0,
-  completedNodeIds: [],
-  currentDay: 1,
-  
-  /**
-   * Transition to a new game state with validation
-   * @param newState The target game state
-   * @param reason Optional reason for the transition (for events/logging)
-   * @returns true if transition was successful, false if invalid
-   */
-  transitionToState: (newState: GameState, reason?: string): boolean => {
-    const currentState = get().gameState;
-    
-    // Skip if already in this state
-    if (currentState === newState) {
-      console.log(`[StateMachine] Already in ${newState} state, skipping transition`);
-      return true;
+export const useGameStateMachine = create<GameStateMachineState>((set, get) => {
+  let transitionTimeout: NodeJS.Timeout | null = null;
+
+  // Helper to clear the transition timeout
+  const clearTransitionTimeout = () => {
+    if (transitionTimeout) {
+      clearTimeout(transitionTimeout);
+      transitionTimeout = null;
     }
+  };
+
+  // Helper to handle transition timeout recovery
+  const handleTransitionTimeout = () => {
+    const { gamePhase, transitionToPhase } = get();
+    console.warn(`[StateMachine] Transition timeout detected! Current phase: ${gamePhase}`);
     
-    // Validate transition
-    const isValidTransition = VALID_STATE_TRANSITIONS[currentState].includes(newState);
-    const isEmergencyReason = reason && (
-      reason.includes('emergency') || 
-      reason.includes('recovery') || 
-      reason.includes('override')
-    );
-    
-    if (!isValidTransition && !isEmergencyReason) {
-      console.error(`[StateMachine] Invalid state transition: ${currentState} -> ${newState}`);
-      return false;
+    if (gamePhase === 'transition_to_night') {
+      transitionToPhase('night', 'timeout_recovery');
+    } else if (gamePhase === 'transition_to_day') {
+      transitionToPhase('day', 'timeout_recovery');
     }
-    
-    // If moving from not_started to in_progress, ensure phase is day
-    if (currentState === 'not_started' && newState === 'in_progress') {
-      set({ gamePhase: 'day' });
-    }
-    
-    // Dispatch event before state change
-    try {
-      changeGameState(currentState, newState, reason);
-    } catch (error) {
-      console.warn(`[StateMachine] Failed to dispatch state change event: ${error}`);
-    }
-    
-    // Update state
-    set({ gameState: newState });
-    
-    // Log state change
-    console.log(`%c[StateMachine] Game state: ${currentState} -> ${newState}${reason ? ` (${reason})` : ''}`,
-               'color: #4ade80; font-weight: bold');
-    
-    return true;
-  },
-  
-  /**
-   * Transition to a new game phase with validation
-   * @param newPhase The target game phase
-   * @param reason Optional reason for the transition (for events/logging)
-   * @returns true if transition was successful, false if invalid
-   */
-  transitionToPhase: (newPhase: GamePhase, reason?: string): boolean => {
-    const currentPhase = get().gamePhase;
-    
-    // If already in this phase, don't transition again
-    if (currentPhase === newPhase) {
-      console.log(`[StateMachine] Already in ${newPhase} phase, skipping transition`);
-      return true;
-    }
-    
-    // Special handling for stuck transitions - ultra permissive
-    if (currentPhase.startsWith('transition_to_') && 
-        (reason?.includes('emergency') || reason?.includes('override') || reason?.includes('recovery'))) {
-      console.warn(`[StateMachine] Emergency transition from ${currentPhase} to ${newPhase}`);
-      
-      // Update phase - do this first for emergency cases
-      set({ 
-        gamePhase: newPhase, 
-        isTransitioning: false,
-        transitionData: null 
-      });
-      
-      // Record emergency transition
-      set(state => ({
+    transitionTimeout = null; // Clear ref after handling
+  };
+
+  // Helper to record transitions
+  const recordTransition = (from: GamePhase, to: GamePhase, reason: string | undefined, succeeded: boolean, emergency = false) => {
+     set(state => ({
         transitionHistory: [
           ...state.transitionHistory.slice(-19), // Keep last 20 entries
-          {
-            from: currentPhase,
-            to: newPhase,
-            timestamp: Date.now(),
-            reason,
-            succeeded: true,
-            emergency: true
-          }
+          { from, to, timestamp: Date.now(), reason, succeeded, emergency }
         ]
       }));
-      
-      // Log the emergency transition
-      console.log(`%c[StateMachine] EMERGENCY PHASE CHANGE: ${currentPhase} -> ${newPhase} (${reason})`,
-                 'background: #f87171; color: white; padding: 2px 5px; border-radius: 3px');
-      
-      // Still try to dispatch the event for monitoring systems
-      try {
-        changeGamePhase(currentPhase, newPhase, reason);
-      } catch (error) {
-        console.error(`[StateMachine] Error dispatching emergency phase change: ${error}`);
+  };
+
+  return {
+    // Initial state values
+    gameState: 'not_started',
+    gamePhase: 'day',
+    isTransitioning: false,
+    transitionHistory: [],
+    stuckTransitionChecks: 0,
+    completedNodeIds: [], // Centralized state
+    currentDay: 1,       // Centralized state
+
+    transitionToState: (newState: GameState, reason?: string): boolean => {
+      const currentState = get().gameState;
+      if (currentState === newState) return true;
+
+      const isValid = VALID_STATE_TRANSITIONS[currentState]?.includes(newState);
+      const isEmergency = reason?.includes('emergency') || reason?.includes('recovery');
+
+      if (!isValid && !isEmergency) {
+        console.error(`[StateMachine] Invalid state transition: ${currentState} -> ${newState}`);
+        return false;
       }
-      
+
+      if (currentState === 'not_started' && newState === 'in_progress') {
+        set({ gamePhase: 'day' }); // Ensure starting in day phase
+      }
+
+      try { changeGameState(currentState, newState, reason); } catch (e) { console.warn(e); }
+      set({ gameState: newState });
+      console.log(`%c[StateMachine] Game state: ${currentState} -> ${newState}${reason ? ` (${reason})` : ''}`, 'color: #4ade80; font-weight: bold');
       return true;
-    }
+    },
+
+    transitionToPhase: (newPhase: GamePhase, reason?: string): boolean => {
+      const currentPhase = get().gamePhase;
+      if (currentPhase === newPhase) return true;
+
+      const isValid = VALID_PHASE_TRANSITIONS[currentPhase]?.includes(newPhase);
+      const isEmergency = reason?.includes('emergency') || reason?.includes('recovery') || reason?.includes('timeout');
+
+      if (!isValid && !isEmergency) {
+        console.error(`[StateMachine] Invalid phase transition: ${currentPhase} -> ${newPhase}`);
+        recordTransition(currentPhase, newPhase, reason, false);
+        return false;
+      }
+
+      // Clear any existing timeout when a transition starts or completes
+      clearTransitionTimeout();
+
+      const isStartingTransition = newPhase.startsWith('transition_to_');
+      const isCompletingTransition = !isStartingTransition && currentPhase.startsWith('transition_to_');
+
+      set({ gamePhase: newPhase, isTransitioning: isStartingTransition });
+      recordTransition(currentPhase, newPhase, reason, true, isEmergency);
+      try { changeGamePhase(currentPhase, newPhase, reason); } catch (e) { console.warn(e); }
+
+      console.log(`%c[StateMachine] Game phase: ${currentPhase} -> ${newPhase}${reason ? ` (${reason})` : ''}`,
+                 `color: ${isEmergency ? '#f87171' : '#fbbf24'}; font-weight: bold`);
+
+      // If starting a transition, set a recovery timeout
+      if (isStartingTransition) {
+        transitionTimeout = setTimeout(handleTransitionTimeout, TRANSITION_TIMEOUT_MS);
+      }
+
+      return true;
+    },
+
+    // Step 1: Begin the day completion process
+    beginDayCompletion: (): boolean => {
+      const { gamePhase } = get();
+      if (gamePhase !== 'day') {
+        console.warn(`[StateMachine] Cannot complete day from phase: ${gamePhase}`);
+        return false;
+      }
+      // TODO: Add validation logic here if needed (e.g., check required nodes completed)
+      
+      // Initiate the transition to night
+      return get().transitionToPhase('transition_to_night', 'day_complete');
+      // The UI should react to 'transition_to_night' phase to show animation
+    },
     
-    // Standard validation for non-emergency transitions
-    const isValidTransition = VALID_PHASE_TRANSITIONS[currentPhase].includes(newPhase);
-    const isEmergencyOverride = reason && (
-      reason.includes('emergency') || 
-      reason.includes('recovery') || 
-      reason.includes('override')
-    );
-    
-    if (!isValidTransition && !isEmergencyOverride) {
-      console.error(`[StateMachine] Invalid phase transition: ${currentPhase} -> ${newPhase}`);
+    // Step 2: Finalize the transition to night (called after animation/delay)
+    finalizeNightTransition: (): void => {
+        const { gamePhase } = get();
+        if (gamePhase !== 'transition_to_night') {
+            console.warn(`[StateMachine] Cannot finalize night transition from phase: ${gamePhase}`);
+            // Attempt recovery if stuck
+            if (gamePhase !== 'night') {
+                get().transitionToPhase('night', 'finalize_recovery');
+            }
+            return;
+        }
+        get().transitionToPhase('night', 'transition_finalize');
+        try {
+           safeDispatch(GameEventType.DAY_COMPLETED, { completedNodeCount: get().completedNodeIds.length }, 'gameStateMachine');
+        } catch (e) { console.error(e); }
+    },
+
+    // Step 1: Begin the night completion process
+    beginNightCompletion: (): boolean => {
+      const { gamePhase } = get();
+      if (gamePhase !== 'night') {
+        console.warn(`[StateMachine] Cannot complete night from phase: ${gamePhase}`);
+        return false;
+      }
+      // TODO: Add validation logic here if needed (e.g., knowledge transfer)
+
+      // Reset completed nodes for the new day & increment day counter
       set(state => ({
-        transitionHistory: [
-          ...state.transitionHistory,
-          {
-            from: currentPhase,
-            to: newPhase,
-            timestamp: Date.now(),
-            reason,
-            succeeded: false
-          }
-        ]
+        completedNodeIds: [],
+        currentDay: state.currentDay + 1
       }));
-      return false;
-    }
+
+      // Initiate the transition to day
+      return get().transitionToPhase('transition_to_day', 'night_complete');
+      // The UI should react to 'transition_to_day' phase to show animation
+    },
     
-    // Special case: transitions need to be tracked
-    if (newPhase === 'transition_to_day' || newPhase === 'transition_to_night') {
-      // Set transition data
-      set({
-        isTransitioning: true,
-        transitionData: {
-          from: currentPhase,
-          to: newPhase === 'transition_to_day' ? 'day' : 'night',
-          startTime: Date.now(),
-          duration: 3000 // 3 seconds for transition animation
+    // Step 2: Finalize the transition to day (called after animation/delay)
+    finalizeDayTransition: (): void => {
+        const { gamePhase } = get();
+        if (gamePhase !== 'transition_to_day') {
+            console.warn(`[StateMachine] Cannot finalize day transition from phase: ${gamePhase}`);
+            // Attempt recovery if stuck
+            if (gamePhase !== 'day') {
+                get().transitionToPhase('day', 'finalize_recovery');
+            }
+            return;
         }
-      });
-    } else {
-      // Clear transition data when entering a non-transition phase
-      set({
-        isTransitioning: false,
-        transitionData: null
-      });
-    }
-    
-    // Record transition attempt
-    set(state => ({
-      transitionHistory: [
-        ...state.transitionHistory.slice(-19), // Keep last 20 entries
-        {
-          from: currentPhase,
-          to: newPhase,
-          timestamp: Date.now(),
-          reason,
-          succeeded: true,
-          emergency: isEmergencyOverride
+        get().transitionToPhase('day', 'transition_finalize');
+         try {
+           safeDispatch(GameEventType.NIGHT_COMPLETED, { }, 'gameStateMachine');
+        } catch (e) { console.error(e); }
+    },
+
+    markNodeCompleted: (nodeId: string): void => {
+      set(state => {
+        if (state.completedNodeIds.includes(nodeId)) {
+          return state; // Already completed
         }
-      ]
-    }));
-    
-    // Extra safety - log more details about important transitions
-    if (newPhase === 'night' || newPhase === 'day') {
-      console.log(`%c[StateMachine] CRITICAL TRANSITION: ${currentPhase} -> ${newPhase}${reason ? ` (${reason})` : ''}`,
-                  'background: #2a0; color: white; padding: 2px 5px; border-radius: 3px');
-    }
-    
-    // Dispatch event before phase change
-    try {
-      changeGamePhase(currentPhase, newPhase, reason);
-    } catch (error) {
-      console.warn(`[StateMachine] Failed to dispatch phase change event: ${error}`);
-    }
-    
-    // Update phase - do this after everything else to ensure state is changed
-    set({ gamePhase: newPhase });
-    
-    return true;
-  },
-  
-  /**
-   * Complete the day phase, transitioning to night
-   * 
-   * UPDATED with direct transition approach:
-   * 1. Immediately set transition_to_night phase
-   * 2. Schedule a direct transition to night phase after a short delay
-   * 
-   * This ensures the UI has a chance to show the transition state
-   * before completing the transition to night.
-   * 
-   * @returns true if transition was triggered, false otherwise
-   */
-  completeDay: (): boolean => {
-    const { gamePhase } = get();
-    
-    // Skip if already transitioning or in night phase
-    if (gamePhase === 'transition_to_night' || gamePhase === 'night') {
-      console.log(`[StateMachine] Already transitioning to or in night phase (current: ${gamePhase})`);
-      return true;
-    }
-    
-    console.log('[StateMachine] Completing day, setting phase: transition_to_night');
-    
-    // First, set transition phase
-    set({ 
-      gamePhase: 'transition_to_night',
-      isTransitioning: true,
-      transitionData: {
-        from: gamePhase,
-        to: 'night',
-        startTime: Date.now(),
-        duration: 800 // Shorter duration for reliability
-      }
-    });
-    
-    // Log transition start
-    try {
-      safeDispatch(
-        GameEventType.GAME_PHASE_CHANGED,
-        {
-          from: gamePhase,
-          to: 'transition_to_night',
-          reason: 'day_complete'
-        },
-        'gameStateMachine:completeDay'
-      );
-    } catch (error) {
-      console.warn('[StateMachine] Event dispatch error:', error);
-    }
-    
-    // Crucial: Direct transition to night after a short delay
-    // This is the key change that ensures we don't get stuck in transition
-    setTimeout(() => {
-      console.log('[StateMachine] Transition timer complete, setting phase: night');
-      
-      // Direct update to night phase
-      set({ 
-        gamePhase: 'night',
-        isTransitioning: false,
-        transitionData: null
+        console.log(`[StateMachine] Node completed: ${nodeId}`);
+        return { completedNodeIds: [...state.completedNodeIds, nodeId] };
       });
-      
-      // Log completion
-      try {
-        safeDispatch(
-          GameEventType.DAY_COMPLETED,
-          {
-            completedNodeCount: get().completedNodeIds.length
-          },
-          'gameStateMachine:completeDay:timer'
-        );
-      } catch (error) {
-        console.error('[StateMachine] Error dispatching DAY_COMPLETED event:', error);
+    },
+
+    checkForStuckTransitions: (): boolean => {
+      const { gamePhase, isTransitioning } = get();
+      set(state => ({ stuckTransitionChecks: state.stuckTransitionChecks + 1 }));
+
+      if (isTransitioning && !gamePhase.startsWith('transition_to_')) {
+         console.warn(`[StateMachine] Stuck Check: Inconsistency found! isTransitioning is true but phase is ${gamePhase}. Resetting isTransitioning.`);
+         set({ isTransitioning: false });
+         clearTransitionTimeout(); // Clear timeout as we are no longer transitioning
+         return true; // Recovery action taken
       }
-    }, 800); // Shorter delay for reliability
-    
-    return true;
-  },
-  
-  /**
-   * Complete the night phase, transitioning to day
-   * UPDATED with same two-stage approach as completeDay
-   * 
-   * @returns true if transition was triggered, false otherwise
-   */
-  completeNight: (): boolean => {
-    const { gamePhase, currentDay } = get();
-    
-    // Skip if already transitioning or in day phase
-    if (gamePhase === 'transition_to_day' || gamePhase === 'day') {
-      console.log(`[StateMachine] Already transitioning to or in day phase (current: ${gamePhase})`);
-      return true;
-    }
-    
-    console.log('[StateMachine] Completing night, setting phase: transition_to_day');
-    
-    // First, set transition phase
-    set({ 
-      gamePhase: 'transition_to_day',
-      isTransitioning: true,
-      transitionData: {
-        from: gamePhase,
-        to: 'day',
-        startTime: Date.now(),
-        duration: 800 // Shorter duration for reliability
+      // If a timeout is active but we are NOT in a transition phase, clear it.
+      if (transitionTimeout && !isTransitioning) {
+        console.warn(`[StateMachine] Stuck Check: Active timeout found but not in transition phase. Clearing timeout.`);
+        clearTransitionTimeout();
       }
-    });
-    
-    // Log transition start
-    try {
-      safeDispatch(
-        GameEventType.GAME_PHASE_CHANGED,
-        {
-          from: gamePhase,
-          to: 'transition_to_day',
-          reason: 'night_complete'
-        },
-        'gameStateMachine:completeNight'
-      );
-    } catch (error) {
-      console.warn('[StateMachine] Event dispatch error:', error);
-    }
-    
-    // Reset completed nodes and increment day for new day
-    set({ 
-      completedNodeIds: [],
-      currentDay: currentDay + 1
-    });
-    
-    // Crucial: Direct transition to day after a short delay
-    setTimeout(() => {
-      console.log('[StateMachine] Transition timer complete, setting phase: day');
-      
-      // Direct update to day phase
-      set({ 
+
+      return false; // No recovery needed based on this check
+    },
+
+    // Reset state, optionally preserving meta-progression like day count
+    resetState: (preserveMeta = false) => {
+      console.log(`[StateMachine] Resetting state ${preserveMeta ? 'preserving meta' : ''}`);
+      clearTransitionTimeout(); // Clear any pending timeouts
+      const metaState = preserveMeta ? { currentDay: get().currentDay } : { currentDay: 1 };
+      set({
+        gameState: 'not_started',
         gamePhase: 'day',
         isTransitioning: false,
-        transitionData: null
+        transitionHistory: [],
+        stuckTransitionChecks: 0,
+        completedNodeIds: [],
+        ...metaState
       });
-      
-      // Log completion
-      try {
-        safeDispatch(
-          GameEventType.NIGHT_COMPLETED,
-          {
-            previousCompletedNodeCount: 0
-          },
-          'gameStateMachine:completeNight:timer'
-        );
-      } catch (error) {
-        console.error('[StateMachine] Error dispatching NIGHT_COMPLETED event:', error);
-      }
-    }, 800); // Shorter delay for reliability
-    
-    return true;
-  },
-  
-  /**
-   * Mark a node as completed
-   * @param nodeId The ID of the completed node
-   */
-  markNodeCompleted: (nodeId: string): void => {
-    // Only add if not already in the list
-    set(state => {
-      if (state.completedNodeIds.includes(nodeId)) {
-        return state;
-      }
-      
-      return {
-        completedNodeIds: [...state.completedNodeIds, nodeId]
-      };
-    });
-    
-    console.log(`[StateMachine] Node completed: ${nodeId}`);
-  },
-  
-  /**
-   * Check for and recover from stuck transitions
-   * @returns true if recovery was attempted, false otherwise
-   */
-  checkForStuckTransitions: (): boolean => {
-    const { gamePhase, transitionToPhase, transitionData } = get();
-    
-    // Only check for transition phases
-    if (!gamePhase.startsWith('transition_to_')) {
-      return false;
-    }
-    
-    // Check if we've been in transition too long
-    if (transitionData && Date.now() - transitionData.startTime > transitionData.duration * 2) {
-      console.warn(`[StateMachine] Detected stuck transition: ${gamePhase}`);
-      
-      // Force appropriate phase
-      const targetPhase = gamePhase === 'transition_to_night' ? 'night' : 'day';
-      const success = transitionToPhase(targetPhase, 'stuck_transition_recovery');
-      
-      // Increment stuck transition counter
-      set(state => ({
-        stuckTransitionChecks: state.stuckTransitionChecks + 1
-      }));
-      
-      return success;
-    }
-    
-    return false;
-  },
-  
-  // Getters
-  getCompletedNodeIds: () => get().completedNodeIds,
-  getTransitionHistory: () => get().transitionHistory
-}));
+       // Optionally trigger a state reset event
+       safeDispatch(GameEventType.GAME_STATE_CHANGED, { from: get().gameState, to: 'not_started', reason: 'reset' }, 'gameStateMachine');
+    },
+
+    // Getters
+    getCompletedNodeIds: () => get().completedNodeIds,
+    getTransitionHistory: () => get().transitionHistory,
+  };
+});
 
 // ======== Integration with Event System ========
 
-/**
- * Connect state machine to event bus to handle specific events
- */
 export function initializeStateMachine() {
   const { subscribe } = useEventBus.getState();
   const stateMachine = useGameStateMachine.getState();
-  
-  // Listen for node completions
+
   subscribe<NodeCompletionPayload>(GameEventType.NODE_COMPLETED, (event) => {
-    const { nodeId } = event.payload;
-    stateMachine.markNodeCompleted(nodeId);
+    stateMachine.markNodeCompleted(event.payload.nodeId);
   });
-  
-  // Listen for animation completions
-  subscribe<UIEventPayload>(GameEventType.UI_BUTTON_CLICKED, (event) => {
-    const { action, componentId } = event.payload;
-    
-    // Handle phase transition completion
-    if (componentId === 'phaseTransition' && action === 'complete') {
-      const { gamePhase, transitionToPhase } = stateMachine;
-      
-      // When transition_to_night animation completes, move to actual night phase
-      if (gamePhase === 'transition_to_night') {
-        transitionToPhase('night', 'transition_complete');
-      }
-      
-      // When transition_to_day animation completes, move to actual day phase
-      else if (gamePhase === 'transition_to_day') {
-        transitionToPhase('day', 'transition_complete');
-      }
-    }
-  });
-  
-  // Listen for completion requests
-  subscribe<UIEventPayload>(GameEventType.UI_BUTTON_CLICKED, (event) => {
-    const { action, componentId } = event.payload;
-    
-    // Handle day completion request
-    if (componentId === 'dayCompleteButton' && action === 'click') {
-      stateMachine.completeDay();
-    }
-    
-    // Handle night completion request
-    else if (componentId === 'nightCompleteButton' && action === 'click') {
-      stateMachine.completeNight();
-    }
-  });
-  
+
+  // Remove listeners for UI events that finalize transitions - logic moved to GameContainer
+
   console.log('[StateMachine] Initialized and connected to event bus');
-  
-  // Set up periodic transition state validation
-  const checkIntervalId = setInterval(() => {
-    stateMachine.checkForStuckTransitions();
-  }, 3000); // Check every 3 seconds
-  
-  // Check for stuck transitions on startup
-  setTimeout(() => {
-    const { gamePhase, transitionToPhase } = stateMachine;
-    
-    // If we're in a transition phase on startup, we might be stuck
-    if (gamePhase === 'transition_to_night' || gamePhase === 'transition_to_day') {
-      console.warn('[StateMachine] Detected potential stuck transition on startup:', gamePhase);
-      
-      // Force direct transition to target phase
-      const targetPhase = gamePhase === 'transition_to_night' ? 'night' : 'day';
-      transitionToPhase(targetPhase, 'startup_recovery');
-    }
-  }, 1000);
-  
-  // Return cleanup function for the interval
+
+  const checkIntervalId = setInterval(stateMachine.checkForStuckTransitions, 5000); // Check every 5s
+
   return {
-    cleanupInterval: () => {
-      clearInterval(checkIntervalId);
-    }
+    cleanupInterval: () => clearInterval(checkIntervalId),
+    teardown: () => clearInterval(checkIntervalId) // Ensure cleanup on full teardown
   };
 }
 
-// ======== React Hook for Components ========
+// ======== React Hook ========
 
-/**
- * Custom hook for using state machine in React components
- * @returns Object containing current state, phase, and transition methods
- */
 export function useGameState() {
-  const gameState = useGameStateMachine(state => state.gameState);
-  const gamePhase = useGameStateMachine(state => state.gamePhase);
-  const isTransitioning = useGameStateMachine(state => state.isTransitioning);
-  const transitionData = useGameStateMachine(state => state.transitionData);
-  const completedNodeIds = useGameStateMachine(state => state.completedNodeIds);
-  const currentDay = useGameStateMachine(state => state.currentDay);
-  
-  const transitionToState = useGameStateMachine(state => state.transitionToState);
-  const transitionToPhase = useGameStateMachine(state => state.transitionToPhase);
-  const completeDay = useGameStateMachine(state => state.completeDay);
-  const completeNight = useGameStateMachine(state => state.completeNight);
-  
+  const state = useGameStateMachine(s => ({
+    gameState: s.gameState,
+    gamePhase: s.gamePhase,
+    isTransitioning: s.isTransitioning,
+    completedNodeIds: s.completedNodeIds,
+    currentDay: s.currentDay,
+    transitionToState: s.transitionToState,
+    beginDayCompletion: s.beginDayCompletion,
+    beginNightCompletion: s.beginNightCompletion,
+    finalizeDayTransition: s.finalizeDayTransition, // Expose finalizers
+    finalizeNightTransition: s.finalizeNightTransition, // Expose finalizers
+  }));
+
   return {
-    // Current state
-    gameState,
-    gamePhase,
-    isTransitioning,
-    transitionData,
-    completedNodeIds,
-    currentDay,
-    
-    // Transition methods
-    transitionToState,
-    transitionToPhase,
-    completeDay,
-    completeNight,
-    
-    // Convenient derived properties
-    isDay: gamePhase === 'day',
-    isNight: gamePhase === 'night',
-    isActive: gameState === 'in_progress',
+    ...state,
+    isDay: state.gamePhase === 'day',
+    isNight: state.gamePhase === 'night',
+    isActive: state.gameState === 'in_progress',
   };
 }
 
-/**
- * Initialize the game state machine
- * Call this once at application startup to connect event systems
- */
+// ======== Setup Function ========
+
 export function setupGameStateMachine() {
-  // Initialize connections between state machine and event bus
-  const { cleanupInterval } = initializeStateMachine();
-  
-  return {
-    // Expose teardown if needed
-    teardown: () => {
-      console.log('[StateMachine] Teardown initiated');
-      cleanupInterval();
-    }
-  };
+  return initializeStateMachine();
 }
 
-// Expose debug methods to window when in development
+// ======== Debug Exposure ========
 if (typeof window !== 'undefined') {
   (window as any).__GAME_STATE_MACHINE_DEBUG__ = {
     getCurrentState: () => useGameStateMachine.getState(),
     getTransitionHistory: () => useGameStateMachine.getState().transitionHistory,
-    forceTransition: (phase: GamePhase, reason = 'debug_override') => {
+    forcePhase: (phase: GamePhase, reason = 'debug_override') => {
       return useGameStateMachine.getState().transitionToPhase(phase, reason);
     },
-    checkForStuckTransitions: () => useGameStateMachine.getState().checkForStuckTransitions(),
-    repairAllSystems: () => {
-      const stateMachine = useGameStateMachine.getState();
-      const { gamePhase } = stateMachine;
-      
-      // Force appropriate phase if in transition
-      if (gamePhase.startsWith('transition_to_')) {
-        const targetPhase = gamePhase === 'transition_to_night' ? 'night' : 'day';
-        return stateMachine.transitionToPhase(targetPhase, 'manual_debug_repair');
-      }
-      return false;
-    }
+    forceState: (state: GameState, reason = 'debug_override') => {
+       return useGameStateMachine.getState().transitionToState(state, reason);
+    },
+    checkStuck: () => useGameStateMachine.getState().checkForStuckTransitions(),
+    reset: (preserveMeta = false) => useGameStateMachine.getState().resetState(preserveMeta)
   };
 }
 
-export default {
-  useGameStateMachine,
-  useGameState,
-  setupGameStateMachine,
-  initializeStateMachine
-};
+export default useGameStateMachine;

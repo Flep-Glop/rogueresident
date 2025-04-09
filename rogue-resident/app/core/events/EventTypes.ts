@@ -1,77 +1,70 @@
 // app/core/events/EventTypes.ts
 /**
  * Streamlined Game Event Types for Vertical Slice
- * 
- * This focused event taxonomy includes only essential events needed
- * for the core day/night cycle with Dr. Kapoor. This ensures a clean,
- * focused implementation while maintaining extensibility.
- * 
- * Original implementation had 40+ event types; this version focuses on ~15
- * that directly support the vertical slice experience.
+ *
+ * Focuses on essential events, including specific transition events.
  */
 
 export enum GameEventType {
   // ===== UI Events =====
-  // Essential interface interactions
   UI_BUTTON_CLICKED = 'ui:button:clicked',
   UI_OPTION_SELECTED = 'ui:option:selected',
   UI_NODE_CLICKED = 'ui:node:clicked',
-  
+
   // ===== Dialogue Events =====
-  // Core narrative flow events
   DIALOGUE_STARTED = 'dialogue:started',
   DIALOGUE_OPTION_SELECTED = 'dialogue:option:selected',
   DIALOGUE_COMPLETED = 'dialogue:completed',
   DIALOGUE_CRITICAL_PATH = 'dialogue:critical:path',
-  DIALOGUE_ERROR = 'dialogue:error', // ADDED: Explicit error event
-  
+  DIALOGUE_ERROR = 'dialogue:error',
+
   // ===== Map Navigation Events =====
-  // Core map interaction
   NODE_COMPLETED = 'node:completed',
-  
+
   // ===== Game State Events =====
-  // Day/night cycle core events
   GAME_STATE_CHANGED = 'state:state:changed',
-  GAME_PHASE_CHANGED = 'state:phase:changed',
-  DAY_STARTED = 'day:started',
-  DAY_COMPLETED = 'day:completed', // ADDED: Explicit day completion event
-  NIGHT_STARTED = 'night:started',
-  NIGHT_COMPLETED = 'night:completed', // ADDED: Explicit night completion event
+  GAME_PHASE_CHANGED = 'state:phase:changed', // General phase change event
+  // Specific transition events added:
+  TRANSITION_TO_NIGHT_STARTED = 'state:transition:to_night:started',
+  TRANSITION_TO_DAY_STARTED = 'state:transition:to_day:started',
+  TRANSITION_TO_NIGHT_COMPLETED = 'state:transition:to_night:completed', // When 'night' phase is reached
+  TRANSITION_TO_DAY_COMPLETED = 'state:transition:to_day:completed',   // When 'day' phase is reached
+
+  DAY_STARTED = 'day:started',         // Fired when 'day' phase begins
+  DAY_COMPLETED = 'day:completed',       // Fired when day completion process *starts*
+  NIGHT_STARTED = 'night:started',       // Fired when 'night' phase begins
+  NIGHT_COMPLETED = 'night:completed',     // Fired when night completion process *starts*
   SESSION_STARTED = 'session:started',
   SYSTEM_INITIALIZED = 'system:initialized',
   SYSTEM_SHUTDOWN = 'system:shutdown',
-  
+
   // ===== Progression Events =====
-  // Critical progression checkpoints
   JOURNAL_ACQUIRED = 'progression:journal:acquired',
   KNOWLEDGE_GAINED = 'progression:knowledge:gained',
   KNOWLEDGE_TRANSFERRED = 'progression:knowledge:transferred',
   CHALLENGE_COMPLETED = 'challenge:completed',
-  
+
   // ===== Transaction Events =====
-  // These facilitate critical path completion
   PROGRESSION_TRANSACTION_STARTED = 'progression:transaction:started',
   PROGRESSION_TRANSACTION_COMPLETED = 'progression:transaction:completed',
   PROGRESSION_TRANSACTION_CANCELLED = 'progression:transaction:cancelled',
   PROGRESSION_TRANSACTION_REPAIRED = 'progression:transaction:repaired',
-  
+
   // ===== Debug Events =====
-  // Support for debug panel
   DEBUG_COMMAND = 'debug:command',
-  
+
   // ===== Recovery Events =====
-  // ADDED: New events for recovery systems
   TRANSITION_RECOVERY = 'system:transition:recovery',
   CONSISTENCY_CHECK = 'system:consistency:check',
-  CONSISTENCY_REPAIR = 'system:consistency:repair'
+  CONSISTENCY_REPAIR = 'system:consistency:repair',
+
+  // Resource Events (assuming needed by other systems)
+  RESOURCE_CHANGED = 'resource:changed',
+  STRATEGIC_ACTION = 'resource:action'
 }
 
 // ===== Event Payload Types =====
-// These define the structure of data for each event
 
-/**
- * UI Event Payload
- */
 export interface UIEventPayload {
   componentId: string;
   action: string;
@@ -79,27 +72,18 @@ export interface UIEventPayload {
   position?: { x: number, y: number };
 }
 
-/**
- * Dialogue Event Payload
- */
 export interface DialogueEventPayload {
   dialogueId: string;
   characterId: string;
   nodeId?: string;
 }
 
-/**
- * Dialogue Option Selection Payload
- */
 export interface DialogueOptionPayload extends DialogueEventPayload {
   optionId: string;
   responseId: string;
   score?: number;
 }
 
-/**
- * Node Completion Payload
- */
 export interface NodeCompletionPayload {
   nodeId: string;
   character?: string;
@@ -110,18 +94,12 @@ export interface NodeCompletionPayload {
   };
 }
 
-/**
- * State Change Payload
- */
 export interface StateChangePayload {
-  from: string;
-  to: string;
+  from: string; // Can be GameState or GamePhase
+  to: string;   // Can be GameState or GamePhase
   reason?: string;
 }
 
-/**
- * Journal Acquisition Payload
- */
 export interface JournalAcquisitionPayload {
   tier: 'base' | 'technical' | 'annotated';
   character: string;
@@ -129,9 +107,6 @@ export interface JournalAcquisitionPayload {
   forced?: boolean;
 }
 
-/**
- * Knowledge Gain Payload
- */
 export interface KnowledgeGainPayload {
   conceptId: string;
   amount: number;
@@ -140,18 +115,12 @@ export interface KnowledgeGainPayload {
   source?: string;
 }
 
-/**
- * Knowledge Transfer Payload
- */
 export interface KnowledgeTransferPayload {
   conceptIds: string[];
   source: string;
   successful: boolean;
 }
 
-/**
- * Transaction Payload
- */
 export interface TransactionPayload {
   transactionId: string;
   type: string;
@@ -162,18 +131,11 @@ export interface TransactionPayload {
   stuckDuration?: number;
 }
 
-/**
- * Debug Command Payload
- */
 export interface DebugCommandPayload {
   command: string;
   params?: Record<string, any>;
 }
 
-/**
- * Recovery Event Payload
- * ADDED: New payload type for recovery systems
- */
 export interface RecoveryEventPayload {
   type: 'transition' | 'state' | 'journal' | 'knowledge';
   source: string;
@@ -182,4 +144,27 @@ export interface RecoveryEventPayload {
   metadata?: Record<string, any>;
   successful: boolean;
   timestamp: number;
+}
+
+// Payload for Resource Changed event (assuming structure from resourceStore)
+export interface ResourceChangedPayload {
+  resourceType: 'insight' | 'momentum';
+  previousValue: number;
+  newValue: number;
+  change: number;
+  source?: string;
+  consecutive?: number; // Only for momentum
+  thresholdProximity?: Record<string, number>; // Only for insight
+}
+
+// Payload for Strategic Action event (assuming structure from resourceStore)
+export interface StrategicActionPayload {
+  actionType: string; // Should match StrategicActionType
+  state: 'activated' | 'completed' | 'canceled';
+  successful?: boolean; // Only for 'completed' state
+  outcome?: 'success' | 'failure'; // Only for 'completed' state
+  insightCost?: number;
+  momentumRequired?: number;
+  insightRefunded?: number; // Only for 'canceled' state
+  context?: any;
 }
