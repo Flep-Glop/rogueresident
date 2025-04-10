@@ -1,16 +1,22 @@
 // app/core/utils/storeHooks.ts
 /**
- * Store Subscription Utilities
+ * Chamber Pattern Store Hooks
  * 
- * This module provides standardized hooks for subscribing to Zustand stores
- * with proper type safety and React 18 compatibility.
+ * These hooks implement the core of the Chamber Pattern, focusing on:
+ * 1. Primitive value extraction to prevent reference loops
+ * 2. Stable function reference management
+ * 3. Type-safe store access patterns
+ * 4. Seamless migration between architectural approaches
  * 
- * Based on patterns developed during Hades to ensure stable subscription patterns
- * that avoid common React rendering pitfalls.
+ * Based on techniques developed during Hades and refined through Pyre's development,
+ * these utilities ensure stable performance even with complex state transitions.
  */
 
 import { useCallback, useEffect, useRef, useMemo } from 'react';
 import { useShallow } from 'zustand/react/shallow';
+import { shallow } from 'zustand/shallow';
+
+// ========= SELECTOR CREATORS =========
 
 /**
  * Creates a stable selector function that only returns the specified keys from a store
@@ -38,18 +44,25 @@ export function createStableSelector<T extends Record<string, any>>(
  * @param fallback Optional fallback value if the extracted value is not a primitive
  * @returns A safe selector for primitive values
  */
-export function createPrimitiveSelector<T, V extends string | number | boolean>(
+export function createPrimitiveSelector<T, V extends string | number | boolean | undefined>(
   selector: (state: T) => V,
   fallback?: V
 ) {
   return (state: T) => {
-    const value = selector(state);
-    if (value === null || value === undefined) {
-      return fallback !== undefined ? fallback : value;
+    try {
+      const value = selector(state);
+      if (value === null || value === undefined) {
+        return fallback !== undefined ? fallback : value;
+      }
+      return typeof value !== 'object' ? value : fallback;
+    } catch (error) {
+      console.warn('[storeHooks] Error in primitive selector:', error);
+      return fallback;
     }
-    return typeof value !== 'object' ? value : fallback;
   };
 }
+
+// ========= PRIMARY STORE HOOKS =========
 
 /**
  * Hook that subscribes to a specific slice of a store and provides a stable reference
@@ -58,13 +71,26 @@ export function createPrimitiveSelector<T, V extends string | number | boolean>(
  * @param selector Selector function to extract values from the store
  * @returns The selected slice of state with stable reference
  */
-export function useStableStoreValue<T, U>(
-  useStore: (selector: (state: T) => U) => U,
-  selector: (state: T) => U
-): U {
-  // Use memoized selector to prevent recreation on render
+export function useStableStoreValue<StoreType, ValueType>(
+  store: any,
+  selector: (state: StoreType) => ValueType
+): ValueType | null {
+  // Type assertion for zustand store
+  const storeHook = store as { 
+    <U>(selector: (state: StoreType) => U): U;
+    getState: () => StoreType
+  };
+
+  // Create a memoized selector for stable references
   const stableSelector = useCallback(selector, []);
-  return useStore(useShallow(stableSelector));
+  
+  // Safe extraction using the store with shallow comparison
+  try {
+    return storeHook(useShallow(stableSelector));
+  } catch (error) {
+    console.warn('[storeHooks] Error extracting stable store value:', error);
+    return null;
+  }
 }
 
 /**
@@ -76,14 +102,124 @@ export function useStableStoreValue<T, U>(
  * @param fallback Optional fallback value if the extracted value is not a primitive
  * @returns A primitive value with stable reference
  */
-export function usePrimitiveStoreValue<T, V extends string | number | boolean>(
-  useStore: (selector: (state: T) => V | undefined) => V | undefined,
-  selector: (state: T) => V | undefined,
-  fallback?: V
-): V | undefined {
-  // Use memoized primitive selector to prevent recreation on render
-  const stableSelector = useCallback(createPrimitiveSelector(selector, fallback), []);
-  return useStore(stableSelector);
+export function usePrimitiveStoreValue<StoreType, ValueType extends string | number | boolean | undefined>(
+  store: any,
+  selector: (state: StoreType) => ValueType,
+  fallback: ValueType
+): ValueType {
+  // Type assertion for zustand store
+  const storeHook = store as { 
+    <U>(selector: (state: StoreType) => U): U;
+    getState: () => StoreType
+  };
+
+  // Create a safe primitive selector
+  const primitiveSelector = useCallback(
+    createPrimitiveSelector(selector, fallback),
+    [selector, fallback]
+  );
+  
+  // Safe extraction using the store
+  try {
+    // Extract the value with the primitive selector
+    const value = storeHook(primitiveSelector);
+    // Return the value or fallback
+    return value !== undefined ? value : fallback;
+  } catch (error) {
+    console.warn('[storeHooks] Error extracting primitive value:', error);
+    return fallback;
+  }
+}
+
+/**
+ * Hook to extract multiple primitive values from a store
+ * More efficient than multiple usePrimitiveStoreValue calls
+ * 
+ * @param useStore The Zustand store hook
+ * @param selectors Object mapping output keys to selector functions
+ * @param fallbacks Optional fallback values
+ * @returns Object with selected primitive values
+ */
+export function usePrimitiveValues<
+  StoreType,
+  SelectorMap extends Record<string, (state: StoreType) => string | number | boolean | undefined>,
+  Fallbacks extends Partial<Record<keyof SelectorMap, string | number | boolean>>
+>(
+  store: any,
+  selectors: SelectorMap,
+  fallbacks: Fallbacks
+): { [K in keyof SelectorMap]: ReturnType<SelectorMap[K]> | (K extends keyof Fallbacks ? Fallbacks[K] : undefined) } {
+  // Type assertion for zustand store
+  const storeHook = store as { 
+    <U>(selector: (state: StoreType) => U, equals?: (a: U, b: U) => boolean): U;
+    getState: () => StoreType
+  };
+
+  // Create a combined selector function with memoization
+  const combinedSelector = useCallback((state: StoreType) => {
+    const result: Record<string, any> = {};
+    for (const key in selectors) {
+      try {
+        const value = selectors[key](state);
+        result[key] = (value === undefined || value === null || typeof value === 'object') 
+          ? (fallbacks[key as keyof Fallbacks] as any) 
+          : value;
+      } catch (error) {
+        console.warn(`[storeHooks] Error selecting ${String(key)}:`, error);
+        result[key] = fallbacks[key as keyof Fallbacks];
+      }
+    }
+    return result;
+  }, [selectors]);
+  
+  // Extract all values at once with shallow comparison for maximum performance
+  try {
+    return storeHook(combinedSelector, shallow);
+  } catch (error) {
+    console.warn('[storeHooks] Error extracting primitive values:', error);
+    
+    // Construct fallback object
+    const result: Record<string, any> = {};
+    for (const key in selectors) {
+      result[key] = fallbacks[key as keyof Fallbacks];
+    }
+    return result as any;
+  }
+}
+
+/**
+ * Creates a memoized value with stable reference identity
+ * 
+ * This is a Chamber Pattern utility that wraps React's useMemo
+ * but focuses on reducing rerenders in the performance-critical path
+ * 
+ * @param factory Function that creates the memoized value
+ * @param deps Dependencies array for the memoized value
+ * @returns The memoized value with stable reference
+ */
+export function useStableMemo<T>(
+  factory: () => T,
+  deps: any[] = []
+): T {
+  // Simply wraps useMemo but with Chamber Pattern naming convention
+  return useMemo(factory, deps);
+}
+
+/**
+ * Creates a stable callback that maintains reference equality
+ * between renders but can still access fresh state
+ * 
+ * @param callback Function to memoize
+ * @param deps Dependencies array for the callback
+ * @returns A stable callback with consistent reference identity
+ */
+export function useStableCallback<T extends (...args: any[]) => any>(
+  callback: T,
+  deps: any[] = []
+): T {
+  // Wraps useCallback but with more semantic naming
+  // to indicate Chamber Pattern compliance
+  return useCallback(callback, deps);
 }
 
 /**
@@ -99,6 +235,8 @@ export function useMemoizedSelector<T, U>(
 ) {
   return useCallback(selectorFn(), deps);
 }
+
+// ========= OBSERVER HOOKS =========
 
 /**
  * Safe equality comparison for primitive values or objects
@@ -129,7 +267,7 @@ function safeEqual(a: any, b: any): boolean {
     return JSON.stringify(a) === JSON.stringify(b);
   } catch (e) {
     // Fallback to reference equality if JSON stringify fails
-    console.warn('Failed to compare objects with JSON.stringify', e);
+    console.warn('[storeHooks] Failed to compare objects with JSON.stringify:', e);
     return Object.is(a, b);
   }
 }
@@ -144,107 +282,111 @@ function safeEqual(a: any, b: any): boolean {
  * @param deps Additional dependencies for the effect
  */
 export function useStoreValueObserver<T, U>(
-  useStore: (selector: (state: T) => U) => U,
+  useStore: any,
   selector: (state: T) => U,
   onChange: (newValue: U, prevValue: U | undefined) => void,
   deps: any[] = []
 ) {
   const prevValueRef = useRef<U>();
+  const onChangeRef = useRef(onChange);
+  onChangeRef.current = onChange;
   
   // Use stable selector to prevent unnecessary re-renders
   const stableSelector = useCallback(selector, []);
-  const value = useStore(useShallow(stableSelector));
   
-  // Memoize the onChange callback to prevent effect re-runs
-  const stableOnChange = useCallback(onChange, deps);
+  // Extract the value with shallow comparison
+  let value: U;
+  try {
+    value = useStore(useShallow(stableSelector));
+  } catch (error) {
+    console.warn('[storeHooks] Error in store value observer:', error);
+    return; // Exit early if we can't extract the value
+  }
   
   useEffect(() => {
-    // Critical fix: Use safeEqual for proper equality check
-    if (!safeEqual(prevValueRef.current, value)) {
-      // Only log phase changes if they're strings (for debugging)
-      if (
-        typeof value === 'string' && 
-        typeof prevValueRef.current === 'string' &&
-        value !== prevValueRef.current &&
-        process.env.NODE_ENV !== 'production'
-      ) {
-        console.log(`[StoreObserver] Value changed: ${prevValueRef.current} -> ${value}`);
+    try {
+      // Critical fix: Use safeEqual for proper equality check
+      if (!safeEqual(prevValueRef.current, value)) {
+        // Only log phase changes if they're strings (for debugging)
+        if (
+          typeof value === 'string' && 
+          typeof prevValueRef.current === 'string' &&
+          value !== prevValueRef.current &&
+          process.env.NODE_ENV !== 'production'
+        ) {
+          console.log(`[StoreObserver] Value changed: ${prevValueRef.current} -> ${value}`);
+        }
+        
+        // Call the onChange handler with previous and new values
+        onChangeRef.current(value, prevValueRef.current);
+        
+        // Update the reference for next comparison
+        prevValueRef.current = typeof value === 'object' ? 
+          // For objects, create a deep copy to prevent reference issues
+          JSON.parse(JSON.stringify(value)) : 
+          // For primitives, store directly
+          value;
       }
-      
-      // Call the onChange handler with previous and new values
-      stableOnChange(value, prevValueRef.current);
-      
-      // Update the reference for next comparison
-      prevValueRef.current = typeof value === 'object' ? 
-        // For objects, create a deep copy to prevent reference issues
-        JSON.parse(JSON.stringify(value)) : 
-        // For primitives, store directly
-        value;
+    } catch (error) {
+      console.warn('[storeHooks] Error in observer effect:', error);
     }
-  }, [value, stableOnChange]);
+  }, [value, ...deps]);
 }
 
 /**
  * Hook specifically for observing game phase changes safely
  * 
- * @param useGameStateHook The game state hook that contains phase information
+ * @param store Zustand store hook
  * @param onChange Callback to execute when phase changes
  * @param deps Additional dependencies for the effect
  */
-export function useGamePhaseObserver(
-  useGameStateHook: any,
+export function useGamePhaseObserver<StoreType>(
+  store: any,
   onChange: (newPhase: string, oldPhase: string | undefined) => void,
   deps: any[] = []
-) {
-  // Use primitive selector to avoid object reference issues
-  const gamePhaseSelector = useCallback((state: any) => 
-    createPrimitiveSelector<any, string>(
-      s => s.gamePhase,
-      'unknown' // Fallback if phase is not a string
-    )(state),
-  []);
-  
-  // Use store observer with the safe selector
-  useStoreValueObserver(
-    useGameStateHook,
-    gamePhaseSelector,
-    onChange as any,
-    deps
-  );
+): void {
+  // Type assertion for zustand store
+  const storeHook = store as { 
+    getState: () => StoreType;
+    subscribe: (listener: (state: StoreType, prevState: StoreType) => void) => () => void;
+  };
+
+  // Create refs to prevent unnecessary effect triggers
+  const onChangeRef = useRef(onChange);
+  onChangeRef.current = onChange;
+
+  const prevPhaseRef = useRef<string | undefined>(undefined);
+
+  useEffect(() => {
+    // Try to get initial phase value
+    try {
+      const state = storeHook.getState() as any;
+      prevPhaseRef.current = state.gamePhase;
+    } catch (error) {
+      console.warn('[storeHooks] Error getting initial game phase:', error);
+    }
+
+    // Subscribe to changes
+    const unsubscribe = storeHook.subscribe((state: any, prevState: any) => {
+      try {
+        // Only trigger if the phase actually changed
+        const newPhase = state.gamePhase;
+        const oldPhase = prevPhaseRef.current || prevState.gamePhase;
+        
+        if (newPhase !== oldPhase) {
+          onChangeRef.current(newPhase, oldPhase);
+          prevPhaseRef.current = newPhase;
+        }
+      } catch (error) {
+        console.warn('[storeHooks] Error in game phase observer:', error);
+      }
+    });
+    
+    return unsubscribe;
+  }, [storeHook, ...deps]);
 }
 
-/**
- * Hook to extract multiple primitive values from a store
- * More efficient than multiple usePrimitiveStoreValue calls
- * 
- * @param useStore The Zustand store hook
- * @param selectors Object mapping output keys to selector functions
- * @param fallbacks Optional fallback values
- * @returns Object with selected primitive values
- */
-export function usePrimitiveValues<
-  T,
-  S extends Record<string, (state: T) => string | number | boolean | undefined>,
-  F extends Partial<Record<keyof S, string | number | boolean>>
->(
-  useStore: (selector: (state: T) => any) => any,
-  selectors: S,
-  fallbacks?: F
-): { [K in keyof S]: ReturnType<S[K]> | F[K] } {
-  // Create a memoized selector that extracts all primitives at once
-  const combinedSelector = useCallback((state: T) => {
-    const result: Record<string, any> = {};
-    for (const key in selectors) {
-      const value = selectors[key](state);
-      result[key] = (value === undefined || value === null || typeof value === 'object') 
-        ? (fallbacks?.[key] as any) 
-        : value;
-    }
-    return result;
-  }, []);
-  
-  return useStore(useShallow(combinedSelector));
-}
+// ========= DIRECT ACCESS UTILITIES =========
 
 /**
  * Access the current store state directly (no subscription)
@@ -253,10 +395,16 @@ export function usePrimitiveValues<
  * @param useStore The Zustand store hook
  * @returns A function to access the latest state
  */
-export function useStoreSnapshot<T>(useStore: () => T) {
+export function useStoreSnapshot<T>(useStore: any): <R>(selector: (state: T) => R) => R {
   return useCallback(<R>(selector: (state: T) => R): R => {
-    return selector(useStore.getState());
-  }, []);
+    try {
+      const state = useStore.getState();
+      return selector(state);
+    } catch (error) {
+      console.warn('[storeHooks] Error in store snapshot:', error);
+      throw error; // Re-throw to allow caller to handle
+    }
+  }, [useStore]);
 }
 
 /**
@@ -269,50 +417,138 @@ export function useStoreSnapshot<T>(useStore: () => T) {
  * @returns A stable callback with access to fresh store state
  */
 export function useStoreCallback<T, Args extends any[]>(
-  useStore: () => T,
+  useStore: any,
   callback: (state: T, ...args: Args) => void,
   deps: any[] = []
 ) {
   return useCallback(
-    (...args: Args) => callback(useStore.getState(), ...args),
-    deps
+    (...args: Args) => {
+      try {
+        const state = useStore.getState();
+        callback(state, ...args);
+      } catch (error) {
+        console.warn('[storeHooks] Error in store callback:', error);
+      }
+    },
+    [useStore, callback, ...deps]
   );
 }
 
+// ========= MIGRATION UTILITIES =========
+
 /**
- * Example usage patterns:
+ * Bridge helper to transition between direct state and Chamber Pattern
  * 
- * // 1. Select specific keys from a store
- * const { insight, momentum } = useResourceStore(
- *   createStableSelector(['insight', 'momentum'])
- * );
+ * @param store Zustand store
+ * @param selector Selector function to extract value
+ * @param defaultValue Default value if extraction fails
+ * @param usePrimitives Whether to use Chamber Pattern or direct extraction
+ * @returns The extracted value
+ */
+export function useTransitionalStore<StoreType, ValueType>(
+  store: any, 
+  selector: (state: StoreType) => ValueType,
+  defaultValue: ValueType,
+  usePrimitives = false
+): ValueType {
+  try {
+    if (usePrimitives) {
+      return usePrimitiveStoreValue<StoreType, ValueType extends string | number | boolean | undefined ? ValueType : never>(
+        store, 
+        selector as any, 
+        defaultValue as any
+      ) as any;
+    } else {
+      // Direct store access for backwards compatibility
+      return (store(selector) ?? defaultValue);
+    }
+  } catch (e) {
+    console.warn('[storeHooks] Store access error:', e);
+    return defaultValue;
+  }
+}
+
+// ========= DEBUGGING SUPPORT =========
+
+/**
+ * Log store updates during development
  * 
- * // 2. Create a stable custom selector
- * const playerStats = useGameStore(
- *   useStableStoreValue(state => ({
- *     health: state.player.health,
- *     level: state.player.level,
- *     displayName: `Level ${state.player.level} Resident`
- *   }))
- * );
+ * @param storeName Name of the store for logging
+ * @param useStore The Zustand store hook
+ */
+export function useStoreLogger(storeName: string, useStore: any) {
+  if (process.env.NODE_ENV === 'development') {
+    useEffect(() => {
+      const unsubscribe = useStore.subscribe((state: any, prevState: any) => {
+        // Find changed keys
+        const changedKeys: string[] = [];
+        for (const key in state) {
+          if (!safeEqual(state[key], prevState[key])) {
+            changedKeys.push(key);
+          }
+        }
+        
+        if (changedKeys.length > 0) {
+          console.group(`[Store] ${storeName} updated`);
+          console.log('Changed keys:', changedKeys);
+          console.log('New state:', state);
+          console.log('Previous state:', prevState);
+          console.groupEnd();
+        }
+      });
+      
+      return unsubscribe;
+    }, [storeName, useStore]);
+  }
+}
+
+// Extend window type for debugging features
+declare global {
+  interface Window {
+    __FORCE_REINITIALIZE__?: () => void;
+    __GAME_STATE_MACHINE_DEBUG__?: any;
+    __EVENT_SYSTEM_DIAGNOSTICS__?: () => any;
+  }
+}
+
+/**
+ * =====================================================================
+ * CHAMBER PATTERN IMPLEMENTATION GUIDE - BASED ON HADES ARCHITECTURE
+ * =====================================================================
  * 
- * // 3. Watch for store changes
- * useStoreValueObserver(
- *   useGameStore,
- *   state => state.gamePhase,
- *   (newPhase, oldPhase) => {
- *     console.log(`Game phase changed from ${oldPhase} to ${newPhase}`);
- *   }
- * );
+ * The Chamber Pattern is our solution to React's performance challenges 
+ * in complex, real-time game state. The key principles:
  * 
- * // 4. Safe primitive value extraction
+ * 1. PRIMITIVE VALUE EXTRACTION
+ *    - Extract only primitive values (strings, numbers, booleans) from stores
+ *    - Prevents unnecessary re-renders caused by object reference changes
+ *    - Minimizes React's reconciliation workload during state updates
+ * 
+ * 2. STABLE FUNCTION REFERENCES
+ *    - Use callbacks with minimal dependencies
+ *    - Access latest state via getState() within handlers
+ *    - Prevents the "stale closure" problem in event handlers
+ * 
+ * 3. DOM-BASED ANIMATIONS
+ *    - Move visual effects outside React's render cycle
+ *    - Use CSS classes and DOM manipulation for animations
+ *    - Prevents jank during complex transitions
+ * 
+ * 4. ATOMIC STATE UPDATES
+ *    - Group related state changes in single transactions
+ *    - Create predictable, synchronized state transitions
+ *    - Follows the Chamber transition pattern from Hades
+ * 
+ * === EXAMPLE USAGE PATTERNS ===
+ * 
+ * // 1. Extract a primitive value with fallback
  * const gamePhase = usePrimitiveStoreValue(
- *   useGameState,
+ *   useGameStateMachine,
  *   state => state.gamePhase,
- *   'day' // Default fallback if gamePhase is not a string
+ *   'day' // Default fallback
  * );
  * 
- * // 5. Multiple primitive values at once
+ * // 2. Extract multiple primitives at once (more efficient)
  * const { health, mana, stamina } = usePrimitiveValues(
  *   usePlayerStore,
  *   {
@@ -323,22 +559,55 @@ export function useStoreCallback<T, Args extends any[]>(
  *   { health: 100, mana: 50, stamina: 100 } // Fallbacks
  * );
  * 
- * // 6. Access latest state in a callback
- * const snapshot = useStoreSnapshot(useGameStore);
- * const handleClick = () => {
- *   const currentPhase = snapshot(s => s.gamePhase);
- *   console.log(`Current phase when clicked: ${currentPhase}`);
- * };
+ * // 3. Extract complex objects with stable references
+ * const playerInventory = useStableStoreValue(
+ *   useGameStore,
+ *   state => state.player.inventory
+ * );
  * 
- * // 7. Create callback with fresh state
+ * // 4. Observe game phase changes without re-renders
+ * useGamePhaseObserver(
+ *   useGameStateMachine,
+ *   (newPhase, oldPhase) => {
+ *     console.log(`Phase changed: ${oldPhase} -> ${newPhase}`);
+ *     if (newPhase === 'night') {
+ *       playNightAmbience();
+ *     }
+ *   }
+ * );
+ * 
+ * // 5. Access fresh state in callbacks
  * const handleAttack = useStoreCallback(
  *   useGameStore,
  *   (state, targetId) => {
  *     const target = state.enemies.find(e => e.id === targetId);
- *     if (target) {
- *       state.attackEnemy(targetId);
+ *     if (target && state.player.canAttack) {
+ *       attackEnemy(targetId, state.player.attackPower);
  *     }
  *   },
- *   []
+ *   [] // No dependencies = stable reference
  * );
+ * 
+ * // 6. Bridge between old and new patterns during migration
+ * const currentNodeId = useTransitionalStore(
+ *   useGameStore,
+ *   state => state.currentNodeId,
+ *   null,
+ *   true // Use Chamber pattern primitives
+ * );
+ * 
+ * // 7. Create stable memoized values that don't change unnecessarily
+ * const sortedItems = useStableMemo(() => {
+ *   return items
+ *     .filter(item => item.isActive)
+ *     .sort((a, b) => a.name.localeCompare(b.name));
+ * }, [items]);
+ * 
+ * // 8. Create stable event handlers with stable references
+ * const handleItemClick = useStableCallback((itemId) => {
+ *   const { canSelect, selectItem } = useItemStore.getState();
+ *   if (canSelect(itemId)) {
+ *     selectItem(itemId);
+ *   }
+ * }, []);
  */

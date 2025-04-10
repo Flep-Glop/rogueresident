@@ -10,10 +10,14 @@
  * Implementation is inspired by Supergiant's state management architecture
  * used in Hades and Pyre, where transactional integrity and restart resilience
  * were key design goals.
+ *  
+ * Updated with Chamber Pattern optimizations for maximum rendering performance
+ * using primitive extraction and stable references.
  */
 
 import { create } from 'zustand';
 import { immer } from 'zustand/middleware/immer';
+import { shallow } from 'zustand/shallow';
 import CentralEventBus, { useEventBus, safeDispatch } from '@/app/core/events/CentralEventBus';
 import { GameEventType } from '@/app/core/events/EventTypes';
 import { GameStateMachine } from '@/app/core/statemachine/GameStateMachine';
@@ -27,6 +31,14 @@ import { useResourceStore } from './resourceStore';
 
 // Import player entity type
 import { PlayerEntity, DEFAULT_PLAYER_ENTITY } from '@/app/types/player';
+
+// Import Chamber pattern hooks
+import { 
+  usePrimitiveStoreValue, 
+  useStableStoreValue, 
+  createStableSelector,
+  usePrimitiveValues
+} from '@/app/core/utils/storeHooks';
 
 // Type imports
 import type {
@@ -913,9 +925,9 @@ const createJournalSlice = (
     
     // Delegate to journal store
     const journalStore = useJournalStore.getState();
-    if (journalStore && journalStore.addJournalEntry) {
-      // Call implementation method (note the name difference)
-      journalStore.addJournalEntry(entryData);
+    if (journalStore && journalStore.addEntry) {
+      // Call implementation method
+      journalStore.addEntry(entryData);
       
       // Update local timestamp for quick access
       set(state => {
@@ -1082,6 +1094,55 @@ export const useGameStore = create<CombinedState>()(
           break;
       }
     },
+
+    /**
+     * Reset game state to initial values
+     * Used for testing and debugging
+     */
+    resetGame: () => {
+      console.log('[GameStore] Resetting game state...');
+      set(state => {
+        // Reset player
+        state.player = { ...DEFAULT_PLAYER_ENTITY };
+        
+        // Reset game state
+        if (state.stateMachine) {
+          try {
+            state.stateMachine.resetState(false);
+          } catch (e) {
+            console.warn('[GameStore] Error resetting state machine:', e);
+          }
+        }
+        
+        // Reset other core state
+        state.currentMode = 'exploration';
+        state.isLoading = false;
+        state.error = null;
+        
+        // Reset resources via dedicated method
+        get().resetResources();
+        
+        // Emit reset event
+        get().emit(GameEventType.GAME_RESET, {
+          timestamp: Date.now()
+        });
+      });
+      
+      // Reset other stores
+      try {
+        if (useKnowledgeStore.getState().resetState) {
+          useKnowledgeStore.getState().resetState();
+        }
+        
+        if (useJournalStore.getState().clearJournal) {
+          useJournalStore.getState().clearJournal();
+        }
+      } catch (e) {
+        console.warn('[GameStore] Error resetting related stores:', e);
+      }
+      
+      return true;
+    }
   }))
 );
 
@@ -1100,3 +1161,436 @@ export function initializeGameStore(config?: { startingMode?: GameState['current
   
   return gameStore;
 }
+
+// ======== CHAMBER PATTERN SELECTORS & BRIDGE ========
+
+/**
+ * ================================================================
+ * CHAMBER PATTERN SELECTORS AND BRIDGE
+ * ================================================================
+ * 
+ * This section implements the Chamber Pattern for the game store,
+ * providing a comprehensive set of primitive value selectors and
+ * bridge functions to optimize rendering performance.
+ */
+
+// ======== PRIMITIVE SELECTORS ========
+// Export these for use with usePrimitiveStoreValue
+
+export const selectors = {
+  // Game state selectors
+  getGamePhase: (state: any) => state.gamePhase || state.stateMachine?.getCurrentState().gamePhase || 'day',
+  getCurrentNodeId: (state: any) => state.currentNodeId,
+  getIsLoading: (state: any) => state.isLoading || false,
+  getCurrentDay: (state: any) => state.currentDay || state.stateMachine?.getCurrentState().currentDay || 1,
+  getCompletedNodeCount: (state: any) => state.completedNodeIds?.length || state.stateMachine?.getCompletedNodeIds()?.length || 0,
+  getIsTransitioning: (state: any) => !!state.isTransitioning || (state.stateMachine?.getCurrentState().isTransitioning) || false,
+  getGameState: (state: any) => state.gameState || state.stateMachine?.getCurrentState().gameState || 'not_started',
+  getErrorMessage: (state: any) => state.error,
+  getGameMode: (state: any) => state.currentMode || 'exploration',
+
+  // Player selectors
+  getPlayerInsight: (state: any) => state.player?.insight || 0,
+  getPlayerMomentum: (state: any) => state.player?.momentum || 0,
+  getPlayerHealth: (state: any) => state.player?.health || 100,
+  getPlayerMaxHealth: (state: any) => state.player?.maxHealth || 100,
+  getPlayerInventorySize: (state: any) => state.player?.inventory?.length || 0,
+  getPlayerHasActiveBuffs: (state: any) => (state.player?.activeBuffs?.length || 0) > 0,
+  getPlayerActiveBuffCount: (state: any) => state.player?.activeBuffs?.length || 0,
+  getPlayerActiveBuffs: (state: any) => state.player?.activeBuffs || [],
+  getPlayerMasteryPercent: (state: any) => state.player?.knowledgeMastery?.overall || 0,
+  
+  // Map selectors
+  getMapNodeCount: (state: any) => state.map?.nodes?.length || 0,
+  getMapLocation: (state: any) => state.map?.currentLocation,
+  getMapSeed: (state: any) => state.map?.seed || '0',
+  getDiscoveredLocationCount: (state: any) => state.map?.discoveredLocations?.length || 0,
+  
+  // Knowledge selectors
+  getKnownInsightCount: (state: any) => Object.keys(state.knownInsights || {}).length,
+  getNewlyDiscoveredCount: (state: any) => state.newlyDiscovered?.length || 0,
+  getTotalMastery: (state: any) => state.totalMastery || 0,
+  getIsConstellationVisible: (state: any) => !!state.isConstellationVisible,
+  getActiveInsightId: (state: any) => state.activeInsightId,
+  getUnlockedTopicCount: (state: any) => state.unlockedTopics?.size || 0,
+  
+  // Dialogue selectors
+  getIsDialogueActive: (state: any) => !!state.isDialogueActive,
+  getCurrentDialogueId: (state: any) => state.currentDialogueId,
+  getCurrentSpeaker: (state: any) => state.currentSpeaker,
+  getCurrentMood: (state: any) => state.currentMood,
+  getDialogueChoiceCount: (state: any) => state.currentChoices?.length || 0,
+  getIsDialogueLoading: (state: any) => !!state.isDialogueLoading,
+  getHasDialogueError: (state: any) => !!state.dialogueError,
+  getDialogueErrorMessage: (state: any) => state.dialogueError,
+  
+  // Resource selectors
+  getResource: (resourceId: string) => (state: any) => 
+    state.resources?.[resourceId] || 0,
+  getInsightResource: (state: any) => 
+    state.resources?.insight || state.player?.insight || 0,
+  getMomentumResource: (state: any) => 
+    state.resources?.momentum || state.player?.momentum || 0,
+  
+  // Journal selectors
+  getLastEntryTimestamp: (state: any) => state.lastEntryTimestamp,
+  getIsJournalOpen: (state: any) => !!state.isJournalOpen,
+  
+  // Combined selectors (still return primitives)
+  getGameSummary: (state: any) => ({
+    phase: state.gamePhase || 'day',
+    day: state.currentDay || 1,
+    location: state.map?.currentLocation || 'unknown'
+  }),
+  
+  getPlayerHealthStatus: (state: any) => {
+    const health = state.player?.health || 0;
+    const maxHealth = state.player?.maxHealth || 100;
+    const percent = Math.floor((health / maxHealth) * 100);
+    return {
+      current: health,
+      max: maxHealth,
+      percent
+    };
+  },
+  
+  getResourceSummary: (state: any) => {
+    const insight = state.resources?.insight || state.player?.insight || 0;
+    const momentum = state.resources?.momentum || state.player?.momentum || 0;
+    return { insight, momentum };
+  }
+};
+
+// ======== CHAMBER ADAPTER HOOKS ========
+// These provide a transition path for components migrating to the pattern
+
+/**
+ * Chamber Adapter for game state
+ * Extracts common game state values with proper primitive handling
+ */
+export function useGameState() {
+  // Extract primitive values with the new pattern
+  const state = usePrimitiveValues(
+    useGameStore,
+    {
+      phase: selectors.getGamePhase,
+      currentNodeId: selectors.getCurrentNodeId,
+      currentDay: selectors.getCurrentDay,
+      isLoading: selectors.getIsLoading,
+      gameState: selectors.getGameState,
+      isTransitioning: selectors.getIsTransitioning,
+      error: selectors.getErrorMessage,
+      gameMode: selectors.getGameMode
+    },
+    {
+      phase: 'day',
+      currentNodeId: null,
+      currentDay: 1,
+      isLoading: false,
+      gameState: 'not_started',
+      isTransitioning: false,
+      error: null,
+      gameMode: 'exploration'
+    }
+  );
+  
+  // Extract key functions with stable references
+  const actions = useStableStoreValue(
+    useGameStore,
+    state => ({
+      setGameMode: state.setGameMode,
+      initializeGame: state.initializeGame,
+      setError: state.setError
+    })
+  );
+  
+  return {
+    // Primitives
+    ...state,
+    
+    // Computed values
+    isDay: state.phase === 'day',
+    isNight: state.phase === 'night',
+    isDayTransition: state.phase === 'transition_to_day',
+    isNightTransition: state.phase === 'transition_to_night',
+    
+    // Actions (safely extracted)
+    setGameMode: actions?.setGameMode || ((mode) => console.warn('setGameMode not available')),
+    initializeGame: actions?.initializeGame || (() => console.warn('initializeGame not available')),
+    setError: actions?.setError || ((error) => console.warn('setError not available'))
+  };
+}
+
+/**
+ * Chamber Adapter for player state
+ * Extracts common player values with proper primitive handling
+ */
+export function usePlayerState() {
+  // Extract primitive values
+  const playerState = usePrimitiveValues(
+    useGameStore,
+    {
+      insight: selectors.getPlayerInsight,
+      momentum: selectors.getPlayerMomentum,
+      health: selectors.getPlayerHealth,
+      maxHealth: selectors.getPlayerMaxHealth,
+      inventorySize: selectors.getPlayerInventorySize,
+      masteryPercent: selectors.getPlayerMasteryPercent,
+      activeBuffCount: selectors.getPlayerActiveBuffCount
+    },
+    {
+      insight: 0,
+      momentum: 0,
+      health: 100,
+      maxHealth: 100,
+      inventorySize: 0,
+      masteryPercent: 0,
+      activeBuffCount: 0
+    }
+  );
+  
+  // Extract player actions
+  const actions = useStableStoreValue(
+    useGameStore,
+    state => ({
+      updateInsight: state.updateInsight,
+      incrementMomentum: state.incrementMomentum,
+      resetMomentum: state.resetMomentum,
+      updateKnowledgeMastery: state.updateKnowledgeMastery,
+      addToInventory: state.addToInventory,
+      applyBuff: state.applyBuff,
+      removeBuff: state.removeBuff
+    })
+  );
+  
+  return {
+    // Primitives
+    ...playerState,
+    
+    // Computed values
+    healthPercent: playerState.health / playerState.maxHealth * 100,
+    healthStatus: playerState.health < 30 ? 'critical' : playerState.health < 60 ? 'warning' : 'good',
+    hasBuffs: playerState.activeBuffCount > 0,
+    
+    // Actions (safely extracted)
+    updateInsight: actions?.updateInsight || ((amount) => console.warn('updateInsight not available')),
+    incrementMomentum: actions?.incrementMomentum || (() => console.warn('incrementMomentum not available')),
+    resetMomentum: actions?.resetMomentum || (() => console.warn('resetMomentum not available')),
+    updateKnowledgeMastery: actions?.updateKnowledgeMastery || 
+      ((conceptId, amount, domainId) => console.warn('updateKnowledgeMastery not available')),
+    addToInventory: actions?.addToInventory || ((itemId) => console.warn('addToInventory not available')),
+    applyBuff: actions?.applyBuff || ((buffId, duration) => console.warn('applyBuff not available')),
+    removeBuff: actions?.removeBuff || ((buffId) => console.warn('removeBuff not available'))
+  };
+}
+
+/**
+ * Chamber Adapter for knowledge state
+ * Extracts common knowledge values with proper primitive handling
+ */
+export function useKnowledgeState() {
+  // Extract primitive values
+  const state = usePrimitiveValues(
+    useKnowledgeStore,
+    {
+      totalMastery: selectors.getTotalMastery,
+      newlyDiscoveredCount: selectors.getNewlyDiscoveredCount,
+      knownInsightCount: selectors.getKnownInsightCount,
+      isConstellationVisible: selectors.getIsConstellationVisible,
+      activeInsightId: selectors.getActiveInsightId,
+      unlockedTopicCount: selectors.getUnlockedTopicCount
+    },
+    {
+      totalMastery: 0,
+      newlyDiscoveredCount: 0,
+      knownInsightCount: 0,
+      isConstellationVisible: false,
+      activeInsightId: null,
+      unlockedTopicCount: 0
+    }
+  );
+  
+  // Extract knowledge actions
+  const actions = useStableStoreValue(
+    useKnowledgeStore,
+    state => ({
+      transferInsights: state.transferInsights,
+      resetNewlyDiscovered: state.resetNewlyDiscovered,
+      addInsight: state.addInsight,
+      addConnection: state.addConnection,
+      unlockTopic: state.unlockTopic,
+      setConstellationVisibility: state.setConstellationVisibility,
+      setActiveInsight: state.setActiveInsight
+    })
+  );
+  
+  return {
+    // Primitives
+    ...state,
+    
+    // Computed values
+    hasNewConcepts: state.newlyDiscoveredCount > 0,
+    masteryLevel: state.totalMastery < 25 ? 'novice' : 
+                 state.totalMastery < 50 ? 'apprentice' : 
+                 state.totalMastery < 75 ? 'practitioner' : 'expert',
+    
+    // Actions (safely extracted)
+    transferInsights: actions?.transferInsights || (() => console.warn('transferInsights not available')),
+    resetNewlyDiscovered: actions?.resetNewlyDiscovered || (() => console.warn('resetNewlyDiscovered not available')),
+    addInsight: actions?.addInsight || ((insightId) => console.warn('addInsight not available')),
+    addConnection: actions?.addConnection || ((fromId, toId) => console.warn('addConnection not available')),
+    unlockTopic: actions?.unlockTopic || ((topicId) => console.warn('unlockTopic not available')),
+    setConstellationVisibility: actions?.setConstellationVisibility || 
+      ((isVisible) => console.warn('setConstellationVisibility not available')),
+    setActiveInsight: actions?.setActiveInsight || ((insightId) => console.warn('setActiveInsight not available'))
+  };
+}
+
+/**
+ * Chamber Adapter for dialogue state
+ * Extracts dialogue-related primitives and actions
+ */
+export function useDialogueState() {
+  // Extract primitive values
+  const state = usePrimitiveValues(
+    useGameStore,
+    {
+      isActive: selectors.getIsDialogueActive,
+      currentDialogueId: selectors.getCurrentDialogueId,
+      currentSpeaker: selectors.getCurrentSpeaker,
+      currentMood: selectors.getCurrentMood,
+      choiceCount: selectors.getDialogueChoiceCount,
+      isLoading: selectors.getIsDialogueLoading,
+      hasError: selectors.getHasDialogueError,
+      errorMessage: selectors.getDialogueErrorMessage
+    },
+    {
+      isActive: false,
+      currentDialogueId: null,
+      currentSpeaker: null,
+      currentMood: null,
+      choiceCount: 0,
+      isLoading: false,
+      hasError: false,
+      errorMessage: null
+    }
+  );
+  
+  // Extract dialogue actions
+  const actions = useStableStoreValue(
+    useGameStore,
+    state => ({
+      startDialogue: state.startDialogue,
+      advanceDialogue: state.advanceDialogue,
+      endDialogue: state.endDialogue
+    })
+  );
+  
+  return {
+    // Primitives
+    ...state,
+    
+    // Computed values
+    hasChoices: state.choiceCount > 0,
+    
+    // Actions (safely extracted)
+    startDialogue: actions?.startDialogue || ((dialogueId) => console.warn('startDialogue not available')),
+    advanceDialogue: actions?.advanceDialogue || ((choiceIndex) => console.warn('advanceDialogue not available')),
+    endDialogue: actions?.endDialogue || (() => console.warn('endDialogue not available'))
+  };
+}
+
+/**
+ * Map state adapter for Chamber Pattern
+ * Extracts map-related primitives and actions
+ */
+export function useMapState() {
+  // Extract primitive values
+  const mapState = usePrimitiveValues(
+    useGameStore,
+    {
+      currentLocation: selectors.getMapLocation,
+      nodeCount: selectors.getMapNodeCount,
+      seed: selectors.getMapSeed,
+      discoveredCount: selectors.getDiscoveredLocationCount
+    },
+    {
+      currentLocation: 'unknown',
+      nodeCount: 0,
+      seed: '0',
+      discoveredCount: 0
+    }
+  );
+  
+  // Extract map from store (this is an object, but we need it)
+  const mapObject = useGameStore(state => state.map);
+  
+  return {
+    // Primitives
+    ...mapState,
+    
+    // Needed objects (use carefully)
+    nodes: mapObject?.nodes || [],
+    connections: mapObject?.connections || [],
+    discoveredLocations: mapObject?.discoveredLocations || [],
+    
+    // Computed values
+    hasNodes: mapState.nodeCount > 0,
+    explorationPercent: mapObject ? 
+      Math.floor((mapObject.discoveredLocations.length / Math.max(mapObject.nodes.length, 1)) * 100) : 0
+  };
+}
+
+/**
+ * Transitional store hook for gradual migration
+ * Provides an escape hatch to choose between patterns
+ * 
+ * Usage:
+ * // Works with either pattern
+ * const gamePhase = useTransitionalStore(
+ *   useGameStore,
+ *   state => state.gamePhase,
+ *   'day',
+ *   true // use Chamber pattern
+ * );
+ */
+export function useTransitionalStore<T, V>(
+  store: any, 
+  selector: (state: T) => V,
+  defaultValue: V,
+  usePrimitives = false
+): V {
+  try {
+    if (usePrimitives) {
+      return usePrimitiveStoreValue<T, V extends string | number | boolean | undefined ? V : never>(
+        store, 
+        selector as any, 
+        defaultValue as any
+      ) as any;
+    } else {
+      // Direct store access for backwards compatibility
+      return (store(selector) ?? defaultValue);
+    }
+  } catch (e) {
+    console.warn('[storeHooks] Store access error:', e);
+    return defaultValue;
+  }
+}
+
+// Add debug window access in development mode
+if (process.env.NODE_ENV !== 'production' && typeof window !== 'undefined') {
+  (window as any).__GAME_STORE_DEBUG__ = {
+    getState: () => useGameStore.getState(),
+    getSelectors: () => selectors,
+    resetGame: () => useGameStore.getState().resetGame(),
+    inspectBridges: () => ({
+      gameState: useGameState(),
+      playerState: usePlayerState(),
+      knowledgeState: useKnowledgeState(),
+      dialogueState: useDialogueState(),
+      mapState: useMapState()
+    })
+  };
+}
+
+export default useGameStore;

@@ -13,6 +13,9 @@
 │   │   │   └── formats
 │   │   │       └── ConversationFormat.tsx
 │   │   ├── debug
+│   │   │   ├── ChamberDebugInitializer.tsx
+│   │   │   ├── ClientDashboardWrapper.tsx
+│   │   │   ├── PerformanceDashboard.tsx
 │   │   │   └── VerticalSliceDebugPanel.tsx
 │   │   ├── gameplay
 │   │   │   ├── InsightMeter.tsx
@@ -52,6 +55,8 @@
 │   │   │   └── GameStateMachine.ts
 │   │   ├── themeConstants.ts
 │   │   └── utils
+│   │       ├── chamberDebug.ts
+│   │       ├── storeAnalyzer.ts
 │   │       └── storeHooks.ts
 │   ├── data
 │   │   ├── concepts
@@ -113,6 +118,7 @@
 │   ├── testKnowledgeSystem.js
 │   ├── testResourceSystems.js
 │   └── verticalSliceIntegrationTest.js
-└── tsconfig.json
+├── tsconfig.json
+└── tsconfig.tsbuildinfo
 
-28 directories, 87 files
+28 directories, 93 files

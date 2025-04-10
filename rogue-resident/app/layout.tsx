@@ -3,6 +3,9 @@ import { Geist, Geist_Mono } from "next/font/google";
 import PixelThemeProvider from "./components/PixelThemeProvider";
 import "./globals.css";
 
+// Import the client wrapper component
+import ClientDashboardWrapper from "./components/debug/ClientDashboardWrapper";
+
 const geistSans = Geist({
   variable: "--font-geist-sans",
   subsets: ["latin"],
@@ -84,7 +87,40 @@ export default function RootLayout({
         <PixelThemeProvider>
           {/* Note: Systems initialization happens in the page component */}
           {children}
+          
+          {/* Use our client wrapper component for the dashboard */}
+          {isDevelopment && <ClientDashboardWrapper />}
         </PixelThemeProvider>
+        
+        {/* Development-only script tag - this is safe in server components */}
+        {isDevelopment && (
+          <script
+            dangerouslySetInnerHTML={{
+              __html: `
+                // Add error monitoring for Chamber Pattern violations
+                const originalError = console.error;
+                console.error = function(...args) {
+                  originalError.apply(console, args);
+                  
+                  // Check for React child errors that may indicate Chamber Pattern issues
+                  const errorMsg = args.join(' ');
+                  if (
+                    errorMsg.includes('Objects are not valid as a React child') || 
+                    errorMsg.includes('getSnapshot should be cached')
+                  ) {
+                    console.warn(
+                      '%c[ChamberPattern] Potential Chamber Pattern violation detected!', 
+                      'color: #ef4444; font-weight: bold'
+                    );
+                    console.warn(
+                      'Tip: Use usePrimitiveStoreValue to extract primitives instead of objects'
+                    );
+                  }
+                };
+              `
+            }}
+          />
+        )}
       </body>
     </html>
   );

@@ -11,6 +11,9 @@ import DialogueStateMachine, { useDialogueStateMachine } from './dialogue/Dialog
 import ActionIntegration from './dialogue/ActionIntegration';
 import type * as ActionIntegrationTypes from './dialogue/ActionIntegration';
 
+// --- Chamber Pattern Debugging ---
+import { createTrackedStores } from '@/app/core/utils/storeAnalyzer';
+
 // --- Store Imports ---
 import { useGameStore } from '@/app/store/gameStore';
 import { useKnowledgeStore } from '@/app/store/knowledgeStore';
@@ -111,6 +114,17 @@ export function useCoreInitialization() {
       // 6. Initialize Game Store Slice
       initializeGameAction({ startingMode: 'exploration' });
       console.log("Game Store slice initialized.");
+      
+      // 7. Initialize Chamber Pattern diagnostics and tracking
+      if (process.env.NODE_ENV !== 'production') {
+        try {
+          console.log("Initializing Chamber Pattern diagnostics...");
+          createTrackedStores();
+        } catch (e) {
+          console.warn("Chamber Pattern diagnostics initialization failed:", e);
+          // Non-critical, so we continue
+        }
+      }
 
       setInitialized(true);
       console.log("Core systems initialization complete.");
@@ -150,6 +164,18 @@ export function useCoreInitialization() {
       useJournalStore.persist.clearStorage();
       console.log("Journal store persistence cleared.");
     } catch (e) { console.error("Error clearing journal store persistence:", e); }
+    
+    // Reset Chamber Pattern diagnostics if available
+    if (typeof window !== 'undefined') {
+      try {
+        if ((window as any).__CHAMBER_DEBUG__?.resetStats) {
+          (window as any).__CHAMBER_DEBUG__.resetStats();
+        }
+        if ((window as any).__STORE_ANALYZER__?.reset) {
+          (window as any).__STORE_ANALYZER__.reset();
+        }
+      } catch (e) { console.warn("Error resetting Chamber Pattern diagnostics:", e); }
+    }
 
     // Clear refs
     eventBusRef.current = null;
@@ -199,6 +225,34 @@ export function useCoreInitialization() {
           hasStateMachine: !!stateMachineRef.current,
           hasProgressionResolver: !!progressionResolverRef.current,
           hasActionIntegration: !!actionIntegrationRef.current
+        },
+        chamberPatternEnabled: true,
+        diagnosticsAvailable: !!(
+          typeof window !== 'undefined' && 
+          ((window as any).__CHAMBER_DEBUG__ || (window as any).__STORE_ANALYZER__)
+        ),
+        runDiagnostics: () => {
+          console.group('Chamber Pattern Diagnostics');
+          
+          try {
+            if ((window as any).__CHAMBER_DEBUG__?.getSuspiciousComponents) {
+              const suspicious = (window as any).__CHAMBER_DEBUG__.getSuspiciousComponents();
+              console.log('Suspicious components:', suspicious);
+            } else {
+              console.warn('Chamber Debug API not available');
+            }
+            
+            if ((window as any).__STORE_ANALYZER__?.getIssues) {
+              const issues = (window as any).__STORE_ANALYZER__.getIssues();
+              console.log('Store access issues:', issues);
+            } else {
+              console.warn('Store Analyzer API not available');
+            }
+          } catch (e) {
+            console.error('Error running diagnostics:', e);
+          }
+          
+          console.groupEnd();
         }
       };
     }

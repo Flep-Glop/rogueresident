@@ -1,19 +1,21 @@
 // app/store/knowledgeStore.ts
 /**
- * Knowledge Constellation System
+ * Knowledge Constellation System - Chamber Pattern Compliant
  * 
  * This store manages the player's evolving understanding of medical physics
  * represented as a personal constellation in the night sky. Stars (concepts)
  * illuminate as mastery increases, forming connections that represent
  * true expertise development.
  * 
- * Design Philosophy:
- * - Knowledge acquisition mirrors authentic expertise development
- * - Visual metaphors reinforce abstract learning
- * - Systems reflect cognitive development patterns
+ * Chamber Pattern enhancements:
+ * - Primitive selectors for performance-optimized component binding
+ * - Memoized calculations for domain mastery metrics
+ * - Stable function references for callback consistency 
+ * - Atomic state updates for visualization consistency
  */
 
 import { create } from 'zustand';
+import { immer } from 'zustand/middleware/immer'; // Added immer for simpler updates
 import { nanoid } from 'nanoid';
 import { safeDispatch } from '@/app/core/events/CentralEventBus';
 import { GameEventType } from '@/app/core/events/EventTypes';
@@ -98,7 +100,7 @@ export interface JournalEntry {
   source: 'challenge' | 'dialogue' | 'item' | 'observation';
 }
 
-interface KnowledgeState {
+export interface KnowledgeState {
   // Core data structures
   nodes: ConceptNode[];
   connections: ConceptConnection[];
@@ -107,10 +109,12 @@ interface KnowledgeState {
   // Ephemeral tracking
   pendingInsights: Array<{conceptId: string, amount: number}>;
   newlyDiscovered: string[]; // Concept IDs for animation
+  activeInsight: string | null; // Currently focused insight
   
   // Derived metrics
   domainMastery: Record<KnowledgeDomain, number>; // 0-100%
   totalMastery: number; // 0-100% across all domains
+  constellationVisible: boolean; // UI state tracking
   
   // Actions
   addConcept: (concept: Omit<ConceptNode, 'id' | 'discovered' | 'connections' | 'lastPracticed'>) => string;
@@ -122,7 +126,13 @@ interface KnowledgeState {
   applyKnowledgeDecay: () => void;
   transferInsights: () => void;
   resetNewlyDiscovered: () => void;
-  unlockKnowledge: (knowledgeId: string) => void; // Added for SimplifiedKapoorMap
+  setActiveInsight: (conceptId: string | null) => void;
+  setConstellationVisibility: (isVisible: boolean) => void;
+  
+  // Legacy compatibility
+  unlockKnowledge: (knowledgeId: string) => void;
+  addInsight: (insightId: string) => void; // Legacy method
+  unlockTopic: (topicId: string) => void; // Legacy method
   
   // Development helpers
   importKnowledgeData: (data: Partial<KnowledgeState>) => void;
@@ -243,14 +253,14 @@ export const getMasteryLevel = (mastery: number): MasteryLevel => {
   return 'mastered';
 };
 
-// Create the knowledge store with Zustand
-export const useKnowledgeStore = create<KnowledgeState>((set, get) => {
-  // Build initial state
-  const initialConnections = buildInitialConnections(medicalPhysicsConcepts);
-  const initialDomainMastery = calculateDomainMastery(medicalPhysicsConcepts);
-  const initialTotalMastery = calculateTotalMastery(initialDomainMastery, medicalPhysicsConcepts);
-  
-  return {
+// Initial state preparation
+const initialConnections = buildInitialConnections(medicalPhysicsConcepts);
+const initialDomainMastery = calculateDomainMastery(medicalPhysicsConcepts);
+const initialTotalMastery = calculateTotalMastery(initialDomainMastery, medicalPhysicsConcepts);
+
+// Create the knowledge store with Zustand and Immer
+export const useKnowledgeStore = create<KnowledgeState>()(
+  immer((set, get) => ({
     // Initial state
     nodes: medicalPhysicsConcepts,
     connections: initialConnections,
@@ -259,6 +269,8 @@ export const useKnowledgeStore = create<KnowledgeState>((set, get) => {
     domainMastery: initialDomainMastery,
     totalMastery: initialTotalMastery,
     newlyDiscovered: [],
+    activeInsight: null,
+    constellationVisible: false,
     
     // Add a new concept to the constellation
     addConcept: (concept) => {
@@ -283,9 +295,7 @@ export const useKnowledgeStore = create<KnowledgeState>((set, get) => {
           lastPracticed: Date.now()
         };
         
-        const updatedNodes = [...state.nodes, newNode];
-        
-        return { nodes: updatedNodes };
+        state.nodes.push(newNode);
       });
       
       return id;
@@ -293,66 +303,86 @@ export const useKnowledgeStore = create<KnowledgeState>((set, get) => {
     
     // Discover a previously unknown concept
     discoverConcept: (conceptId) => {
+      const nodeAlreadyDiscovered = get().nodes.find(n => n.id === conceptId)?.discovered;
+      
+      // Skip if already discovered (avoid unnecessary state updates)
+      if (nodeAlreadyDiscovered) return;
+      
       set(state => {
-        // Skip if already discovered
-        if (state.nodes.find(n => n.id === conceptId)?.discovered) {
-          return state;
+        // Find the node index
+        const nodeIndex = state.nodes.findIndex(n => n.id === conceptId);
+        if (nodeIndex === -1) {
+          console.warn(`Cannot discover unknown concept: ${conceptId}`);
+          return;
         }
         
         // Mark node as discovered
-        const updatedNodes = state.nodes.map(node => 
-          node.id === conceptId 
-            ? { ...node, discovered: true, lastPracticed: Date.now() } 
-            : node
-        );
+        state.nodes[nodeIndex].discovered = true;
+        state.nodes[nodeIndex].lastPracticed = Date.now();
+        
+        // Add to newly discovered list
+        if (!state.newlyDiscovered.includes(conceptId)) {
+          state.newlyDiscovered.push(conceptId);
+        }
         
         // Recalculate domain mastery
-        const domainMastery = calculateDomainMastery(updatedNodes);
-        const totalMastery = calculateTotalMastery(domainMastery, updatedNodes);
-        
-        return {
-          nodes: updatedNodes,
-          domainMastery,
-          totalMastery,
-          newlyDiscovered: [...state.newlyDiscovered, conceptId]
-        };
+        state.domainMastery = calculateDomainMastery(state.nodes);
+        state.totalMastery = calculateTotalMastery(state.domainMastery, state.nodes);
       });
+      
+      // Emit knowledge discovery event
+      try {
+        safeDispatch(
+          GameEventType.KNOWLEDGE_DISCOVERED,
+          { conceptId },
+          'knowledgeStore.discoverConcept'
+        );
+      } catch (e) {
+        console.error('Error dispatching knowledge discovery event:', e);
+      }
     },
     
     // Update mastery level for a concept
     updateMastery: (conceptId, amount) => {
+      if (amount === 0) return; // Skip no-op updates
+      
       set(state => {
         // Find the node
-        const node = state.nodes.find(n => n.id === conceptId);
-        if (!node) {
+        const nodeIndex = state.nodes.findIndex(n => n.id === conceptId);
+        if (nodeIndex === -1) {
           console.warn(`Concept not found: ${conceptId}`);
-          return state;
+          return;
         }
+        
+        const node = state.nodes[nodeIndex];
         
         // Calculate new mastery (capped at 0-100%)
         const newMastery = Math.min(100, Math.max(0, node.mastery + amount));
+        if (newMastery === node.mastery) return; // Skip if no change
         
         // Auto-discover node if gaining mastery for the first time
         const shouldDiscover = !node.discovered && amount > 0;
         
         // Update node mastery and timestamp
-        const updatedNodes = state.nodes.map(node => 
-          node.id === conceptId 
-            ? { 
-                ...node, 
-                mastery: newMastery,
-                discovered: node.discovered || shouldDiscover,
-                lastPracticed: Date.now()
-              } 
-            : node
-        );
+        state.nodes[nodeIndex].mastery = newMastery;
+        state.nodes[nodeIndex].lastPracticed = Date.now();
+        
+        // Auto-discover if needed
+        if (shouldDiscover) {
+          state.nodes[nodeIndex].discovered = true;
+          
+          // Track newly discovered concepts for animation
+          if (!state.newlyDiscovered.includes(conceptId)) {
+            state.newlyDiscovered.push(conceptId);
+          }
+        }
         
         // Update connection strengths for all affected connections
-        const updatedConnections = state.connections.map(conn => {
+        state.connections = state.connections.map(conn => {
           if (conn.source === conceptId || conn.target === conceptId) {
             // Get the other node in the connection
             const otherNodeId = conn.source === conceptId ? conn.target : conn.source;
-            const otherNode = updatedNodes.find(n => n.id === otherNodeId);
+            const otherNode = state.nodes.find(n => n.id === otherNodeId);
             
             // Recalculate connection strength based on both nodes' mastery
             return {
@@ -364,57 +394,69 @@ export const useKnowledgeStore = create<KnowledgeState>((set, get) => {
         });
         
         // Track pending insights for night phase transfer
-        let pendingInsights = [...state.pendingInsights];
         if (amount > 0) {
-          pendingInsights.push({
+          state.pendingInsights.push({
             conceptId,
             amount
           });
         }
         
-        // Track newly discovered concepts for animation
-        const newlyDiscovered = shouldDiscover
-          ? [...state.newlyDiscovered, conceptId]
-          : state.newlyDiscovered;
-        
         // Recalculate domain mastery metrics
-        const domainMastery = calculateDomainMastery(updatedNodes);
-        const totalMastery = calculateTotalMastery(domainMastery, updatedNodes);
+        state.domainMastery = calculateDomainMastery(state.nodes);
+        state.totalMastery = calculateTotalMastery(state.domainMastery, state.nodes);
         
         console.log(`Updated mastery for ${conceptId}: ${node.mastery} -> ${newMastery}`);
-        
-        return {
-          nodes: updatedNodes,
-          connections: updatedConnections,
-          pendingInsights,
-          domainMastery,
-          totalMastery,
-          newlyDiscovered
-        };
       });
+      
+      // Emit mastery increased event
+      try {
+        safeDispatch(
+          GameEventType.MASTERY_INCREASED,
+          { 
+            conceptId, 
+            amount,
+            domain: get().nodes.find(n => n.id === conceptId)?.domain || 'general'
+          },
+          'knowledgeStore.updateMastery'
+        );
+      } catch (e) {
+        console.error('Error dispatching mastery event:', e);
+      }
     },
     
     // Create a new connection between concepts
     createConnection: (sourceId, targetId) => {
+      // Validate input
+      if (sourceId === targetId) {
+        console.warn('Cannot connect a concept to itself');
+        return;
+      }
+      
+      // Check for existing connection
+      const connectionExists = get().connections.some(
+        conn => (conn.source === sourceId && conn.target === targetId) ||
+               (conn.source === targetId && conn.target === sourceId)
+      );
+      
+      // Skip if connection already exists
+      if (connectionExists) {
+        console.warn('Connection already exists');
+        return;
+      }
+      
       set(state => {
         // Validate nodes exist and are discovered
         const sourceNode = state.nodes.find(n => n.id === sourceId);
         const targetNode = state.nodes.find(n => n.id === targetId);
         
-        if (!sourceNode || !targetNode || !sourceNode.discovered || !targetNode.discovered) {
-          console.warn('Cannot create connection: nodes not found or not discovered');
-          return state;
+        if (!sourceNode || !targetNode) {
+          console.warn('Cannot create connection: nodes not found');
+          return;
         }
         
-        // Check if connection already exists
-        const existingConnection = state.connections.find(
-          conn => (conn.source === sourceId && conn.target === targetId) ||
-                 (conn.source === targetId && conn.target === sourceId)
-        );
-        
-        if (existingConnection) {
-          console.warn('Connection already exists');
-          return state;
+        if (!sourceNode.discovered || !targetNode.discovered) {
+          console.warn('Cannot create connection: nodes not discovered');
+          return;
         }
         
         // Create new connection with strength based on node mastery
@@ -425,77 +467,108 @@ export const useKnowledgeStore = create<KnowledgeState>((set, get) => {
           discovered: true
         };
         
-        // Update nodes to include connection references
-        const updatedNodes = state.nodes.map(node => {
-          if (node.id === sourceId && !node.connections.includes(targetId)) {
-            return {
-              ...node,
-              connections: [...node.connections, targetId],
-              lastPracticed: Date.now() // Forming connections refreshes concepts
-            };
-          }
-          if (node.id === targetId && !node.connections.includes(sourceId)) {
-            return {
-              ...node,
-              connections: [...node.connections, sourceId],
-              lastPracticed: Date.now()
-            };
-          }
-          return node;
-        });
+        // Add connection to array
+        state.connections.push(newConnection);
         
-        return {
-          nodes: updatedNodes,
-          connections: [...state.connections, newConnection]
-        };
+        // Update node connection references
+        const sourceNodeIndex = state.nodes.findIndex(n => n.id === sourceId);
+        if (sourceNodeIndex !== -1 && !state.nodes[sourceNodeIndex].connections.includes(targetId)) {
+          state.nodes[sourceNodeIndex].connections.push(targetId);
+          state.nodes[sourceNodeIndex].lastPracticed = Date.now();
+        }
+        
+        const targetNodeIndex = state.nodes.findIndex(n => n.id === targetId);
+        if (targetNodeIndex !== -1 && !state.nodes[targetNodeIndex].connections.includes(sourceId)) {
+          state.nodes[targetNodeIndex].connections.push(sourceId);
+          state.nodes[targetNodeIndex].lastPracticed = Date.now();
+        }
       });
+      
+      // Emit connection created event
+      try {
+        safeDispatch(
+          GameEventType.CONNECTION_CREATED,
+          { 
+            sourceId, 
+            targetId,
+            sourceDomain: get().nodes.find(n => n.id === sourceId)?.domain,
+            targetDomain: get().nodes.find(n => n.id === targetId)?.domain
+          },
+          'knowledgeStore.createConnection'
+        );
+      } catch (e) {
+        console.error('Error dispatching connection event:', e);
+      }
     },
     
     // Discover an existing but previously hidden connection
     discoverConnection: (sourceId, targetId) => {
       set(state => {
         // Find the connection
-        const connection = state.connections.find(
+        const connectionIndex = state.connections.findIndex(
           conn => (conn.source === sourceId && conn.target === targetId) ||
                  (conn.source === targetId && conn.target === sourceId)
         );
         
-        if (!connection) {
+        if (connectionIndex === -1) {
           console.warn('Connection not found');
-          return state;
+          return;
         }
         
         // Update connection visibility
-        const updatedConnections = state.connections.map(conn => 
-          (conn.source === sourceId && conn.target === targetId) ||
-          (conn.source === targetId && conn.target === sourceId)
-            ? { ...conn, discovered: true }
-            : conn
-        );
-        
-        return {
-          connections: updatedConnections
-        };
+        if (!state.connections[connectionIndex].discovered) {
+          state.connections[connectionIndex].discovered = true;
+          
+          // Emit discovery event
+          try {
+            safeDispatch(
+              GameEventType.CONNECTION_DISCOVERED,
+              { sourceId, targetId },
+              'knowledgeStore.discoverConnection'
+            );
+          } catch (e) {
+            console.error('Error dispatching connection discovery event:', e);
+          }
+        }
       });
     },
     
     // Add a journal entry and apply its mastery gain
     addJournalEntry: (entry) => {
+      if (!entry.conceptId || !entry.content) {
+        console.warn('Invalid journal entry', entry);
+        return;
+      }
+      
       const id = nanoid();
       
-      set(state => ({
-        journalEntries: [
-          ...state.journalEntries,
-          {
-            id,
-            ...entry,
-            timestamp: Date.now()
-          }
-        ]
-      }));
+      set(state => {
+        state.journalEntries.push({
+          id,
+          ...entry,
+          timestamp: Date.now()
+        });
+      });
       
-      // Also update concept mastery
-      get().updateMastery(entry.conceptId, entry.masteryGained);
+      // Also update concept mastery if specified
+      if (entry.masteryGained > 0) {
+        get().updateMastery(entry.conceptId, entry.masteryGained);
+      }
+      
+      // Emit journal entry event
+      try {
+        safeDispatch(
+          GameEventType.JOURNAL_ENTRY_ADDED,
+          { 
+            conceptId: entry.conceptId,
+            source: entry.source,
+            masteryGained: entry.masteryGained
+          },
+          'knowledgeStore.addJournalEntry'
+        );
+      } catch (e) {
+        console.error('Error dispatching journal entry event:', e);
+      }
     },
     
     // Apply knowledge decay based on time since last practice
@@ -509,14 +582,14 @@ export const useKnowledgeStore = create<KnowledgeState>((set, get) => {
         let needsMetricsUpdate = false;
         
         // Apply decay to each node
-        const updatedNodes = state.nodes.map(node => {
-          if (!node.discovered || !node.lastPracticed) return node;
+        state.nodes.forEach((node, index) => {
+          if (!node.discovered || !node.lastPracticed) return;
           
           // Calculate days since last practice
           const daysSinceLastPractice = (now - node.lastPracticed) / (1000 * 60 * 60 * 24);
           
           // Only decay after threshold
-          if (daysSinceLastPractice <= decayThresholdDays) return node;
+          if (daysSinceLastPractice <= decayThresholdDays) return;
           
           // Calculate decay amount
           const decayDays = daysSinceLastPractice - decayThresholdDays;
@@ -532,55 +605,99 @@ export const useKnowledgeStore = create<KnowledgeState>((set, get) => {
           // Only update if there's a meaningful change
           if (Math.abs(newMastery - node.mastery) >= 0.5) {
             needsMetricsUpdate = true;
-            return { ...node, mastery: newMastery };
+            state.nodes[index].mastery = newMastery;
           }
-          
-          return node;
         });
         
-        // Recalculate metrics only if needed
-        if (!needsMetricsUpdate) return { nodes: updatedNodes };
+        // Exit early if no changes
+        if (!needsMetricsUpdate) return;
         
         // Update connection strengths based on new mastery levels
-        const updatedConnections = state.connections.map(conn => {
-          const sourceNode = updatedNodes.find(n => n.id === conn.source);
-          const targetNode = updatedNodes.find(n => n.id === conn.target);
+        state.connections.forEach((conn, index) => {
+          const sourceNode = state.nodes.find(n => n.id === conn.source);
+          const targetNode = state.nodes.find(n => n.id === conn.target);
           
-          if (!sourceNode || !targetNode) return conn;
+          if (!sourceNode || !targetNode) return;
           
-          return {
-            ...conn,
-            strength: (sourceNode.mastery + targetNode.mastery) / 2
-          };
+          // Recalculate connection strength
+          state.connections[index].strength = (sourceNode.mastery + targetNode.mastery) / 2;
         });
         
         // Recalculate domain mastery
-        const domainMastery = calculateDomainMastery(updatedNodes);
-        const totalMastery = calculateTotalMastery(domainMastery, updatedNodes);
-        
-        return {
-          nodes: updatedNodes,
-          connections: updatedConnections,
-          domainMastery,
-          totalMastery
-        };
+        state.domainMastery = calculateDomainMastery(state.nodes);
+        state.totalMastery = calculateTotalMastery(state.domainMastery, state.nodes);
       });
+      
+      // Emit decay event
+      try {
+        safeDispatch(
+          GameEventType.KNOWLEDGE_DECAY_APPLIED,
+          {},
+          'knowledgeStore.applyKnowledgeDecay'
+        );
+      } catch (e) {
+        console.error('Error dispatching decay event:', e);
+      }
     },
     
     // Transfer pending insights to the constellation (night phase)
     transferInsights: () => {
-      set({ pendingInsights: [] });
+      // Skip if no insights to transfer
+      if (get().pendingInsights.length === 0) return;
+      
+      set(state => {
+        // Clear pending insights
+        state.pendingInsights = [];
+      });
+      
+      // Emit transfer event
+      try {
+        safeDispatch(
+          GameEventType.KNOWLEDGE_TRANSFERRED,
+          {
+            insightCount: get().pendingInsights.length
+          },
+          'knowledgeStore.transferInsights'
+        );
+      } catch (e) {
+        console.error('Error dispatching transfer event:', e);
+      }
     },
     
     // Reset newly discovered tracking after animations complete
     resetNewlyDiscovered: () => {
       // Only update state if there are actually newly discovered items
+      if (get().newlyDiscovered.length === 0) return;
+      
       set(state => {
-        // If array is already empty, don't trigger a state update
-        if (state.newlyDiscovered.length === 0) {
-          return state; // Return the current state unchanged
+        state.newlyDiscovered = [];
+      });
+    },
+    
+    // Set the actively selected insight
+    setActiveInsight: (conceptId: string | null) => {
+      set(state => {
+        state.activeInsight = conceptId;
+      });
+      
+      // Emit selection event if concept selected
+      if (conceptId) {
+        try {
+          safeDispatch(
+            GameEventType.CONCEPT_SELECTED,
+            { conceptId },
+            'knowledgeStore.setActiveInsight'
+          );
+        } catch (e) {
+          console.error('Error dispatching concept selection event:', e);
         }
-        return { newlyDiscovered: [] };
+      }
+    },
+    
+    // Set constellation visualization visibility
+    setConstellationVisibility: (isVisible: boolean) => {
+      set(state => {
+        state.constellationVisible = isVisible;
       });
     },
     
@@ -637,45 +754,245 @@ export const useKnowledgeStore = create<KnowledgeState>((set, get) => {
       }
     },
     
+    // Legacy method for backward compatibility
+    addInsight: (insightId: string) => {
+      // Simply forward to unlockKnowledge
+      get().unlockKnowledge(insightId);
+    },
+    
+    // Legacy method for unlocking topic domains
+    unlockTopic: (topicId: string) => {
+      // Check if topicId is a valid domain
+      const isValidDomain = Object.keys(KNOWLEDGE_DOMAINS).includes(topicId);
+      if (!isValidDomain) {
+        console.warn(`Invalid domain: ${topicId}`);
+        return;
+      }
+      
+      // Simply emit an event for now - no state change needed
+      try {
+        safeDispatch(
+          GameEventType.DOMAIN_UNLOCKED,
+          { domainId: topicId },
+          'knowledgeStore.unlockTopic'
+        );
+      } catch (e) {
+        console.error('Error dispatching domain unlock event:', e);
+      }
+    },
+    
     // Import knowledge data (for development/testing)
     importKnowledgeData: (data) => {
       if (!data) return;
       
       set(state => {
         // Import provided data with fallbacks to current state
-        const nodes = data.nodes || state.nodes;
-        const connections = data.connections || buildInitialConnections(nodes);
+        if (data.nodes) state.nodes = data.nodes;
+        if (data.connections) {
+          state.connections = data.connections;
+        } else {
+          state.connections = buildInitialConnections(state.nodes);
+        }
+        if (data.journalEntries) state.journalEntries = data.journalEntries;
+        if (data.pendingInsights) state.pendingInsights = data.pendingInsights;
+        
+        // Clear newly discovered tracking
+        state.newlyDiscovered = [];
         
         // Recalculate domain mastery
-        const domainMastery = calculateDomainMastery(nodes);
-        const totalMastery = calculateTotalMastery(domainMastery, nodes);
-        
-        return {
-          nodes,
-          connections,
-          journalEntries: data.journalEntries || state.journalEntries,
-          pendingInsights: data.pendingInsights || state.pendingInsights,
-          domainMastery,
-          totalMastery,
-          newlyDiscovered: []
-        };
+        state.domainMastery = calculateDomainMastery(state.nodes);
+        state.totalMastery = calculateTotalMastery(state.domainMastery, state.nodes);
       });
     },
     
     // Reset knowledge to initial state
     resetKnowledge: () => {
-      const domainMastery = calculateDomainMastery(medicalPhysicsConcepts);
-      const totalMastery = calculateTotalMastery(domainMastery, medicalPhysicsConcepts);
-      
-      set({
-        nodes: medicalPhysicsConcepts,
-        connections: buildInitialConnections(medicalPhysicsConcepts),
-        journalEntries: [],
-        pendingInsights: [],
-        domainMastery,
-        totalMastery,
-        newlyDiscovered: []
+      set(state => {
+        state.nodes = medicalPhysicsConcepts;
+        state.connections = buildInitialConnections(medicalPhysicsConcepts);
+        state.journalEntries = [];
+        state.pendingInsights = [];
+        state.newlyDiscovered = [];
+        state.activeInsight = null;
+        state.constellationVisible = false;
+        
+        // Recalculate domain mastery
+        state.domainMastery = calculateDomainMastery(state.nodes);
+        state.totalMastery = calculateTotalMastery(state.domainMastery, state.nodes);
       });
     }
+  }))
+);
+
+// ======== SELECTORS ========
+// Chamber Pattern compliant primitive value selectors
+
+/**
+ * Selectors for primitive values and derived state
+ * These provide performance optimized access to store values
+ */
+export const selectors = {
+  // Simple primitive values
+  getTotalMastery: (state: KnowledgeState) => state.totalMastery,
+  getActiveInsightId: (state: KnowledgeState) => state.activeInsight,
+  getNewlyDiscoveredCount: (state: KnowledgeState) => state.newlyDiscovered.length,
+  getPendingInsightCount: (state: KnowledgeState) => state.pendingInsights.length,
+  getIsConstellationVisible: (state: KnowledgeState) => state.constellationVisible,
+  getJournalEntryCount: (state: KnowledgeState) => state.journalEntries.length,
+  
+  // Domain-specific mastery
+  getDomainMastery: (domain: KnowledgeDomain) => (state: KnowledgeState) => 
+    state.domainMastery[domain] || 0,
+  
+  // Node-specific mastery
+  getConceptMastery: (conceptId: string) => (state: KnowledgeState) => 
+    state.nodes.find(n => n.id === conceptId)?.mastery || 0,
+  
+  isConceptDiscovered: (conceptId: string) => (state: KnowledgeState) => 
+    state.nodes.find(n => n.id === conceptId)?.discovered || false,
+  
+  isNewlyDiscovered: (conceptId: string) => (state: KnowledgeState) => 
+    state.newlyDiscovered.includes(conceptId),
+  
+  // Array filters with stable references
+  getDiscoveredNodes: (state: KnowledgeState) => 
+    state.nodes.filter(node => node.discovered),
+  
+  getUndiscoveredNodes: (state: KnowledgeState) => 
+    state.nodes.filter(node => !node.discovered),
+  
+  getDiscoveredConnections: (state: KnowledgeState) => 
+    state.connections.filter(conn => conn.discovered),
+  
+  getNodesByDomain: (domain: KnowledgeDomain) => (state: KnowledgeState) => 
+    state.nodes.filter(node => node.domain === domain),
+  
+  getDiscoveredNodesByDomain: (domain: KnowledgeDomain) => (state: KnowledgeState) => 
+    state.nodes.filter(node => node.domain === domain && node.discovered),
+  
+  getActiveNode: (state: KnowledgeState) => 
+    state.activeInsight ? state.nodes.find(n => n.id === state.activeInsight) : null,
+  
+  getNewlyDiscoveredNodes: (state: KnowledgeState) => 
+    state.nodes.filter(node => state.newlyDiscovered.includes(node.id)),
+  
+  // Connection lookups
+  getConnectionsForNode: (nodeId: string) => (state: KnowledgeState) => 
+    state.connections.filter(conn => conn.source === nodeId || conn.target === nodeId),
+  
+  getDiscoveredConnectionsForNode: (nodeId: string) => (state: KnowledgeState) => 
+    state.connections.filter(conn => 
+      (conn.source === nodeId || conn.target === nodeId) && conn.discovered),
+  
+  areNodesConnected: (nodeId1: string, nodeId2: string) => (state: KnowledgeState) => 
+    state.connections.some(conn => 
+      (conn.source === nodeId1 && conn.target === nodeId2) || 
+      (conn.source === nodeId2 && conn.target === nodeId1)),
+  
+  // Journal queries
+  getJournalEntriesForConcept: (conceptId: string) => (state: KnowledgeState) => 
+    state.journalEntries.filter(entry => entry.conceptId === conceptId),
+  
+  getRecentJournalEntries: (count: number = 5) => (state: KnowledgeState) => 
+    [...state.journalEntries]
+      .sort((a, b) => b.timestamp - a.timestamp)
+      .slice(0, count),
+  
+  // Computed values
+  getDiscoveredNodesCount: (state: KnowledgeState) => 
+    state.nodes.filter(node => node.discovered).length,
+  
+  getDiscoveredNodePercentage: (state: KnowledgeState) => 
+    (state.nodes.filter(node => node.discovered).length / state.nodes.length) * 100,
+  
+  getDomainCompletionPercentages: (state: KnowledgeState) => {
+    const domainCounts: Record<KnowledgeDomain, {discovered: number, total: number}> = 
+      Object.keys(KNOWLEDGE_DOMAINS).reduce((acc, domain) => {
+        acc[domain as KnowledgeDomain] = {discovered: 0, total: 0};
+        return acc;
+      }, {} as Record<KnowledgeDomain, {discovered: number, total: number}>);
+    
+    // Count nodes per domain
+    state.nodes.forEach(node => {
+      const domain = node.domain;
+      if (domainCounts[domain]) {
+        domainCounts[domain].total++;
+        if (node.discovered) {
+          domainCounts[domain].discovered++;
+        }
+      }
+    });
+    
+    // Calculate percentages
+    const percentages: Record<KnowledgeDomain, number> = 
+      Object.keys(domainCounts).reduce((acc, domain) => {
+        const counts = domainCounts[domain as KnowledgeDomain];
+        acc[domain as KnowledgeDomain] = counts.total > 0
+          ? Math.round((counts.discovered / counts.total) * 100)
+          : 0;
+        return acc;
+      }, {} as Record<KnowledgeDomain, number>);
+    
+    return percentages;
+  },
+  
+  // Node connection suggestions
+  getPotentialConnections: (nodeId: string) => (state: KnowledgeState) => {
+    const node = state.nodes.find(n => n.id === nodeId);
+    if (!node || !node.discovered) return [];
+    
+    return state.nodes
+      .filter(n => 
+        // Must be discovered
+        n.discovered && 
+        // Not the same node
+        n.id !== nodeId &&
+        // Not already connected
+        !state.connections.some(conn => 
+          (conn.source === nodeId && conn.target === n.id) ||
+          (conn.source === n.id && conn.target === nodeId)
+        )
+      )
+      // Sort by relationship strength (same domain first, then by mastery)
+      .sort((a, b) => {
+        // Same domain bias
+        if (a.domain === node.domain && b.domain !== node.domain) return -1;
+        if (a.domain !== node.domain && b.domain === node.domain) return 1;
+        // Then by mastery
+        return b.mastery - a.mastery;
+      })
+      .slice(0, 5); // Limit to top 5
+  }
+};
+
+// A wrapper hook to ease migration to the new pattern
+export function useKnowledgeData() {
+  const {
+    totalMastery,
+    domainMastery,
+    nodes,
+    connections,
+    newlyDiscovered,
+    pendingInsights
+  } = useKnowledgeStore(state => ({
+    totalMastery: state.totalMastery,
+    domainMastery: state.domainMastery,
+    nodes: state.nodes,
+    connections: state.connections,
+    newlyDiscovered: state.newlyDiscovered,
+    pendingInsights: state.pendingInsights
+  }));
+  
+  return {
+    totalMastery,
+    domainMastery,
+    discoveredNodes: nodes.filter(n => n.discovered),
+    totalNodes: nodes.length,
+    discoveredNodeCount: nodes.filter(n => n.discovered).length,
+    newlyDiscoveredCount: newlyDiscovered.length,
+    hasPendingInsights: pendingInsights.length > 0,
+    pendingInsightCount: pendingInsights.length
   };
-});
+}
+
+export default useKnowledgeStore;

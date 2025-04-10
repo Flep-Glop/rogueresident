@@ -1,84 +1,96 @@
 'use client';
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { useGameStore } from '../store/gameStore';
-import { useKnowledgeStore } from '../store/knowledgeStore';
+import { 
+  useGameStore, 
+  useGameState, 
+  usePlayerState, 
+  useKnowledgeState,
+  selectors
+} from '@/app/store/gameStore';
+import { useKnowledgeStore } from '@/app/store/knowledgeStore';
 import { PixelText, PixelButton } from './PixelThemeProvider';
-import useGameStateMachine from '../core/statemachine/GameStateMachine';
+import useGameStateMachine from '@/app/core/statemachine/GameStateMachine';
 import ConstellationView from './knowledge/ConstellationView';
-import { useEventBus } from '../core/events/CentralEventBus';
-import { GameEventType } from '../core/events/EventTypes';
-import { usePrimitiveStoreValue, useStableStoreValue } from '../core/utils/storeHooks';
+import { useEventBus } from '@/app/core/events/CentralEventBus';
+import { GameEventType } from '@/app/core/events/EventTypes';
+import { 
+  usePrimitiveStoreValue, 
+  useStableStoreValue,
+  usePrimitiveValues
+} from '@/app/core/utils/storeHooks';
+
+// Define props type for component
+interface HillHomeSceneProps {
+  onComplete: () => void;
+}
 
 /**
  * HillHomeScene - Night phase component using Chamber Transition Pattern
  * 
  * Improved implementation with:
- * - Primitive value extraction
+ * - Primitive value extraction via bridge
  * - DOM-based animations
  * - Stable reference callbacks
  * - Memoized derived values
  * - Clear separation of rendering and state transitions
  */
-export default function HillHomeScene({ onComplete }) {
-  // ======== STORE ACCESS WITH PRIMITIVE EXTRACTION ========
+export default function HillHomeScene({ onComplete }: HillHomeSceneProps) {
+  // ======== STORE ACCESS WITH COMPATIBILITY BRIDGE ========
   
-  // Extract primitives from game store
-  const playerHealth = usePrimitiveStoreValue(useGameStore, state => state.player?.health, 100);
-  const playerMaxHealth = usePrimitiveStoreValue(useGameStore, state => state.player?.maxHealth, 100);
-  const playerInsight = usePrimitiveStoreValue(useGameStore, state => state.player?.insight, 0);
-  const currentDay = usePrimitiveStoreValue(useGameStore, state => state.currentDay, 1);
-  const inventoryLength = usePrimitiveStoreValue(useGameStore, state => state.inventory?.length, 0);
+  // Get game state using the bridge
+  const gameState = useGameState();
+  const playerState = usePlayerState();
+  const knowledgeState = useKnowledgeState();
   
-  // Stable complex objects with memoization
-  const inventory = useStableStoreValue(useGameStore, state => state.inventory || []);
+  // Extract primitives via bridge
+  const currentDay = gameState.currentDay;
+  const gamePhase = gameState.phase;
   
-  // Function access with stable references
-  const updateInsight = useStableStoreValue(
+  // Extract player stats via bridge
+  const playerHealth = playerState.health;
+  const playerMaxHealth = playerState.maxHealth;
+  const playerInsight = playerState.insight;
+  
+  // Extract knowledge stats via bridge
+  const totalMastery = knowledgeState.totalMastery;
+  const newlyDiscoveredCount = knowledgeState.newlyDiscoveredCount;
+  const hasNewConcepts = knowledgeState.hasNewConcepts;
+  
+  // Extract inventory length through primitive store value
+  const inventoryLength = usePrimitiveStoreValue<any, number>(
     useGameStore,
-    state => state.updateInsight || ((amount) => console.warn("updateInsight not available"))
-  );
-  
-  // Extract primitives from state machine
-  const gamePhase = usePrimitiveStoreValue(
-    useGameStateMachine,
-    state => state.gamePhase,
-    'night' // Default to night for this component
-  );
-  
-  // Extract primitives from knowledge store
-  const totalMastery = usePrimitiveStoreValue(useKnowledgeStore, state => state.totalMastery, 0);
-  const newlyDiscoveredCount = usePrimitiveStoreValue(
-    useKnowledgeStore, 
-    state => state.newlyDiscovered?.length, 
+    state => state.inventory?.length || 0,
     0
   );
   
-  // Stable complex objects with memoization
-  const pendingInsights = useStableStoreValue(
+  // Stable complex objects with memoization - for arrays and objects
+  // we still use direct access since these aren't primitives
+  const inventory = useStableStoreValue<any, any[]>(
+    useGameStore,
+    state => state.inventory || []
+  );
+  
+  const pendingInsights = useStableStoreValue<any, any[]>(
     useKnowledgeStore, 
     state => state.pendingInsights || []
   );
   
-  const newlyDiscovered = useStableStoreValue(
+  const newlyDiscovered = useStableStoreValue<any, string[]>(
     useKnowledgeStore, 
     state => state.newlyDiscovered || []
   );
   
-  const domainMastery = useStableStoreValue(
+  const domainMastery = useStableStoreValue<any, Record<string, number>>(
     useKnowledgeStore,
     state => state.domainMastery || {}
   );
   
   // Function access with stable references
-  const transferInsights = useStableStoreValue(
-    useKnowledgeStore,
-    state => state.transferInsights || (() => console.warn("transferInsights not available"))
-  );
+  const updateInsight = playerState.updateInsight;
   
-  const resetNewlyDiscovered = useStableStoreValue(
-    useKnowledgeStore,
-    state => state.resetNewlyDiscovered || (() => console.warn("resetNewlyDiscovered not available"))
-  );
+  // Function access from knowledge state
+  const transferInsights = knowledgeState.transferInsights;
+  const resetNewlyDiscovered = knowledgeState.resetNewlyDiscovered;
   
   // ======== LOCAL UI STATE ========
   // These are completely independent from game state
@@ -89,14 +101,16 @@ export default function HillHomeScene({ onComplete }) {
   
   // ======== REFS FOR DOM MANIPULATION ========
   const mountedRef = useRef(true);
-  const containerRef = useRef(null);
-  const insightParticlesRef = useRef(null);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const insightParticlesRef = useRef<HTMLDivElement | null>(null);
   const renderCountRef = useRef(0);
   
   // ======== DERIVED VALUES ========
   // Compute derived values from primitives
-  const hasPendingInsights = useMemo(() => pendingInsights.length > 0, [pendingInsights.length]);
-  const hasNewConcepts = useMemo(() => newlyDiscoveredCount > 0, [newlyDiscoveredCount]);
+  const hasPendingInsights = useMemo(() => 
+    pendingInsights && pendingInsights.length > 0, 
+    [pendingInsights]
+  );
   const nextDayNumber = useMemo(() => currentDay + 1, [currentDay]);
   
   // ======== INSTRUMENTATION ========
@@ -108,7 +122,7 @@ export default function HillHomeScene({ onComplete }) {
       
       // Log critical debug info
       console.log('[HillHomeScene] Current game phase:', gamePhase);
-      console.log('[HillHomeScene] Has pending insights:', pendingInsights.length);
+      console.log('[HillHomeScene] Has pending insights:', pendingInsights?.length);
       console.log('[HillHomeScene] Newly discovered concepts:', newlyDiscoveredCount);
     }
   });
@@ -163,7 +177,7 @@ export default function HillHomeScene({ onComplete }) {
           
           // Calculate total insight gain
           const totalInsightGain = pendingInsights.reduce((total, insight) => {
-            return total + insight.amount;
+            return total + (insight.amount || 0);
           }, 0);
           
           // Grant insight points
@@ -279,9 +293,9 @@ export default function HillHomeScene({ onComplete }) {
   
   // ======== HELPER FUNCTIONS ========
   // Memoize this to prevent recreation
-  const getConceptColor = useMemo(() => (conceptId) => {
+  const getConceptColor = useMemo(() => (conceptId: string): string => {
     // Map concept to domain colors
-    const conceptDomains = {
+    const conceptDomains: Record<string, string> = {
       'electron-equilibrium': '#3b82f6', // Blue - radiation physics
       'radiation-dosimetry': '#3b82f6',
       'inverse-square-law': '#3b82f6',
@@ -449,7 +463,7 @@ export default function HillHomeScene({ onComplete }) {
             
             <div className="space-y-3 max-h-80 overflow-y-auto">
               {inventory && inventory.length > 0 ? (
-                inventory.map((item, index) => (
+                inventory.map((item: any, index: number) => (
                   <div key={index} className="bg-gray-800 p-3 rounded">
                     <div className="flex justify-between">
                       <div className="font-medium text-white">{item.name}</div>
@@ -487,7 +501,7 @@ export default function HillHomeScene({ onComplete }) {
         <div className="fixed bottom-0 left-0 bg-black/80 text-white text-xs font-mono z-50 p-2 max-w-xs">
           <div>Phase: {gamePhase}</div>
           <div>Day: {currentDay}</div>
-          <div>Insights: {pendingInsights.length}</div>
+          <div>Insights: {pendingInsights ? pendingInsights.length : 0}</div>
           <div>Transferred: {insightTransferred ? 'Yes' : 'No'}</div>
           <div>New Concepts: {newlyDiscoveredCount}</div>
           <div>Renders: {renderCountRef.current}</div>

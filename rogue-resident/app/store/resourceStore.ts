@@ -1,3 +1,17 @@
+// app/store/resourceStore.ts
+/**
+ * Resource Management System - Chamber Pattern Compliant
+ * 
+ * This store manages player resources that power strategic gameplay mechanics:
+ * - Insight: Primary resource for knowledge-based actions
+ * - Momentum: Combo-based resource that unlocks advanced strategies
+ * 
+ * The Chamber Pattern implementation provides:
+ * - Primitive selectors for performance-optimized component binding
+ * - Stable function references for callback consistency
+ * - Atomic state updates for predictable state transitions
+ */
+
 import { create } from 'zustand';
 import { immer } from 'zustand/middleware/immer';
 // Critical fix: Import both the singleton and the store hook
@@ -408,7 +422,115 @@ export const useResourceStore = create<ResourceState>()(
   }))
 );
 
-// Helper functions
+// ======== SELECTORS ========
+// Chamber Pattern compliant primitive value selectors
+
+/**
+ * Selectors for primitive values and derived state
+ * These provide performance optimized access to store values
+ */
+export const selectors = {
+  // Simple primitive values
+  getInsight: (state: ResourceState) => state.insight,
+  getInsightMax: (state: ResourceState) => state.insightMax,
+  getMomentum: (state: ResourceState) => state.momentum,
+  getConsecutiveCorrect: (state: ResourceState) => state.consecutiveCorrect,
+  getActiveAction: (state: ResourceState) => state.activeAction,
+  
+  // Resource availability
+  getCanUseReframe: (state: ResourceState) => state.availableActions.reframe,
+  getCanUseExtrapolate: (state: ResourceState) => state.availableActions.extrapolate,
+  getCanUseBoast: (state: ResourceState) => state.availableActions.boast,
+  getCanUseSynthesis: (state: ResourceState) => state.availableActions.synthesis,
+  
+  // Effect states
+  getInsightEffectActive: (state: ResourceState) => state.insightEffect.active,
+  getInsightEffectIntensity: (state: ResourceState) => state.insightEffect.intensity,
+  getMomentumEffectActive: (state: ResourceState) => state.momentumEffect.active,
+  getMomentumEffectIntensity: (state: ResourceState) => state.momentumEffect.intensity,
+  
+  // Calculated values
+  getActionIsActive: (state: ResourceState) => state.activeAction !== null,
+  getInsightPercentage: (state: ResourceState) => (state.insight / state.insightMax) * 100,
+  getMomentumPercentage: (state: ResourceState) => (state.momentum / MAX_MOMENTUM_LEVEL) * 100,
+  
+  // Threshold proximity values
+  getReframeProximity: (state: ResourceState) => {
+    const threshold = RESOURCE_THRESHOLDS.REFRAME;
+    if (state.insight >= threshold) return 1;
+    const thr = state.insightThresholds.find(t => t.actionType === 'reframe');
+    if (!thr) return 0;
+    const start = threshold - thr.nearbyRange;
+    if (state.insight < start) return 0;
+    return (state.insight - start) / thr.nearbyRange;
+  },
+  
+  getExtrapolateProximity: (state: ResourceState) => {
+    const threshold = RESOURCE_THRESHOLDS.EXTRAPOLATE;
+    if (state.insight >= threshold) return 1;
+    const thr = state.insightThresholds.find(t => t.actionType === 'extrapolate');
+    if (!thr) return 0;
+    const start = threshold - thr.nearbyRange;
+    if (state.insight < start) return 0;
+    return (state.insight - start) / thr.nearbyRange;
+  },
+  
+  getSynthesisProximity: (state: ResourceState) => {
+    const threshold = RESOURCE_THRESHOLDS.SYNTHESIS;
+    if (state.insight >= threshold) return 1;
+    const thr = state.insightThresholds.find(t => t.actionType === 'synthesis');
+    if (!thr) return 0;
+    const start = threshold - thr.nearbyRange;
+    if (state.insight < start) return 0;
+    return (state.insight - start) / thr.nearbyRange;
+  },
+  
+  // Action history selectors
+  getLastAction: (state: ResourceState) => 
+    state.actionHistory.length > 0 ? state.actionHistory[state.actionHistory.length - 1] : null,
+  
+  getActionSuccessRate: (state: ResourceState) => {
+    if (state.actionHistory.length === 0) return 0;
+    const successfulActions = state.actionHistory.filter(a => a.successful).length;
+    return successfulActions / state.actionHistory.length;
+  },
+  
+  // Combined selectors for UI components
+  getResourceSummary: (state: ResourceState) => ({
+    insight: state.insight,
+    insightMax: state.insightMax,
+    momentum: state.momentum,
+    momentumMax: MAX_MOMENTUM_LEVEL,
+    insightPercentage: (state.insight / state.insightMax) * 100,
+    momentumPercentage: (state.momentum / MAX_MOMENTUM_LEVEL) * 100
+  }),
+  
+  getActionAvailability: (state: ResourceState) => ({
+    reframe: state.availableActions.reframe,
+    extrapolate: state.availableActions.extrapolate,
+    boast: state.availableActions.boast,
+    synthesis: state.availableActions.synthesis,
+    anyAvailable: Object.values(state.availableActions).some(v => v)
+  }),
+  
+  getResourceEffects: (state: ResourceState) => ({
+    insight: {
+      active: state.insightEffect.active,
+      intensity: state.insightEffect.intensity,
+      triggeredBy: state.insightEffect.triggeredBy,
+      remaining: Math.max(0, state.insightEffect.duration - (Date.now() - state.insightEffect.startTime))
+    },
+    momentum: {
+      active: state.momentumEffect.active,
+      intensity: state.momentumEffect.intensity,
+      triggeredBy: state.momentumEffect.triggeredBy,
+      remaining: Math.max(0, state.momentumEffect.duration - (Date.now() - state.momentumEffect.startTime))
+    }
+  })
+};
+
+// ======== HELPER FUNCTIONS ========
+
 function updateThresholdProximity(state: ResourceState) {
   const { insight, insightThresholds } = state;
   for (const threshold of insightThresholds) {

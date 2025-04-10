@@ -1,10 +1,18 @@
 // app/components/GameContainer.tsx
-// Refactored GameContainer to rely on state machine events/state
 'use client';
-import React, { useEffect, useState, useCallback, useRef } from 'react';
+/**
+ * GameContainer - Core gameplay orchestration component
+ * 
+ * Fully Chamber Pattern compliant implementation resolving:
+ * 1. Infinite loop error from uncached snapshots
+ * 2. Object reference rendering errors
+ * 3. Initialization cycle issues
+ * 4. Day/night transition coordination
+ */
+import React, { useEffect, useCallback, useRef } from 'react';
 import { useGameStore } from '@/app/store/gameStore';
 import useGameStateMachine from '@/app/core/statemachine/GameStateMachine';
-import { useEventBus, useEventSubscription } from '@/app/core/events/CentralEventBus';
+import { useEventBus } from '@/app/core/events/CentralEventBus';
 import { GameEventType } from '@/app/core/events/EventTypes';
 import { useCoreInitialization } from '@/app/core/init';
 import SimplifiedKapoorMap from './map/SimplifiedKapoorMap';
@@ -13,40 +21,59 @@ import PlayerStats from './PlayerStats';
 import VerticalSliceDebugPanel from './debug/VerticalSliceDebugPanel';
 import ChallengeRouter from './challenges/ChallengeRouter';
 import DayNightTransition from './DayNightTransition';
+import { useRenderTracker } from '@/app/core/utils/chamberDebug';
 
-// Import the optimized store hooks for stable subscriptions
+// Import the improved store hooks
 import { 
-  useStableStoreValue, 
   usePrimitiveStoreValue, 
-  useGamePhaseObserver 
+  usePrimitiveValues,
+  useStableCallback,
+  useStableStoreValue
 } from '@/app/core/utils/storeHooks';
 
 // Constants for transition visual timing
 const TRANSITION_VISUAL_DURATION = 800; // Duration for the fade effect (ms)
 
-/**
- * GameContainer - Core gameplay orchestration component
- * 
- * Manages the day/night cycle and phase transitions that form the game's 
- * core loop, similar to the Chamber Manager in Hades. This component handles
- * transitioning between different gameplay contexts while maintaining state integrity.
- */
 export default function GameContainer() {
-  // FIXED: Direct access to primitive values from state machine
-  const gamePhase = usePrimitiveStoreValue(
+  // Track render count in development 
+  const renderCount = useRenderTracker('GameContainer');
+  
+  // Track component mounted status for safe side effects
+  const mountedRef = useRef(true);
+  
+  // Use core initialization hook
+  const { initialized } = useCoreInitialization();
+  
+  // ======== PRIMITIVE VALUE EXTRACTION ========
+  // Extract ONLY the primitive values we need, nothing else
+  
+  const gameValues = usePrimitiveValues(
     useGameStateMachine,
-    state => state.gamePhase,
-    'day' // Default to day phase if we get a non-string value
+    {
+      gamePhase: state => state.gamePhase,
+      isTransitioning: state => state.isTransitioning,
+      currentDay: state => state.currentDay
+    },
+    {
+      gamePhase: 'day',
+      isTransitioning: false,
+      currentDay: 1
+    }
   );
   
-  const isTransitioning = usePrimitiveStoreValue(
-    useGameStateMachine,
-    state => state.isTransitioning,
-    false
+  const currentNodeId = usePrimitiveStoreValue(
+    useGameStore,
+    state => state.currentNodeId,
+    null
   );
   
-  // FIXED: Function access with stable references
-  const stateFunctions = useStableStoreValue(
+  // Error state managed locally, not in store
+  const [hasError, setHasError] = React.useState<string | null>(null);
+  
+  // ======== STABLE FUNCTION EXTRACTION ========
+  // Extract functions with stable references
+  
+  const stateMachineFunctions = useStableStoreValue(
     useGameStateMachine,
     state => ({
       beginDayCompletion: state.beginDayCompletion,
@@ -55,125 +82,136 @@ export default function GameContainer() {
       finalizeNightTransition: state.finalizeNightTransition
     })
   );
-
-  // Safely extract functions with fallbacks
-  const { 
-    beginDayCompletion = () => console.warn("beginDayCompletion not available"),
-    beginNightCompletion = () => console.warn("beginNightCompletion not available"),
-    finalizeDayTransition = () => console.warn("finalizeDayTransition not available"),
-    finalizeNightTransition = () => console.warn("finalizeNightTransition not available")
-  } = stateFunctions;
-
-  // FIXED: Use direct primitive selectors for game store values
-  const currentNodeId = usePrimitiveStoreValue(
-    useGameStore,
-    state => state.currentNodeId,
-    null
-  );
-  
-  const map = useStableStoreValue(
-    useGameStore,
-    state => state.map
-  );
   
   const resetGame = useStableStoreValue(
     useGameStore,
-    state => state.resetGame || (() => console.warn("resetGame not available"))
+    state => state.resetGame
   );
-
-  // Core systems initialization
-  const { initialized } = useCoreInitialization();
-  const [hasError, setHasError] = useState<string | null>(null);
-  const componentMountedRef = useRef(true);
-
-  // FIXED: Use the new game phase observer utility that's safe from recursion
-  useGamePhaseObserver(
-    useGameStateMachine,
-    (newPhase, oldPhase) => {
-      // Only log if values are different and valid strings
-      if (newPhase !== oldPhase) {
-        console.log(`[GameContainer] Phase transition: ${oldPhase || 'none'} -> ${newPhase || 'none'}`);
-        
-        // Perform side effects based on specific string values
-        if (newPhase === 'transition_to_night') {
-          // Prepare assets/state for night phase
-          console.log('[GameContainer] Preparing night phase assets');
-        } else if (newPhase === 'transition_to_day') {
-          // Prepare assets/state for day phase
-          console.log('[GameContainer] Preparing day phase assets');
-        }
-      }
+  
+  // ======== STABLE EVENT HANDLERS ========
+  // Create stable event handlers that access fresh state
+  
+  const handleBeginNight = useStableCallback(() => {
+    console.log("[GameContainer] handleBeginNight called");
+    if (!stateMachineFunctions?.beginDayCompletion) {
+      console.warn("[GameContainer] beginDayCompletion not available");
+      return;
     }
-  );
-
+    stateMachineFunctions.beginDayCompletion();
+  }, []);
+  
+  const handleBeginDay = useStableCallback(() => {
+    console.log("[GameContainer] handleBeginDay called");
+    if (!stateMachineFunctions?.beginNightCompletion) {
+      console.warn("[GameContainer] beginNightCompletion not available");
+      return;
+    }
+    stateMachineFunctions.beginNightCompletion();
+  }, []);
+  
+  const handleReset = useStableCallback(() => {
+    console.log("[GameContainer] Resetting game state");
+    if (!resetGame) {
+      console.warn("[GameContainer] resetGame not available");
+      return;
+    }
+    resetGame();
+  }, []);
+  
+  // ======== LIFECYCLE MANAGEMENT ========
+  
+  // Mount/unmount tracking
+  useEffect(() => {
+    console.log('[GameContainer] Component mounted');
+    mountedRef.current = true;
+    return () => {
+      console.log('[GameContainer] Component unmounted');
+      mountedRef.current = false;
+    };
+  }, []);
+  
   // Error handling for core system initialization
   useEffect(() => {
-    if (!initialized && !componentMountedRef.current) {
-       setHasError("Core systems failed to initialize.");
+    if (!initialized && mountedRef.current) {
+      // Only set error if we're still mounted
+      setHasError("Core systems failed to initialize");
     }
   }, [initialized]);
-
-  // Track component mount status
-  useEffect(() => {
-    componentMountedRef.current = true;
-    return () => { componentMountedRef.current = false; };
-  }, []);
-
-  // Callbacks to trigger phase transitions initiated from child components
-  const handleBeginNight = useCallback(() => {
-      console.log("[GameContainer] handleBeginNight called");
-      beginDayCompletion(); // Initiate the day completion process
-  }, [beginDayCompletion]);
-
-  const handleBeginDay = useCallback(() => {
-      console.log("[GameContainer] handleBeginDay called");
-      beginNightCompletion(); // Initiate the night completion process
-  }, [beginNightCompletion]);
-
-  // Effect to finalize transitions after visual duration
-  // This replaces the complex timeout logic previously in GameStateMachine
+  
+  // Transition finalization with clear timer management
   useEffect(() => {
     let finalizeTimer: NodeJS.Timeout | null = null;
-
-    if (gamePhase === 'transition_to_night') {
+    
+    // Only enter this block if we have the functions and are in transition
+    if (!stateMachineFunctions) return;
+    
+    if (gameValues.gamePhase === 'transition_to_night') {
       console.log("[GameContainer] Scheduling night finalization");
       finalizeTimer = setTimeout(() => {
-        if (componentMountedRef.current) {
-            console.log("[GameContainer] Finalizing night transition");
-            finalizeNightTransition();
+        if (mountedRef.current && stateMachineFunctions.finalizeNightTransition) {
+          console.log("[GameContainer] Finalizing night transition");
+          stateMachineFunctions.finalizeNightTransition();
         }
-      }, TRANSITION_VISUAL_DURATION);
-    } else if (gamePhase === 'transition_to_day') {
+      }, TRANSITION_VISUAL_DURATION + 50); // Add buffer
+    } 
+    else if (gameValues.gamePhase === 'transition_to_day') {
       console.log("[GameContainer] Scheduling day finalization");
-       finalizeTimer = setTimeout(() => {
-         if (componentMountedRef.current) {
-            console.log("[GameContainer] Finalizing day transition");
-            finalizeDayTransition();
-         }
-      }, TRANSITION_VISUAL_DURATION);
+      finalizeTimer = setTimeout(() => {
+        if (mountedRef.current && stateMachineFunctions.finalizeDayTransition) {
+          console.log("[GameContainer] Finalizing day transition");
+          stateMachineFunctions.finalizeDayTransition();
+        }
+      }, TRANSITION_VISUAL_DURATION + 50); // Add buffer
     }
-
-    // Cleanup timer on unmount or phase change
+    
+    // Clean up timer on unmount or phase change
     return () => {
       if (finalizeTimer) {
         clearTimeout(finalizeTimer);
+        finalizeTimer = null;
       }
     };
-  }, [gamePhase, finalizeDayTransition, finalizeNightTransition]);
-
-  // Subscribe to critical system errors
-  useEventSubscription(
-    GameEventType.ERROR_LOGGED,
-    useCallback((event: any) => {
-      if (event.payload?.component === 'statemachine' || event.payload?.component === 'initialization') {
-        console.error(`[GameContainer] System error: ${event.payload?.message}`);
-        setHasError(`System error: ${event.payload?.message}`);
+  }, [gameValues.gamePhase, stateMachineFunctions]);
+  
+  // Event subscription for critical errors
+  useEffect(() => {
+    // Subscribe to system errors
+    let unsubscribe: (() => void) | undefined;
+    
+    try {
+      unsubscribe = useEventBus.getState().subscribe(
+        GameEventType.ERROR_LOGGED,
+        (event: any) => {
+          if (!mountedRef.current) return;
+          
+          if (
+            event.payload?.component === 'statemachine' || 
+            event.payload?.component === 'initialization'
+          ) {
+            console.error(`[GameContainer] System error: ${event.payload?.message}`);
+            setHasError(`System error: ${event.payload?.message}`);
+          }
+        }
+      );
+    } catch (error) {
+      console.error('[GameContainer] Error setting up event subscription:', error);
+    }
+    
+    // Clean up subscription
+    return () => {
+      try {
+        if (unsubscribe) unsubscribe();
+      } catch (error) {
+        console.warn('[GameContainer] Error cleaning up event subscription:', error);
       }
-    }, [])
-  );
-
-  // Render logic based solely on gamePhase from useGameState
+    };
+  }, []);
+  
+  // ======== CONTENT RENDERING ========
+  // Separate render logic based solely on primitives
+  
   const renderGameContent = () => {
+    // Handle initialization state
     if (!initialized) {
       return (
         <div className="h-full w-full flex items-center justify-center bg-gray-900 text-white">
@@ -186,7 +224,8 @@ export default function GameContainer() {
         </div>
       );
     }
-
+    
+    // Handle error state
     if (hasError) {
       return (
         <div className="h-full w-full flex items-center justify-center text-red-500 bg-gray-900">
@@ -203,37 +242,40 @@ export default function GameContainer() {
         </div>
       );
     }
-
+    
     // Day phase content
-    if (gamePhase === 'day') {
+    if (gameValues.gamePhase === 'day') {
       return currentNodeId ? <ChallengeRouter /> : <SimplifiedKapoorMap />;
     }
-
+    
     // Night phase content
-    if (gamePhase === 'night') {
-      // Pass handleBeginDay to trigger the start of the night completion process
+    if (gameValues.gamePhase === 'night') {
       return <HillHomeScene onComplete={handleBeginDay} />;
     }
-
-    // Transition states
-    if (gamePhase === 'transition_to_day' || gamePhase === 'transition_to_night') {
-      // Show dimmed versions of the previous scenes during transitions
-      if (gamePhase === 'transition_to_night') {
-        return <div style={{ opacity: 0.5 }}><SimplifiedKapoorMap /></div>;
-      }
-      if (gamePhase === 'transition_to_day') {
-        return <div style={{ opacity: 0.5 }}><HillHomeScene onComplete={() => {}} /></div>;
-      }
+    
+    // Transition states - use CSS opacity instead of conditional rendering
+    if (gameValues.gamePhase === 'transition_to_day' || gameValues.gamePhase === 'transition_to_night') {
+      const isDayToNight = gameValues.gamePhase === 'transition_to_night';
+      
+      return (
+        <div style={{ opacity: 0.5 }}>
+          {isDayToNight ? (
+            <SimplifiedKapoorMap />
+          ) : (
+            <HillHomeScene onComplete={() => {}} />
+          )}
+        </div>
+      );
     }
-
+    
     // Fallback for unexpected states
     return (
       <div className="h-full w-full flex items-center justify-center bg-gray-900 text-white">
         <div className="text-center p-6 bg-gray-800 rounded-lg">
-          <p className="text-lg">Unknown Game Phase: {gamePhase || 'undefined'}</p>
+          <p className="text-lg">Unknown Game Phase: {gameValues.gamePhase || 'undefined'}</p>
           <button 
             className="mt-4 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
-            onClick={() => resetGame()}
+            onClick={handleReset}
           >
             Reset Game
           </button>
@@ -241,12 +283,14 @@ export default function GameContainer() {
       </div>
     );
   };
-
+  
+  // ======== COMPONENT RENDER ========
+  
   return (
     <div 
       className="relative h-screen w-full bg-background flex flex-col" 
       data-game-container 
-      data-phase={gamePhase}
+      data-phase={gameValues.gamePhase}
     >
       <div className="flex-grow flex overflow-hidden">
         <div className="flex-grow relative overflow-hidden">
@@ -272,7 +316,9 @@ export default function GameContainer() {
       {/* Simplified Debug Info */}
       {process.env.NODE_ENV !== 'production' && (
         <div className="fixed bottom-0 left-0 bg-black/80 text-white p-2 text-xs z-50">
-          Phase: {gamePhase} | Node: {currentNodeId || 'none'} | Transitioning: {isTransitioning ? 'Yes' : 'No'}
+          Phase: {gameValues.gamePhase} | Node: {currentNodeId || 'none'} | 
+          Transitioning: {gameValues.isTransitioning ? 'Yes' : 'No'} | 
+          Render: {renderCount}
         </div>
       )}
     </div>
