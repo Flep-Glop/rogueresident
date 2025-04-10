@@ -1,43 +1,130 @@
 // app/components/debug/PerformanceDashboard.tsx
 'use client';
 /**
- * Performance Dashboard
+ * Performance Dashboard - Optimized with Chamber Pattern
  * 
- * A Debug UI component that shows real-time performance metrics
- * for the Chamber Pattern implementation, including:
- * - Render counts by component
- * - State access patterns
- * - Frame timings during animations
- * - Memory usage patterns
+ * Improvements:
+ * 1. Consistent hook ordering following Chamber Pattern
+ * 2. Refs for mutable state that doesn't need re-renders
+ * 3. DOM-based animations and measurements
+ * 4. Throttled state updates
+ * 5. Proper cleanup of all timers and animations
  */
-import React, { useState, useEffect, useRef } from 'react';
-import { useRenderTracker, getSuspiciousComponents } from '@/app/core/utils/chamberDebug';
-import { getStoreAccessIssues } from '@/app/core/utils/storeAnalyzer';
+import React, { useRef, useState, useEffect, useCallback } from 'react';
+import { useRenderTracker } from '@/app/core/utils/chamberDebug';
+import { useStableCallback } from '@/app/core/utils/storeHooks';
+
+// Animation frame throttling to prevent excessive renders
+const THROTTLE_MS = 250;
 
 export default function PerformanceDashboard() {
+  // ======== REFS (Always first to maintain hook order stability) ========
+  const fpsTimestampsRef = useRef<number[]>([]);
+  const suspiciousComponentsRef = useRef<any[]>([]);
+  const storeIssuesRef = useRef<any[]>([]);
+  const memoryUsageRef = useRef<any>(null);
+  const currentFpsRef = useRef<number>(0);
+  const rafIdRef = useRef<number | null>(null);
+  const intervalIdRef = useRef<NodeJS.Timeout | null>(null);
+  const updateIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const isExpandedRef = useRef<boolean>(false);
+  const activeTabRef = useRef<'renders'|'stores'|'fps'|'memory'>('renders');
+  const lastUpdateTimeRef = useRef<number>(0);
+  const contentElRef = useRef<HTMLDivElement>(null);
+  const isMountedRef = useRef<boolean>(true);
+  
+  // ======== STATE (Minimal, only for UI that needs rendering) ========
+  // Using state only for things that need to trigger a render
+  const [displayState, setDisplayState] = useState({
+    isExpanded: false,
+    activeTab: 'renders' as 'renders'|'stores'|'fps'|'memory',
+    fps: 0,
+    memoryUsage: null as any,
+    suspiciousComponents: [] as any[],
+    storeIssues: [] as any[]
+  });
+  
+  // ======== TRACKING ========
   // Track this component's renders
   const renderCount = useRenderTracker('PerformanceDashboard');
   
-  // Local state
-  const [isExpanded, setIsExpanded] = useState(false);
-  const [activeTab, setActiveTab] = useState<'renders'|'stores'|'fps'|'memory'>('renders');
-  const [fps, setFps] = useState<number>(0);
-  const [memoryUsage, setMemoryUsage] = useState<any>(null);
-  const [suspiciousComponents, setSuspiciousComponents] = useState<any[]>([]);
-  const [storeIssues, setStoreIssues] = useState<any[]>([]);
-  
-  // Refs
-  const fpsTimestampsRef = useRef<number[]>([]);
-  const rafIdRef = useRef<number | null>(null);
-  const intervalIdRef = useRef<NodeJS.Timeout | null>(null);
-  
+  // ======== STABLE CALLBACKS ========
   // Toggle dashboard visibility
-  const toggleDashboard = () => {
-    setIsExpanded(prev => !prev);
-  };
+  const toggleDashboard = useStableCallback(() => {
+    // Use the ref to track the current state
+    isExpandedRef.current = !isExpandedRef.current;
+    
+    // Update display state to trigger re-render
+    setDisplayState(prev => ({
+      ...prev,
+      isExpanded: isExpandedRef.current
+    }));
+    
+    // Start or stop measurements based on visibility
+    if (isExpandedRef.current) {
+      startMeasurements();
+    } else {
+      stopMeasurements();
+    }
+  }, []);
+  
+  // Change active tab
+  const changeTab = useStableCallback((tab: 'renders'|'stores'|'fps'|'memory') => {
+    // Update the ref
+    activeTabRef.current = tab;
+    
+    // Update display state to trigger re-render
+    setDisplayState(prev => ({
+      ...prev,
+      activeTab: tab
+    }));
+  }, []);
+  
+  // Reset all measurements
+  const handleReset = useStableCallback(() => {
+    // Reset FPS
+    fpsTimestampsRef.current = [];
+    currentFpsRef.current = 0;
+    
+    // Reset suspicious components
+    suspiciousComponentsRef.current = [];
+    
+    // Reset store issues
+    storeIssuesRef.current = [];
+    
+    // Reset global tracking if available
+    try {
+      // @ts-ignore - This function comes from window global
+      if (window.__CHAMBER_DEBUG__?.resetStats) {
+        // @ts-ignore
+        window.__CHAMBER_DEBUG__.resetStats();
+      }
+      
+      // @ts-ignore - This function comes from window global
+      if (window.__STORE_ANALYZER__?.reset) {
+        // @ts-ignore
+        window.__STORE_ANALYZER__.reset();
+      }
+    } catch (e) {
+      console.warn('Error resetting debug systems:', e);
+    }
+    
+    // Update display state
+    setDisplayState(prev => ({
+      ...prev,
+      fps: 0,
+      suspiciousComponents: [],
+      storeIssues: []
+    }));
+  }, []);
+  
+  // ======== MEASUREMENT FUNCTIONS ========
+  // These functions update refs but not state to avoid excessive re-renders
   
   // FPS calculation
-  const calculateFps = () => {
+  const calculateFps = useCallback(() => {
+    if (!isMountedRef.current) return;
+    
     const now = performance.now();
     
     // Add current timestamp
@@ -51,99 +138,161 @@ export default function PerformanceDashboard() {
       fpsTimestampsRef.current.shift();
     }
     
-    // Calculate FPS
-    setFps(fpsTimestampsRef.current.length);
+    // Update current FPS in ref only (no re-render)
+    currentFpsRef.current = fpsTimestampsRef.current.length;
     
-    // Continue measuring
-    rafIdRef.current = requestAnimationFrame(calculateFps);
-  };
+    // Continue measuring if still mounted
+    if (isMountedRef.current && isExpandedRef.current) {
+      rafIdRef.current = requestAnimationFrame(calculateFps);
+    }
+  }, []);
   
   // Memory usage measurement
-  const measureMemory = async () => {
+  const measureMemory = useCallback(async () => {
+    if (!isMountedRef.current) return;
+    
     try {
       // @ts-ignore - performance.memory is non-standard but available in Chrome
       if (performance.memory) {
-        setMemoryUsage({
+        memoryUsageRef.current = {
           // @ts-ignore
           total: Math.round(performance.memory.totalJSHeapSize / (1024 * 1024)),
           // @ts-ignore
           used: Math.round(performance.memory.usedJSHeapSize / (1024 * 1024)),
           // @ts-ignore
           limit: Math.round(performance.memory.jsHeapSizeLimit / (1024 * 1024))
-        });
+        };
       } else {
-        setMemoryUsage({ unsupported: true });
+        memoryUsageRef.current = { unsupported: true };
       }
     } catch (e) {
       console.warn('Memory measurement error:', e);
-      setMemoryUsage({ error: true });
+      memoryUsageRef.current = { error: true };
     }
-  };
+  }, []);
   
   // Check for suspicious components
-  const checkSuspiciousComponents = () => {
+  const checkSuspiciousComponents = useCallback(() => {
+    if (!isMountedRef.current) return;
+    
     try {
       // @ts-ignore - This function comes from window global
       if (window.__CHAMBER_DEBUG__?.getSuspiciousComponents) {
         // @ts-ignore
-        setSuspiciousComponents(window.__CHAMBER_DEBUG__.getSuspiciousComponents());
+        suspiciousComponentsRef.current = window.__CHAMBER_DEBUG__.getSuspiciousComponents();
       }
       
       // @ts-ignore - This function comes from window global
       if (window.__STORE_ANALYZER__?.getIssues) {
         // @ts-ignore
-        setStoreIssues(window.__STORE_ANALYZER__.getIssues());
+        storeIssuesRef.current = window.__STORE_ANALYZER__.getIssues();
       }
     } catch (e) {
       console.warn('Error checking suspicious components:', e);
     }
-  };
+  }, []);
   
-  // Start/stop measurements based on dashboard visibility
-  useEffect(() => {
-    // Only run measurements when dashboard is expanded
-    if (isExpanded) {
-      // Start FPS measurement
+  // ======== MEASUREMENT CONTROLLERS ========
+  
+  // Start all measurements
+  const startMeasurements = useCallback(() => {
+    if (!isMountedRef.current) return;
+    
+    // Start FPS measurement
+    if (!rafIdRef.current) {
       rafIdRef.current = requestAnimationFrame(calculateFps);
-      
-      // Start memory and component checks
+    }
+    
+    // Start memory and component checks
+    if (!intervalIdRef.current) {
       intervalIdRef.current = setInterval(() => {
         measureMemory();
         checkSuspiciousComponents();
       }, 1000);
-    } else {
-      // Stop FPS measurement
-      if (rafIdRef.current) {
-        cancelAnimationFrame(rafIdRef.current);
-        rafIdRef.current = null;
-      }
-      
-      // Stop interval
-      if (intervalIdRef.current) {
-        clearInterval(intervalIdRef.current);
-        intervalIdRef.current = null;
-      }
     }
     
-    // Cleanup on unmount
+    // Start throttled updates for state
+    if (!updateIntervalRef.current) {
+      updateIntervalRef.current = setInterval(() => {
+        const now = performance.now();
+        
+        // Only update if enough time has passed (throttling)
+        if (now - lastUpdateTimeRef.current > THROTTLE_MS) {
+          lastUpdateTimeRef.current = now;
+          
+          // Update state from refs
+          if (isMountedRef.current) {
+            setDisplayState(prev => ({
+              ...prev,
+              fps: currentFpsRef.current,
+              memoryUsage: memoryUsageRef.current,
+              suspiciousComponents: suspiciousComponentsRef.current,
+              storeIssues: storeIssuesRef.current
+            }));
+          }
+        }
+      }, THROTTLE_MS);
+    }
+  }, [calculateFps, measureMemory, checkSuspiciousComponents]);
+  
+  // Stop all measurements
+  const stopMeasurements = useCallback(() => {
+    // Stop FPS measurement
+    if (rafIdRef.current) {
+      cancelAnimationFrame(rafIdRef.current);
+      rafIdRef.current = null;
+    }
+    
+    // Stop interval
+    if (intervalIdRef.current) {
+      clearInterval(intervalIdRef.current);
+      intervalIdRef.current = null;
+    }
+    
+    // Stop update interval
+    if (updateIntervalRef.current) {
+      clearInterval(updateIntervalRef.current);
+      updateIntervalRef.current = null;
+    }
+  }, []);
+  
+  // ======== EFFECTS ========
+  
+  // Setup and cleanup
+  useEffect(() => {
+    // Set mounted flag
+    isMountedRef.current = true;
+    
+    // Start measurements if expanded
+    if (isExpandedRef.current) {
+      startMeasurements();
+    }
+    
+    // Clean up everything on unmount
     return () => {
-      if (rafIdRef.current) {
-        cancelAnimationFrame(rafIdRef.current);
-      }
-      if (intervalIdRef.current) {
-        clearInterval(intervalIdRef.current);
-      }
+      isMountedRef.current = false;
+      stopMeasurements();
     };
-  }, [isExpanded]);
+  }, [startMeasurements, stopMeasurements]);
+  
+  // ======== RENDER HELPERS ========
   
   // Render different tabs based on activeTab
-  const renderTabContent = () => {
+  const renderTabContent = useCallback(() => {
+    const { 
+      activeTab, 
+      fps, 
+      memoryUsage, 
+      suspiciousComponents, 
+      storeIssues 
+    } = displayState;
+    
     switch (activeTab) {
       case 'renders':
         return (
           <div className="p-3">
             <h3 className="text-lg font-semibold mb-2">Suspicious Components</h3>
-            {suspiciousComponents.length > 0 ? (
+            {suspiciousComponents && suspiciousComponents.length > 0 ? (
               <div className="max-h-60 overflow-y-auto text-sm">
                 {suspiciousComponents.map((comp, i) => (
                   <div key={i} className="mb-2 p-2 bg-red-900/30 rounded">
@@ -170,7 +319,7 @@ export default function PerformanceDashboard() {
         return (
           <div className="p-3">
             <h3 className="text-lg font-semibold mb-2">Store Access Issues</h3>
-            {storeIssues.length > 0 ? (
+            {storeIssues && storeIssues.length > 0 ? (
               <div className="max-h-60 overflow-y-auto text-sm">
                 {storeIssues.map((issue, i) => (
                   <div key={i} className="mb-2 p-2 bg-orange-900/30 rounded">
@@ -281,36 +430,15 @@ export default function PerformanceDashboard() {
       default:
         return null;
     }
-  };
-  
-  // Reset all measurements
-  const handleReset = () => {
-    // Reset FPS
-    fpsTimestampsRef.current = [];
-    setFps(0);
-    
-    // Reset suspicious components
-    // @ts-ignore - This function comes from window global
-    if (window.__CHAMBER_DEBUG__?.resetStats) {
-      // @ts-ignore
-      window.__CHAMBER_DEBUG__.resetStats();
-    }
-    
-    // Reset store analysis
-    // @ts-ignore - This function comes from window global
-    if (window.__STORE_ANALYZER__?.reset) {
-      // @ts-ignore
-      window.__STORE_ANALYZER__.reset();
-    }
-    
-    setSuspiciousComponents([]);
-    setStoreIssues([]);
-  };
+  }, [displayState]);
   
   // Only render in development
   if (process.env.NODE_ENV === 'production') {
     return null;
   }
+  
+  // Destructure display state for rendering
+  const { isExpanded, activeTab } = displayState;
   
   return (
     <div className="fixed bottom-0 right-0 z-50">
@@ -339,32 +467,34 @@ export default function PerformanceDashboard() {
           <div className="flex border-b border-purple-800">
             <button
               className={`px-3 py-1 text-xs ${activeTab === 'renders' ? 'bg-purple-900 text-white' : 'text-purple-300'}`}
-              onClick={() => setActiveTab('renders')}
+              onClick={() => changeTab('renders')}
             >
               Renders
             </button>
             <button
               className={`px-3 py-1 text-xs ${activeTab === 'stores' ? 'bg-purple-900 text-white' : 'text-purple-300'}`}
-              onClick={() => setActiveTab('stores')}
+              onClick={() => changeTab('stores')}
             >
               Stores
             </button>
             <button
               className={`px-3 py-1 text-xs ${activeTab === 'fps' ? 'bg-purple-900 text-white' : 'text-purple-300'}`}
-              onClick={() => setActiveTab('fps')}
+              onClick={() => changeTab('fps')}
             >
               FPS
             </button>
             <button
               className={`px-3 py-1 text-xs ${activeTab === 'memory' ? 'bg-purple-900 text-white' : 'text-purple-300'}`}
-              onClick={() => setActiveTab('memory')}
+              onClick={() => changeTab('memory')}
             >
               Memory
             </button>
           </div>
           
-          {/* Tab Content */}
-          {renderTabContent()}
+          {/* Tab Content - use ref for direct DOM manipulation */}
+          <div ref={contentElRef}>
+            {renderTabContent()}
+          </div>
           
           {/* Footer */}
           <div className="border-t border-purple-800 p-1 text-xs text-gray-400 flex justify-between">

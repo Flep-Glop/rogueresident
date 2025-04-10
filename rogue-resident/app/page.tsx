@@ -3,8 +3,10 @@ import { useEffect, useState } from 'react';
 import { ErrorBoundary } from 'react-error-boundary';
 import GameContainer from './components/GameContainer';
 import JournalAcquisitionAnimation from './components/journal/JournalAcquisitionAnimation';
-import PixelThemeProvider from './components/PixelThemeProvider';
 import { useCoreInitialization } from './core/init';
+
+// Import ChamberDebugInitializer properly - Import directly from the correct path, not using the @ alias
+import ChamberDebugInitializer from './components/debug/ChamberDebugInitializer';
 
 /**
  * Vertical Slice Entry Point
@@ -14,6 +16,7 @@ import { useCoreInitialization } from './core/init';
  * 2. Provides error boundary for crash resilience
  * 3. Wraps the game in necessary theme providers
  * 4. Handles journal acquisition animation
+ * 5. Initializes Chamber Pattern debug utilities
  */
 export default function VerticalSlicePage() {
   // Initialize core systems
@@ -84,6 +87,9 @@ export default function VerticalSlicePage() {
         console.log('Error boundary reset');
       }}
     >
+      {/* Initialize Chamber Pattern debug utilities */}
+      {process.env.NODE_ENV !== 'production' && <ChamberDebugInitializer />}
+      
       <div className="min-h-screen bg-black text-white">
         <GameContainer />
         {/* Journal acquisition animation overlay */}

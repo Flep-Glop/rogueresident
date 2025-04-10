@@ -3,6 +3,7 @@
 ├── app
 │   ├── components
 │   │   ├── DayNightTransition.tsx
+│   │   ├── FontPreLoader.tsx
 │   │   ├── GameContainer.tsx
 │   │   ├── HillHomeScene.tsx
 │   │   ├── PixelThemeProvider.tsx
@@ -121,4 +122,4 @@
 ├── tsconfig.json
 └── tsconfig.tsbuildinfo
 
-28 directories, 93 files
+28 directories, 94 files

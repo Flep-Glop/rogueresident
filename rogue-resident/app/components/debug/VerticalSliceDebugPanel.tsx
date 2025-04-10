@@ -5,20 +5,21 @@ import { shallow } from 'zustand/shallow';
 import { useGameStore } from '../../store/gameStore';
 import { useDialogueStateMachine } from '../../core/dialogue/DialogueStateMachine';
 import { useJournalStore } from '../../store/journalStore';
-import { useGameState } from '../../core/statemachine/GameStateMachine';
+import useGameState from '../../core/statemachine/GameStateMachine';
 import { useEventBus } from '../../core/events/CentralEventBus';
-import { useKnowledgeStore, KnowledgeDomain } from '../../store/knowledgeStore';
+import { useKnowledgeStore } from '../../store/knowledgeStore';
 import { GameEventType } from '../../core/events/EventTypes';
-import { getDomainColor } from '../../core/themeConstants';
 
-// Custom hook for stable primitive value extraction
-function usePrimitiveValue<T, V>(
-  useStore: () => T,
-  selector: (state: T) => V,
-  defaultValue: V
-): V {
-  return useStore(useCallback(state => selector(state), [])) ?? defaultValue;
-}
+// Import from the enhanced store hooks
+import { 
+  usePrimitiveStoreValue,
+  usePrimitiveValues,
+  useStableCallback,
+  usePrimitiveStoreFallback
+} from '../../core/utils/storeHooks';
+
+// Import the useRenderTracker from chamberDebug
+import { useRenderTracker } from '../../core/utils/chamberDebug';
 
 // Helper to check local storage safely
 function checkLocalStorage(key: string): string {
@@ -56,6 +57,9 @@ function checkLocalStorage(key: string): string {
  * - Uses refs for DOM manipulations rather than state when possible
  */
 export default function VerticalSliceDebugPanel() {
+  // Track render count using the chamberDebug utility
+  const renderCount = useRenderTracker('VerticalSliceDebugPanel');
+  
   // ==========================================
   // LOCAL UI STATE - Completely separate from game state
   // ==========================================
@@ -79,129 +83,269 @@ export default function VerticalSliceDebugPanel() {
   const eventsEndRef = useRef<HTMLDivElement>(null);
   
   // ==========================================
-  // STABLE PRIMITIVE SELECTORS - Extract only what we need
+  // PRIMITIVE SELECTORS WITH FALLBACK - more robust implementation
   // ==========================================
   
-  // Game state - extract primitives directly
-  const gamePhase = usePrimitiveValue(useGameState, state => state.gamePhase, 'day');
-  const gameStateValue = usePrimitiveValue(useGameState, state => state.gameState, 'not_started');
-  const currentDay = usePrimitiveValue(useGameState, state => state.currentDay, 1);
-  const completedNodeIds = useGameState(useCallback(state => state.completedNodeIds, []), shallow);
-  const isTransitioning = usePrimitiveValue(useGameState, state => state.isTransitioning, false);
+  // Game state - extract primitives directly using fallback for reliability
+  const gamePhase = usePrimitiveStoreFallback(
+    useGameState, 
+    state => state.gamePhase, 
+    'day'
+  );
+  
+  const gameStateValue = usePrimitiveStoreFallback(
+    useGameState, 
+    state => state.gameState, 
+    'not_started'
+  );
+  
+  const currentDay = usePrimitiveStoreFallback(
+    useGameState, 
+    state => state.currentDay, 
+    1
+  );
+  
+  const isTransitioning = usePrimitiveStoreFallback(
+    useGameState, 
+    state => state.isTransitioning, 
+    false
+  );
+  
+  // We need to extract the completed node IDs as an array length, not the array itself
+  const completedNodeCount = usePrimitiveStoreFallback(
+    useGameState, 
+    state => state.completedNodeIds ? state.completedNodeIds.length : 0,
+    0
+  );
   
   // Game store - extract primitives directly
-  const currentNodeId = usePrimitiveValue(useGameStore, state => state.currentNodeId, null);
-  const inventoryLength = usePrimitiveValue(useGameStore, state => state.inventory?.length, 0);
-  
-  // Player stats - extract primitives directly
-  const playerStats = useGameStore(
-    useCallback(state => ({
-      health: state.player?.health ?? 100,
-      maxHealth: state.player?.maxHealth ?? 100,
-      insight: state.player?.insight ?? 0,
-      momentum: state.player?.momentum ?? 0,
-      maxMomentum: state.player?.maxMomentum ?? 3
-    }), []),
-    shallow
+  const currentNodeId = usePrimitiveStoreFallback(
+    useGameStore, 
+    state => state.currentNodeId, 
+    null
   );
   
-  // Journal store
-  const journalStats = useJournalStore(
-    useCallback(state => ({
-      hasJournal: state.hasJournal,
-      currentUpgrade: state.currentUpgrade,
-      entriesLength: state.entries?.length ?? 0,
-      isOpen: state.isOpen,
-      currentPage: state.currentPage,
-      hasKapoorReferenceSheets: state.hasKapoorReferenceSheets,
-      hasKapoorAnnotatedNotes: state.hasKapoorAnnotatedNotes
-    }), []),
-    shallow
+  const inventoryLength = usePrimitiveStoreFallback(
+    useGameStore, 
+    state => state.inventory?.length, 
+    0
   );
   
-  // Dialogue state machine
-  const dialogueStats = useDialogueStateMachine(
-    useCallback(state => ({
-      isActive: state.isActive,
-      currentNodeId: state.currentNodeId,
-      activeFlowId: state.activeFlow?.id ?? 'unknown',
-      selectedOptionId: state.selectedOption?.id,
-      showResponse: state.showResponse,
-      showBackstory: state.showBackstory
-    }), []),
-    shallow
+  // Player stats - extract multiple primitives safely one at a time
+  const playerHealth = usePrimitiveStoreFallback(
+    useGameStore,
+    state => state.player?.health,
+    100
   );
   
-  // Knowledge store
-  const knowledgeStats = useKnowledgeStore(
-    useCallback(state => ({
-      totalMastery: state.totalMastery,
-      discoveredNodesCount: state.nodes.filter(n => n.discovered).length,
-      totalNodesCount: state.nodes.length,
-      connectionsCount: state.connections.length,
-      newlyDiscoveredCount: state.newlyDiscovered.length
-    }), []),
-    shallow
+  const playerMaxHealth = usePrimitiveStoreFallback(
+    useGameStore,
+    state => state.player?.maxHealth,
+    100
   );
   
-  const domainMastery = useKnowledgeStore(
-    useCallback(state => state.domainMastery, []),
-    shallow
+  const playerInsight = usePrimitiveStoreFallback(
+    useGameStore,
+    state => state.player?.insight || 0,
+    0
   );
   
-  // Stable async action handlers
-  // These are memoized to avoid recreating functions on every render
-  const forceGiveJournal = useCallback(() => {
-    if (!journalStats.hasJournal) {
-      useJournalStore.getState().initializeJournal('technical');
-      addConsoleMessage('🔧 DEBUG: Forced journal acquisition');
-    }
-  }, [journalStats.hasJournal]);
-
-  const forceNightPhase = useCallback(() => {
-    if (gamePhase === 'day') {
-      useGameState.getState().beginDayCompletion();
-      addConsoleMessage('🔧 DEBUG: Initiated day completion');
-    }
-  }, [gamePhase]);
-
-  const forceNewDay = useCallback(() => {
-    if (gamePhase === 'night') {
-      useGameState.getState().beginNightCompletion();
-      addConsoleMessage('🔧 DEBUG: Initiated night completion');
-    }
-  }, [gamePhase]);
+  const playerMomentum = usePrimitiveStoreFallback(
+    useGameStore,
+    state => state.player?.momentum || 0,
+    0
+  );
   
-  const resetGame = useCallback(() => {
-    try {
-      localStorage.removeItem('rogue-resident-game-v2');
-      localStorage.removeItem('rogue-resident-journal');
-      localStorage.removeItem('rogue-resident-knowledge');
-      
-      if ((window as any).__GAME_STATE_MACHINE_DEBUG__) {
-          (window as any).__GAME_STATE_MACHINE_DEBUG__.reset();
-      }
-      window.location.reload();
-    } catch (e) {
-        console.error("Error resetting game:", e);
-        addConsoleMessage('❌ Error resetting game state.');
-    }
-  }, []);
-
-  const forceKnowledgeGain = useCallback(() => {
-    try {
-        const knowledgeStore = useKnowledgeStore.getState();
-        knowledgeStore.updateMastery('radiation-dosimetry', 15);
-        knowledgeStore.discoverConcept('radiation-dosimetry');
-        addConsoleMessage('🔧 DEBUG: Added 15% mastery to radiation-dosimetry');
-    } catch (e) {
-        console.error("Error forcing knowledge gain:", e);
-        addConsoleMessage('❌ Error adding knowledge.');
-    }
-  }, []);
-
+  const playerMaxMomentum = usePrimitiveStoreFallback(
+    useGameStore,
+    state => state.player?.maxMomentum || 3,
+    3
+  );
+  
+  // Group player stats for convenience
+  const playerStats = {
+    health: playerHealth,
+    maxHealth: playerMaxHealth,
+    insight: playerInsight,
+    momentum: playerMomentum,
+    maxMomentum: playerMaxMomentum
+  };
+  
+  // Journal store - extract primitives safely
+  const hasJournal = usePrimitiveStoreFallback(
+    useJournalStore,
+    state => !!state.hasJournal,
+    false
+  );
+  
+  const journalCurrentUpgrade = usePrimitiveStoreFallback(
+    useJournalStore,
+    state => state.currentUpgrade || 'base',
+    'base'
+  );
+  
+  const journalEntriesLength = usePrimitiveStoreFallback(
+    useJournalStore,
+    state => state.entries?.length || 0,
+    0
+  );
+  
+  const journalIsOpen = usePrimitiveStoreFallback(
+    useJournalStore,
+    state => !!state.isOpen,
+    false
+  );
+  
+  const journalCurrentPage = usePrimitiveStoreFallback(
+    useJournalStore,
+    state => state.currentPage || 'knowledge',
+    'knowledge'
+  );
+  
+  const hasKapoorReferenceSheets = usePrimitiveStoreFallback(
+    useJournalStore,
+    state => !!state.hasKapoorReferenceSheets,
+    false
+  );
+  
+  const hasKapoorAnnotatedNotes = usePrimitiveStoreFallback(
+    useJournalStore,
+    state => !!state.hasKapoorAnnotatedNotes,
+    false
+  );
+  
+  // Group journal stats for convenience
+  const journalStats = {
+    hasJournal,
+    currentUpgrade: journalCurrentUpgrade,
+    entriesLength: journalEntriesLength,
+    isOpen: journalIsOpen,
+    currentPage: journalCurrentPage,
+    hasKapoorReferenceSheets,
+    hasKapoorAnnotatedNotes
+  };
+  
+  // Dialogue state machine - extract primitives safely
+  const dialogueIsActive = usePrimitiveStoreFallback(
+    useDialogueStateMachine,
+    state => !!state.isActive,
+    false
+  );
+  
+  const dialogueCurrentNodeId = usePrimitiveStoreFallback(
+    useDialogueStateMachine,
+    state => state.currentNodeId,
+    null
+  );
+  
+  const dialogueActiveFlowId = usePrimitiveStoreFallback(
+    useDialogueStateMachine,
+    state => state.activeFlow?.id || 'unknown',
+    'unknown'
+  );
+  
+  const dialogueSelectedOptionId = usePrimitiveStoreFallback(
+    useDialogueStateMachine,
+    state => state.selectedOption?.id,
+    null
+  );
+  
+  const dialogueShowResponse = usePrimitiveStoreFallback(
+    useDialogueStateMachine,
+    state => !!state.showResponse,
+    false
+  );
+  
+  const dialogueShowBackstory = usePrimitiveStoreFallback(
+    useDialogueStateMachine,
+    state => !!state.showBackstory,
+    false
+  );
+  
+  // Group dialogue stats for convenience
+  const dialogueStats = {
+    isActive: dialogueIsActive,
+    currentNodeId: dialogueCurrentNodeId,
+    activeFlowId: dialogueActiveFlowId,
+    selectedOptionId: dialogueSelectedOptionId,
+    showResponse: dialogueShowResponse,
+    showBackstory: dialogueShowBackstory
+  };
+  
+  // Knowledge store - extract primitives safely
+  const knowledgeTotalMastery = usePrimitiveStoreFallback(
+    useKnowledgeStore,
+    state => state.totalMastery || 0,
+    0
+  );
+  
+  const knowledgeDiscoveredNodesCount = usePrimitiveStoreFallback(
+    useKnowledgeStore,
+    state => {
+      if (!state.nodes) return 0;
+      return state.nodes.filter(n => n.discovered).length;
+    },
+    0
+  );
+  
+  const knowledgeTotalNodesCount = usePrimitiveStoreFallback(
+    useKnowledgeStore,
+    state => state.nodes?.length || 0,
+    0
+  );
+  
+  const knowledgeConnectionsCount = usePrimitiveStoreFallback(
+    useKnowledgeStore,
+    state => state.connections?.length || 0,
+    0
+  );
+  
+  const knowledgeNewlyDiscoveredCount = usePrimitiveStoreFallback(
+    useKnowledgeStore,
+    state => state.newlyDiscovered?.length || 0,
+    0
+  );
+  
+  // Group knowledge stats for convenience
+  const knowledgeStats = {
+    totalMastery: knowledgeTotalMastery,
+    discoveredNodesCount: knowledgeDiscoveredNodesCount,
+    totalNodesCount: knowledgeTotalNodesCount,
+    connectionsCount: knowledgeConnectionsCount,
+    newlyDiscoveredCount: knowledgeNewlyDiscoveredCount
+  };
+  
+  // Domain mastery - extract primitives safely
+  const radiationPhysicsMastery = usePrimitiveStoreFallback(
+    useKnowledgeStore,
+    state => state.domainMastery?.['radiation-physics'] || 0,
+    0
+  );
+  
+  const qualityAssuranceMastery = usePrimitiveStoreFallback(
+    useKnowledgeStore,
+    state => state.domainMastery?.['quality-assurance'] || 0,
+    0
+  );
+  
+  const clinicalPracticeMastery = usePrimitiveStoreFallback(
+    useKnowledgeStore,
+    state => state.domainMastery?.['clinical-practice'] || 0,
+    0
+  );
+  
+  const radiationProtectionMastery = usePrimitiveStoreFallback(
+    useKnowledgeStore,
+    state => state.domainMastery?.['radiation-protection'] || 0,
+    0
+  );
+  
+  // ==========================================
+  // STABLE ACTION HANDLERS
+  // ==========================================
+  
   // Helper to add console messages - stable across renders
-  const addConsoleMessage = useCallback((message: string) => {
+  const addConsoleMessage = useStableCallback((message: string) => {
     const timestamp = new Date().toLocaleTimeString();
     setConsoleOutput(prev => {
       const newOutput = [...prev, `[${timestamp}] ${message}`];
@@ -211,6 +355,77 @@ export default function VerticalSliceDebugPanel() {
       }
       return newOutput;
     });
+  }, []);
+  
+  // Stable action handlers to manipulate game state
+  const forceGiveJournal = useStableCallback(() => {
+    if (!journalStats.hasJournal) {
+      try {
+        useJournalStore.getState().initializeJournal('technical');
+        addConsoleMessage('🔧 DEBUG: Forced journal acquisition');
+      } catch (e) {
+        console.error('Error giving journal:', e);
+        addConsoleMessage('❌ Error giving journal');
+      }
+    }
+  }, [journalStats.hasJournal]);
+
+  const forceNightPhase = useStableCallback(() => {
+    if (gamePhase === 'day') {
+      try {
+        useGameState.getState().beginDayCompletion();
+        addConsoleMessage('🔧 DEBUG: Initiated day completion');
+      } catch (e) {
+        console.error('Error forcing night phase:', e);
+        addConsoleMessage('❌ Error forcing night phase');
+      }
+    }
+  }, [gamePhase]);
+
+  const forceNewDay = useStableCallback(() => {
+    if (gamePhase === 'night') {
+      try {
+        useGameState.getState().beginNightCompletion();
+        addConsoleMessage('🔧 DEBUG: Initiated night completion');
+      } catch (e) {
+        console.error('Error forcing new day:', e);
+        addConsoleMessage('❌ Error forcing new day');
+      }
+    }
+  }, [gamePhase]);
+  
+  const resetGame = useStableCallback(() => {
+    try {
+      localStorage.removeItem('rogue-resident-game-v2');
+      localStorage.removeItem('rogue-resident-journal');
+      localStorage.removeItem('rogue-resident-knowledge');
+      
+      if ((window as any).__GAME_STATE_MACHINE_DEBUG__) {
+        (window as any).__GAME_STATE_MACHINE_DEBUG__.reset();
+      }
+      
+      addConsoleMessage('🔧 DEBUG: Reset game state');
+      window.location.reload();
+    } catch (e) {
+      console.error("Error resetting game:", e);
+      addConsoleMessage('❌ Error resetting game state.');
+    }
+  }, []);
+
+  const forceKnowledgeGain = useStableCallback(() => {
+    try {
+      const knowledgeStore = useKnowledgeStore.getState();
+      if (knowledgeStore && knowledgeStore.updateMastery) {
+        knowledgeStore.updateMastery('radiation-dosimetry', 15);
+      }
+      if (knowledgeStore && knowledgeStore.discoverConcept) {
+        knowledgeStore.discoverConcept('radiation-dosimetry');
+      }
+      addConsoleMessage('🔧 DEBUG: Added 15% mastery to radiation-dosimetry');
+    } catch (e) {
+      console.error("Error forcing knowledge gain:", e);
+      addConsoleMessage('❌ Error adding knowledge.');
+    }
   }, []);
 
   // Critical path steps - computed from primitives
@@ -359,7 +574,7 @@ export default function VerticalSliceDebugPanel() {
         phase: gamePhase,
         day: currentDay,
         currentNodeId: currentNodeId,
-        completedNodes: completedNodeIds,
+        completedNodes: completedNodeCount,
         player: {
           insight: playerStats.insight,
           momentum: playerStats.momentum,
@@ -386,6 +601,12 @@ export default function VerticalSliceDebugPanel() {
         totalNodes: knowledgeStats.totalNodesCount,
         connections: knowledgeStats.connectionsCount
       },
+      domainMastery: {
+        'radiation-physics': radiationPhysicsMastery,
+        'quality-assurance': qualityAssuranceMastery,
+        'clinical-practice': clinicalPracticeMastery,
+        'radiation-protection': radiationProtectionMastery
+      },
       criticalPath: {
         progress: `${criticalPathSteps.filter(step => step.isComplete).length}/${criticalPathSteps.length}`,
         percentage: completionPercentage.toFixed(0) + '%',
@@ -401,21 +622,21 @@ export default function VerticalSliceDebugPanel() {
   };
 
   // Copy state summary to clipboard
-  const copyStateSummary = () => {
+  const copyStateSummary = useStableCallback(() => {
     const summary = generateStateSummary();
     navigator.clipboard.writeText(summary);
     setCopiedFeedback(true);
     setTimeout(() => setCopiedFeedback(false), 2000);
     addConsoleMessage('📋 Copied state summary to clipboard');
-  };
+  }, []);
 
   // Toggle section visibility
-  const toggleSection = (section: keyof typeof sections) => {
+  const toggleSection = useStableCallback((section: keyof typeof sections) => {
     setSections(prev => ({
       ...prev,
       [section]: !prev[section]
     }));
-  };
+  }, []);
 
   // ==========================================
   // RENDER - The actual component UI
@@ -611,7 +832,7 @@ export default function VerticalSliceDebugPanel() {
                       </div>
                       <div className="flex justify-between">
                         <span className="text-gray-400">Completed Nodes:</span>
-                        <span>{completedNodeIds.length}</span>
+                        <span>{completedNodeCount}</span>
                       </div>
                       <div className="flex justify-between">
                         <span className="text-gray-400">Inventory Items:</span>
@@ -797,24 +1018,58 @@ export default function VerticalSliceDebugPanel() {
                     </div>
                   </div>
 
-                  {/* Domain bars */}
-                  {Object.entries(domainMastery).map(([domain, mastery]) => (
-                    <div key={domain} className="mb-2">
-                      <div className="flex justify-between text-xs mb-1">
-                        <span>{domain}</span>
-                        <span>{mastery}%</span>
-                      </div>
-                      <div className="w-full h-1.5 bg-gray-700 rounded-full overflow-hidden">
-                        <div
-                          className="h-full rounded-full"
-                          style={{
-                            width: `${mastery}%`,
-                            backgroundColor: getDomainColor(domain as KnowledgeDomain)
-                          }}
-                        ></div>
-                      </div>
+                  {/* Domain bars for each domain - using primitives */}
+                  <div className="mb-2">
+                    <div className="flex justify-between text-xs mb-1">
+                      <span>radiation-physics</span>
+                      <span>{radiationPhysicsMastery}%</span>
                     </div>
-                  ))}
+                    <div className="w-full h-1.5 bg-gray-700 rounded-full overflow-hidden">
+                      <div
+                        className="h-full rounded-full bg-blue-500"
+                        style={{ width: `${radiationPhysicsMastery}%` }}
+                      ></div>
+                    </div>
+                  </div>
+                  
+                  <div className="mb-2">
+                    <div className="flex justify-between text-xs mb-1">
+                      <span>quality-assurance</span>
+                      <span>{qualityAssuranceMastery}%</span>
+                    </div>
+                    <div className="w-full h-1.5 bg-gray-700 rounded-full overflow-hidden">
+                      <div
+                        className="h-full rounded-full bg-green-500"
+                        style={{ width: `${qualityAssuranceMastery}%` }}
+                      ></div>
+                    </div>
+                  </div>
+                  
+                  <div className="mb-2">
+                    <div className="flex justify-between text-xs mb-1">
+                      <span>clinical-practice</span>
+                      <span>{clinicalPracticeMastery}%</span>
+                    </div>
+                    <div className="w-full h-1.5 bg-gray-700 rounded-full overflow-hidden">
+                      <div
+                        className="h-full rounded-full bg-pink-500"
+                        style={{ width: `${clinicalPracticeMastery}%` }}
+                      ></div>
+                    </div>
+                  </div>
+                  
+                  <div className="mb-2">
+                    <div className="flex justify-between text-xs mb-1">
+                      <span>radiation-protection</span>
+                      <span>{radiationProtectionMastery}%</span>
+                    </div>
+                    <div className="w-full h-1.5 bg-gray-700 rounded-full overflow-hidden">
+                      <div
+                        className="h-full rounded-full bg-amber-500"
+                        style={{ width: `${radiationProtectionMastery}%` }}
+                      ></div>
+                    </div>
+                  </div>
                 </div>
 
                 {/* Local storage info */}
@@ -890,7 +1145,15 @@ export default function VerticalSliceDebugPanel() {
 
                       <button
                         className="px-2 py-1 bg-indigo-600 text-white text-xs rounded hover:bg-indigo-500"
-                        onClick={() => useGameStore.getState().updateInsight(10)}
+                        onClick={() => {
+                          try {
+                            useGameStore.getState().updateInsight(10);
+                            addConsoleMessage('➕ Added 10 insight points');
+                          } catch (e) {
+                            console.error('Error adding insight:', e);
+                            addConsoleMessage('❌ Error adding insight');
+                          }
+                        }}
                       >
                         +10 Insight
                       </button>
@@ -914,20 +1177,25 @@ export default function VerticalSliceDebugPanel() {
                       className="w-full px-2 py-1 bg-gray-700 text-white text-xs rounded hover:bg-gray-600 text-left"
                       onClick={() => {
                         // Force a completion of all critical path steps
-                        const journalStore = useJournalStore.getState();
-                        const gameState = useGameState.getState();
-                        
-                        if (!journalStore.hasJournal) {
-                          journalStore.initializeJournal('technical');
-                        }
+                        try {
+                          const journalStore = useJournalStore.getState();
+                          const gameState = useGameState.getState();
+                          
+                          if (!journalStats.hasJournal && journalStore.initializeJournal) {
+                            journalStore.initializeJournal('technical');
+                          }
 
-                        // Ensure a node is completed
-                        const kapoorNodeId = 'calibration_node'; // Assuming this is the ID
-                        if (gameState.completedNodeIds.length === 0 && kapoorNodeId) {
-                           gameState.markNodeCompleted(kapoorNodeId);
-                        }
+                          // Ensure a node is completed
+                          const kapoorNodeId = 'calibration_node'; // Assuming this is the ID
+                          if (gameState.completedNodeIds?.length === 0 && gameState.markNodeCompleted) {
+                            gameState.markNodeCompleted(kapoorNodeId);
+                          }
 
-                        addConsoleMessage('🔧 Force-completed critical path steps');
+                          addConsoleMessage('🔧 Force-completed critical path steps');
+                        } catch (e) {
+                          console.error('Error forcing critical path:', e);
+                          addConsoleMessage('❌ Error completing critical path');
+                        }
                       }}
                     >
                       Force Critical Path Completion
@@ -955,7 +1223,7 @@ export default function VerticalSliceDebugPanel() {
                       className="w-full px-2 py-1 bg-gray-700 text-white text-xs rounded hover:bg-gray-600 text-left"
                       onClick={() => {
                         // Check if recovery functions are available via window object
-                         if (typeof window !== 'undefined' && (window as any).__GAME_STATE_MACHINE_DEBUG__) {
+                        if (typeof window !== 'undefined' && (window as any).__GAME_STATE_MACHINE_DEBUG__) {
                           try {
                             const result = (window as any).__GAME_STATE_MACHINE_DEBUG__.checkForStuckTransitions();
                             addConsoleMessage(`🔧 Stuck transition check: ${result ? 'Recovery attempted' : 'No issues found'}`);
