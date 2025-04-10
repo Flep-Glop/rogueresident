@@ -1,0 +1,71 @@
+sequenceDiagram
+    participant Player as Player
+    participant UI as GameContainer
+    participant SM as GameStateMachine
+    participant EB as EventBus
+    participant PR as ProgressionResolver
+    participant JStore as JournalStore
+    participant KStore as KnowledgeStore
+    
+    Note over Player,KStore: Day → Night Transition
+    
+    Player->>UI: Click "End Day" button
+    UI->>SM: beginDayCompletion()
+    SM->>SM: validate transition
+    SM->>EB: dispatch GAME_PHASE_CHANGED(transition_to_night)
+    EB->>UI: update UI to show transition animation
+    EB->>PR: trigger validateDayToNightTransition()
+    
+    alt Journal Validation
+        PR->>JStore: check if journal acquisition required
+        
+        alt Missing Journal
+            PR->>PR: forceJournalAcquisition()
+            PR->>EB: dispatch JOURNAL_ACQUIRED(forced)
+            EB->>JStore: update journal state
+        end
+    end
+    
+    Note over UI: After transition animation completes
+    UI->>SM: finalizeNightTransition()
+    SM->>EB: dispatch GAME_PHASE_CHANGED(night)
+    EB->>UI: update UI to show night phase
+    
+    alt Knowledge Transfer
+        KStore->>KStore: transferInsights() (Auto-triggered)
+        KStore->>EB: dispatch KNOWLEDGE_TRANSFERRED
+    end
+    
+    Note over Player,KStore: Night → Day Transition
+    
+    Player->>UI: Click "Rest Until Morning" button
+    UI->>SM: beginNightCompletion()
+    SM->>SM: validate transition
+    SM->>SM: reset completedNodeIds
+    SM->>SM: increment currentDay
+    SM->>EB: dispatch GAME_PHASE_CHANGED(transition_to_day)
+    EB->>UI: update UI to show transition animation
+    EB->>PR: trigger validateNightToDayTransition()
+    
+    alt Pending Insights Validation
+        PR->>KStore: check for pendingInsights
+        
+        alt Pending Insights Not Transferred
+            PR->>PR: forceKnowledgeTransfer()
+            PR->>EB: dispatch KNOWLEDGE_TRANSFERRED(forced)
+            EB->>KStore: update knowledge state
+        end
+    end
+    
+    Note over UI: After transition animation completes
+    UI->>SM: finalizeDayTransition()
+    SM->>EB: dispatch GAME_PHASE_CHANGED(day)
+    EB->>UI: update UI to show day phase
+
+    style Player fill:#d1d5db,stroke:#9ca3af,stroke-width:1px
+    style UI fill:#3b82f6,stroke:#1d4ed8,stroke-width:2px,color:white
+    style SM fill:#3b82f6,stroke:#1d4ed8,stroke-width:2px,color:white
+    style EB fill:#3b82f6,stroke:#1d4ed8,stroke-width:2px,color:white
+    style PR fill:#8b5cf6,stroke:#6d28d9,stroke-width:2px,color:white
+    style JStore fill:#10b981,stroke:#047857,stroke-width:2px,color:white
+    style KStore fill:#10b981,stroke:#047857,stroke-width:2px,color:white

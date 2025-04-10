@@ -1,14 +1,22 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { useGameStore } from '@/app/store/gameStore';
-import { useGameState } from '@/app/core/statemachine/GameStateMachine';
+import useGameStateMachine from '@/app/core/statemachine/GameStateMachine';
 import { useKnowledgeStore } from '@/app/store/knowledgeStore';
 import { useJournalStore } from '@/app/store/journalStore';
+import { useResourceStore } from '@/app/store/resourceStore';
 import InsightMeter from './gameplay/InsightMeter';
 import MomentumCounter from './gameplay/MomentumCounter';
 import ResidentPortrait from './ResidentPortrait';
 import { motion, AnimatePresence } from 'framer-motion';
 import { PixelBox, PixelButton } from './PixelThemeProvider';
+
+// Import our improved store hooks
+import { 
+  createStableSelector, 
+  usePrimitiveStoreValue, 
+  useStableStoreValue 
+} from '@/app/core/utils/storeHooks';
 
 /**
  * PlayerStats - Enhanced player stats sidebar with character representation
@@ -17,11 +25,50 @@ import { PixelBox, PixelButton } from './PixelThemeProvider';
  * knowledge acquisition loop through visual design and clear information hierarchy.
  */
 export default function PlayerStats() {
-  // Global state
-  const { player, currentNodeId } = useGameStore();
-  const { gamePhase, dayCount } = useGameState();
-  const { totalMastery, newlyDiscovered } = useKnowledgeStore();
-  const { hasJournal, currentUpgrade, toggleJournal } = useJournalStore();
+  // Global state with safety fallbacks and stable subscriptions
+  const player = useStableStoreValue(
+    useGameStore, 
+    state => state.player || { insight: 0, momentum: 0, maxMomentum: 3 }
+  );
+
+  // FIXED: Use primitive selector for string values
+  const currentNodeId = usePrimitiveStoreValue(useGameStore, state => state.currentNodeId);
+  
+  // FIXED: Access gamePhase directly from the state machine store with primitive selector
+  const gamePhase = usePrimitiveStoreValue(
+    useGameStateMachine, 
+    state => state.gamePhase,
+    'day' // Fallback to day if we get a non-string value
+  );
+  
+  // FIXED: Access dayCount directly and safely
+  const dayCount = usePrimitiveStoreValue(
+    useGameStateMachine, 
+    state => state.currentDay,
+    1 // Fallback to day 1 if undefined
+  );
+  
+  // Use stable selectors to prevent unnecessary re-renders
+  const { totalMastery, newlyDiscovered } = useKnowledgeStore(
+    createStableSelector(['totalMastery', 'newlyDiscovered'])
+  );
+  
+  // Journal functions and state with careful destructuring
+  const journalState = useJournalStore(
+    createStableSelector(['hasJournal', 'currentUpgrade'])
+  );
+  
+  // Direct function access with type safety
+  const toggleJournal = useStableStoreValue(
+    useJournalStore,
+    state => state.setJournalOpen || (
+      // Fallback implementation if function is missing
+      ((isOpen: boolean) => console.warn("Journal toggle not available"))
+    )
+  );
+  
+  // Destructure with safe defaults
+  const { hasJournal = false, currentUpgrade = 'base' } = journalState;
   
   // Local state for animations
   const [showInsightAnimation, setShowInsightAnimation] = useState(false);
@@ -34,7 +81,7 @@ export default function PlayerStats() {
   
   // Animate insight changes
   useEffect(() => {
-    if (player.insight > 50 && !showInsightAnimation) {
+    if (player?.insight > 50 && !showInsightAnimation) {
       setShowInsightAnimation(true);
       
       // Reset animation after delay
@@ -44,7 +91,7 @@ export default function PlayerStats() {
       
       return () => clearTimeout(timer);
     }
-  }, [player.insight, showInsightAnimation]);
+  }, [player?.insight, showInsightAnimation]);
   
   // Show journal button animation when journal is first acquired
   useEffect(() => {
@@ -59,7 +106,7 @@ export default function PlayerStats() {
   
   // Determine phase color for theming elements
   const getPhaseColor = () => {
-    return gamePhase === 'day' ? 'clinical' : 'educational';
+    return gamePhase === 'night' ? 'educational' : 'clinical';
   };
   
   return (
@@ -89,17 +136,20 @@ export default function PlayerStats() {
           className="p-3" 
           variant={gamePhase === 'day' ? 'clinical' : 'default'}
         >
-          <InsightMeter showAnimation={showInsightAnimation} />
+          <InsightMeter 
+            insight={player?.insight || 0} 
+            showAnimation={showInsightAnimation} 
+          />
         </PixelBox>
         
         {/* Momentum counter */}
         <PixelBox 
           className="p-3" 
-          variant={player.momentum >= 2 ? 'dark' : 'default'}
+          variant={(player?.momentum || 0) >= 2 ? 'dark' : 'default'}
         >
           <MomentumCounter 
-            level={player.momentum} 
-            consecutiveCorrect={player.momentum * 2} // Approximation
+            level={player?.momentum || 0} 
+            consecutiveCorrect={(player?.momentum || 0) * 2} // Approximation
             compact={true} 
             className="w-full"
           />
@@ -109,12 +159,12 @@ export default function PlayerStats() {
       {/* 3. Knowledge Progression Block - Strategic long-term resources */}
       <PixelBox 
         className="p-3" 
-        variant={newlyDiscovered.length > 0 ? 'educational' : 'default'}
+        variant={newlyDiscovered?.length > 0 ? 'educational' : 'default'}
       >
         <div className="text-sm text-text-secondary font-pixel mb-1">Knowledge Mastery</div>
         <div className="flex items-center">
           <div className={`text-${getPhaseColor()}-light text-lg font-pixel`}>
-            {totalMastery}%
+            {totalMastery || 0}%
           </div>
           
           {/* Visual progress bar - pixel style */}
@@ -123,7 +173,7 @@ export default function PlayerStats() {
               className={`h-full bg-${getPhaseColor()}`}
               initial={{ width: 0 }}
               animate={{ 
-                width: `${totalMastery}%`,
+                width: `${totalMastery || 0}%`,
                 transition: { type: 'spring', damping: 15 }
               }}
               style={{
@@ -137,7 +187,7 @@ export default function PlayerStats() {
         
         {/* Newly discovered animation */}
         <AnimatePresence>
-          {newlyDiscovered.length > 0 && (
+          {newlyDiscovered?.length > 0 && (
             <motion.div 
               className="mt-2 text-xs text-educational font-pixel"
               initial={{ opacity: 0, y: -5 }}
@@ -176,7 +226,7 @@ export default function PlayerStats() {
                 ${showJournalButtonAnimation ? 'animate-bounce-subtle' : ''}
                 pixel-button
               `}
-              onClick={() => toggleJournal()}
+              onClick={() => toggleJournal(true)}
             >
               <div className="flex items-center justify-center">
                 <span className="mr-1 text-lg">📖</span>
@@ -199,8 +249,8 @@ export default function PlayerStats() {
             <div className="pt-1 space-y-1">
               <div>Phase: {gamePhase}</div>
               <div>Day: {dayCount}</div>
-              <div>Insight: {player.insight}</div>
-              <div>Momentum: {player.momentum}/{player.maxMomentum}</div>
+              <div>Insight: {player?.insight || 0}</div>
+              <div>Momentum: {player?.momentum || 0}/{player?.maxMomentum || 3}</div>
               <div>Node: {currentNodeId ? currentNodeId.substring(0, 8) + '...' : 'none'}</div>
             </div>
           </details>

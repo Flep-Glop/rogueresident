@@ -1,0 +1,79 @@
+flowchart TD
+    %% Core dialogue node types
+    SubjectiveQ["Subjective Question\n(Multiple valid approaches)"]
+    ObjectiveQ["Objective Question\n(Single correct answer)"]
+    ProcedureQ["Procedure Question\n(Sequence matters)"]
+    
+    %% Player approaches
+    subgraph approaches["Player Approach Types"]
+        direction TB
+        Humble["Humble Approach\n(Asking for guidance)"]
+        Precise["Precision Approach\n(Technical accuracy)"]
+        Confident["Confidence Approach\n(Direct assertion)"]
+    end
+    
+    %% Strategic actions
+    subgraph actions["Strategic Actions"]
+        direction TB
+        Reframe["Reframe\n(Shift conversation)"]
+        Extrapolate["Extrapolate\n(Form connections)"]
+        Boast["Challenge\n(High risk/reward)"]
+        Synthesis["Synthesis\n(New domains)"]
+    end
+    
+    %% Mentor characters
+    subgraph mentors["Mentor Characters"]
+        direction TB
+        Kapoor["Dr. Kapoor\n(Methodical, Protocol-Driven)"]
+        Jesse["Technician Jesse\n(Hands-on, Practical)"]
+        Quinn["Dr. Quinn\n(Creative, Innovative)"]
+        Garcia["Dr. Garcia\n(Holistic, Patient-Focused)"]
+    end
+    
+    %% Response system
+    subgraph response["Response Generation"]
+        direction LR
+        ApproachMentorMatrix["Approach-Mentor Matrix"]
+        ActionResponseHandler["Action Response Handler"]
+        DialogueOptions["Generated Options\n(Audio, visuals, text)"]
+        RelationshipUpdate["Relationship & Score Update"]
+        KnowledgeGain["Knowledge Mastery Gain"]
+    end
+    
+    %% Relationship connections
+    SubjectiveQ --> approaches
+    ObjectiveQ --> approaches
+    ProcedureQ --> approaches
+    
+    approaches --> response
+    actions --> response
+    mentors --> response
+    
+    ApproachMentorMatrix --> DialogueOptions
+    ActionResponseHandler --> DialogueOptions
+    DialogueOptions --> RelationshipUpdate
+    DialogueOptions --> KnowledgeGain
+    
+    %% Mentor preference arrows
+    Kapoor -..-> |"Favors"| Precise
+    Jesse -..-> |"Favors"| Humble
+    Quinn -..-> |"Favors"| Confident
+    Garcia -..-> |"Favors"| Humble
+    
+    %% Special mentor-action relationships
+    Kapoor -..-> |"Action Synergy"| Extrapolate
+    Jesse -..-> |"Action Synergy"| Reframe
+    Quinn -..-> |"Action Synergy"| Synthesis
+    
+    %% Style
+    classDef questionNode fill:#3b82f6,stroke:#1d4ed8,color:white,stroke-width:2px
+    classDef approachNode fill:#10b981,stroke:#047857,color:white,stroke-width:2px
+    classDef actionNode fill:#f59e0b,stroke:#b45309,color:white,stroke-width:2px
+    classDef mentorNode fill:#ec4899,stroke:#be185d,color:white,stroke-width:2px
+    classDef responseNode fill:#8b5cf6,stroke:#6d28d9,color:white,stroke-width:2px
+    
+    class SubjectiveQ,ObjectiveQ,ProcedureQ questionNode
+    class Humble,Precise,Confident approachNode
+    class Reframe,Extrapolate,Boast,Synthesis actionNode
+    class Kapoor,Jesse,Quinn,Garcia mentorNode
+    class ApproachMentorMatrix,ActionResponseHandler,DialogueOptions,RelationshipUpdate,KnowledgeGain responseNode

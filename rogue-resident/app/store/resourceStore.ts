@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { immer } from 'zustand/middleware/immer';
-import { useEventBus, safeDispatch } from '../core/events/CentralEventBus';
+// Critical fix: Import both the singleton and the store hook
+import CentralEventBus, { useEventBus, safeDispatch } from '../core/events/CentralEventBus';
 import { GameEventType } from '../core/events/EventTypes';
 
 // Constants
@@ -45,7 +46,7 @@ interface ResourceThreshold {
   isNearby: boolean;
 }
 
-// Corrected: Define the FULL state interface including properties and actions
+// Resource state interface with full type definitions
 interface ResourceState {
   // State Properties
   insight: number;
@@ -76,14 +77,18 @@ interface ResourceState {
   clearEffect: (resourceType: ResourceType) => void;
   getThresholdProximity: (actionType: StrategicActionType) => number;
   resetResources: () => void;
+  
+  // Interface alignment methods
+  setResource: (resourceType: ResourceType, amount: number) => void;
+  hasEnoughResource: (resourceType: ResourceType, amount: number) => boolean;
 }
 
-// Define the initial state structure separately for clarity
-// Corrected: Removed unnecessary 'as Type' assertions and fixed value errors
-const initialState: Omit<ResourceState, // Use Omit to base initial state on the full interface, excluding actions
+// Define initial state separately for clarity
+const initialState: Omit<ResourceState, 
   'updateInsight' | 'setMomentum' | 'incrementMomentum' | 'resetMomentum' |
   'activateAction' | 'completeAction' | 'cancelAction' | 'triggerEffect' |
-  'clearEffect' | 'getThresholdProximity' | 'resetResources'
+  'clearEffect' | 'getThresholdProximity' | 'resetResources' | 
+  'setResource' | 'hasEnoughResource'
 > = {
     insight: 0,
     insightMax: 100,
@@ -96,7 +101,7 @@ const initialState: Omit<ResourceState, // Use Omit to base initial state on the
       intensity: 'low',
       startTime: 0,
       duration: 2000,
-      triggeredBy: undefined // Optional properties should be explicitly undefined or omitted if possible
+      triggeredBy: undefined
     },
     momentumEffect: {
       active: false,
@@ -106,53 +111,45 @@ const initialState: Omit<ResourceState, // Use Omit to base initial state on the
       triggeredBy: undefined
     },
     insightThresholds: [
-      // Correct: No 'as StrategicActionType' needed here, TS infers from ResourceThreshold type
       { value: RESOURCE_THRESHOLDS.REFRAME, label: 'R', actionType: 'reframe', nearbyRange: 10, isNearby: false },
       { value: RESOURCE_THRESHOLDS.EXTRAPOLATE, label: 'E', actionType: 'extrapolate', nearbyRange: 15, isNearby: false },
       { value: RESOURCE_THRESHOLDS.SYNTHESIS, label: 'S', actionType: 'synthesis', nearbyRange: 20, isNearby: false }
     ],
     availableActions: {
-      reframe: false, // Correct: Use boolean literal 'false'
+      reframe: false,
       extrapolate: false,
       boast: false,
       synthesis: false
-    },
-    // Correct: Removed trailing comma/syntax errors that might have caused 'number' error on line 94
+    }
 };
-
 
 export const useResourceStore = create<ResourceState>()(
   immer((set, get) => ({
-    ...initialState, // Spread the initial state properties
+    ...initialState,
 
     // --- Action Implementations ---
-    // These should now type-check correctly against the full ResourceState interface
-
     updateInsight: (amount: number, source = 'dialogue_choice') => {
-      // Correct: Access properties directly from get() which returns ResourceState
       const { insight, insightMax } = get();
       const newValue = Math.max(0, Math.min(insightMax, insight + amount));
       const change = newValue - insight;
 
       if (change === 0) return;
 
-      set((state: ResourceState) => { // Explicitly type Immer draft state
-        // Correct: Access properties on the draft state
+      set((state: ResourceState) => {
         state.insight = newValue;
         let intensity: 'low' | 'medium' | 'high' = 'low';
         if (Math.abs(change) >= 15) intensity = 'high';
         else if (Math.abs(change) >= 5) intensity = 'medium';
 
         if (Math.abs(change) >= 2) {
-          // Correct: Access effect property on draft state
           state.insightEffect = {
             active: true, intensity, startTime: Date.now(),
             duration: Math.abs(change) >= 15 ? 3000 : 2000,
-            triggeredBy: source as any // Cast source if needed, or ensure type alignment
+            triggeredBy: source as any
           };
         }
-        updateThresholdProximity(state); // Pass draft state to helper
-        updateAvailableActions(state); // Pass draft state to helper
+        updateThresholdProximity(state);
+        updateAvailableActions(state);
       });
 
        if (Math.abs(change) >= 1) {
@@ -161,7 +158,6 @@ export const useResourceStore = create<ResourceState>()(
             {
               resourceType: 'insight', previousValue: insight, newValue,
               change: change, source,
-              // Correct: Call getThresholdProximity via get()
               thresholdProximity: {
                 reframe: get().getThresholdProximity('reframe'),
                 extrapolate: get().getThresholdProximity('extrapolate'),
@@ -175,7 +171,6 @@ export const useResourceStore = create<ResourceState>()(
 
     setMomentum: (level: number, consecutive?: number) => {
       const newLevel = Math.max(0, Math.min(MAX_MOMENTUM_LEVEL, level));
-      // Correct: Access properties via get()
       const currentLevel = get().momentum;
       const currentConsecutive = get().consecutiveCorrect;
       const newConsecutive = consecutive !== undefined ? consecutive : currentConsecutive;
@@ -183,12 +178,10 @@ export const useResourceStore = create<ResourceState>()(
       if (newLevel === currentLevel && newConsecutive === currentConsecutive) return;
 
       set((state: ResourceState) => {
-        // Correct: Access properties on draft state
         state.momentum = newLevel;
         state.consecutiveCorrect = newConsecutive;
 
         if (newLevel !== currentLevel) {
-          // Correct: Access effect property on draft state
           state.momentumEffect = {
             active: true,
             intensity: newLevel > currentLevel ? 'medium' : 'high',
@@ -197,7 +190,7 @@ export const useResourceStore = create<ResourceState>()(
             triggeredBy: newLevel > currentLevel ? 'dialogue_choice' : 'system'
           };
         }
-        updateAvailableActions(state); // Pass draft state
+        updateAvailableActions(state);
       });
 
       if (newLevel !== currentLevel) {
@@ -213,21 +206,17 @@ export const useResourceStore = create<ResourceState>()(
     },
 
     incrementMomentum: () => {
-      // Correct: Access property via get()
       const { consecutiveCorrect } = get();
       const newConsecutive = consecutiveCorrect + 1;
       const newMomentum = Math.min(MAX_MOMENTUM_LEVEL, Math.floor(newConsecutive / 2));
-      // Correct: Call action via get()
       get().setMomentum(newMomentum, newConsecutive);
     },
 
     resetMomentum: () => {
-      // Correct: Call action via get()
       get().setMomentum(0, 0);
     },
 
-     activateAction: (actionType: StrategicActionType, context: any) => {
-      // Correct: Access properties via get()
+    activateAction: (actionType: StrategicActionType, context: any) => {
       const { insight, momentum, activeAction, availableActions } = get();
 
       if (activeAction !== null) {
@@ -235,7 +224,6 @@ export const useResourceStore = create<ResourceState>()(
         return false;
       }
 
-      // Correct: Access property via get()
       const isAvailable = availableActions[actionType] ?? false;
       if (!isAvailable) {
         console.warn(`Cannot activate ${actionType} - not available (Insight: ${insight}, Momentum: ${momentum})`);
@@ -269,18 +257,16 @@ export const useResourceStore = create<ResourceState>()(
       }
 
       if (cost > 0) {
-        // Correct: Call action via get()
         get().updateInsight(-cost, actionType);
       }
 
       set((state: ResourceState) => {
-        // Correct: Access properties on draft state
         state.activeAction = actionType;
         state.actionHistory.push({
           actionType, timestamp: Date.now(),
           characterId: context?.characterId || 'unknown',
           stageId: context?.stageId || 'unknown',
-          successful: true, // Activation successful, completion status updated later
+          successful: true,
           insightCost: cost > 0 ? cost : undefined,
           momentumRequired: getMomentumRequired(actionType) || undefined
         });
@@ -296,7 +282,6 @@ export const useResourceStore = create<ResourceState>()(
     },
 
     completeAction: (actionType: StrategicActionType, successful: boolean) => {
-      // Correct: Access property via get()
       const { activeAction } = get();
       if (activeAction !== actionType) {
         console.warn(`Cannot complete ${actionType} - not currently active`);
@@ -304,7 +289,6 @@ export const useResourceStore = create<ResourceState>()(
       }
 
       set((state: ResourceState) => {
-        // Correct: Access properties on draft state
         state.activeAction = null;
 
         const lastIndex = state.actionHistory.length - 1;
@@ -320,7 +304,7 @@ export const useResourceStore = create<ResourceState>()(
             duration: 2500, triggeredBy: 'boast'
           };
         }
-        updateAvailableActions(state); // Pass draft state
+        updateAvailableActions(state);
       });
 
       safeDispatch(
@@ -330,8 +314,7 @@ export const useResourceStore = create<ResourceState>()(
       );
     },
 
-     cancelAction: (actionType: StrategicActionType) => {
-      // Correct: Access property via get()
+    cancelAction: (actionType: StrategicActionType) => {
       const { activeAction } = get();
       if (activeAction !== actionType) {
         console.warn(`Cannot cancel ${actionType} - not currently active`);
@@ -341,16 +324,15 @@ export const useResourceStore = create<ResourceState>()(
       const insightCost = getInsightCost(actionType);
 
       set((state: ResourceState) => {
-        // Correct: Access properties on draft state
         state.activeAction = null;
 
         if (insightCost > 0) {
-          const currentInsight = state.insight; // Read from draft state
+          const currentInsight = state.insight;
           state.insight = Math.min(state.insightMax, currentInsight + insightCost);
           console.log(`Refunded ${insightCost} insight for canceled ${actionType}. New insight: ${state.insight}`);
-          updateThresholdProximity(state); // Pass draft state
+          updateThresholdProximity(state);
         }
-        updateAvailableActions(state); // Pass draft state
+        updateAvailableActions(state);
       });
 
       safeDispatch(
@@ -360,11 +342,15 @@ export const useResourceStore = create<ResourceState>()(
       );
     },
 
-    triggerEffect: ( resourceType: ResourceType, intensity: 'low' | 'medium' | 'high' = 'medium', source: string = 'system', duration: number = 2000 ) => {
+    triggerEffect: (
+      resourceType: ResourceType, 
+      intensity: 'low' | 'medium' | 'high' = 'medium', 
+      source: string = 'system', 
+      duration: number = 2000 
+    ) => {
       set((state: ResourceState) => {
-        // Correct: Use direct property access on draft state
         const effectProp = resourceType === 'insight' ? 'insightEffect' : 'momentumEffect';
-        state[effectProp] = { // This should now work as ResourceState includes these properties
+        state[effectProp] = {
           active: true, intensity, startTime: Date.now(), duration,
           triggeredBy: source as any
         };
@@ -373,7 +359,6 @@ export const useResourceStore = create<ResourceState>()(
 
     clearEffect: (resourceType: ResourceType) => {
       set((state: ResourceState) => {
-        // Correct: Use direct property access on draft state
         const effectProp = resourceType === 'insight' ? 'insightEffect' : 'momentumEffect';
         if (state[effectProp].active) {
             state[effectProp].active = false;
@@ -381,14 +366,12 @@ export const useResourceStore = create<ResourceState>()(
       });
     },
 
-     getThresholdProximity: (actionType: StrategicActionType): number => {
-      // Correct: Access property via get()
+    getThresholdProximity: (actionType: StrategicActionType): number => {
       const { insight } = get();
       const thresholdValue = getInsightCost(actionType);
       if (thresholdValue <= 0) return 0;
       if (insight >= thresholdValue) return 1;
 
-      // Correct: Access property via get() and add type annotation for 't'
       const threshold = get().insightThresholds.find((t: ResourceThreshold) => t.actionType === actionType);
       if (!threshold) return 0;
 
@@ -400,16 +383,34 @@ export const useResourceStore = create<ResourceState>()(
 
     resetResources: () => {
       console.log("Resetting resource store state...");
-      set(initialState); // Reset state properties to initial values
+      set(initialState);
       safeDispatch(GameEventType.RESOURCE_CHANGED, { resourceType: 'all', action: 'reset' }, 'resourceStore.resetResources');
     },
 
+    // New interface alignment methods
+    setResource: (resourceType: ResourceType, amount: number) => {
+      if (resourceType === 'insight') {
+        const { insight } = get();
+        get().updateInsight(amount - insight, 'system');
+      } else if (resourceType === 'momentum') {
+        get().setMomentum(amount);
+      }
+    },
+
+    hasEnoughResource: (resourceType: ResourceType, amount: number): boolean => {
+      if (resourceType === 'insight') {
+        return get().insight >= amount;
+      } else if (resourceType === 'momentum') {
+        return get().momentum >= amount;
+      }
+      return false;
+    }
   }))
 );
 
-// Helper functions should accept the state type
+// Helper functions
 function updateThresholdProximity(state: ResourceState) {
-  const { insight, insightThresholds } = state; // Access directly from passed state
+  const { insight, insightThresholds } = state;
   for (const threshold of insightThresholds) {
     if (insight >= threshold.value) {
       threshold.isNearby = false;
@@ -420,7 +421,7 @@ function updateThresholdProximity(state: ResourceState) {
 }
 
 function updateAvailableActions(state: ResourceState) {
-  const { insight, momentum, activeAction } = state; // Access directly from passed state
+  const { insight, momentum, activeAction } = state;
   if (activeAction !== null) {
     state.availableActions = { reframe: false, extrapolate: false, boast: false, synthesis: false };
     return;
@@ -433,7 +434,6 @@ function updateAvailableActions(state: ResourceState) {
   };
 }
 
-// Keep these helpers outside the store creation
 function getInsightCost(actionType: StrategicActionType): number {
   switch (actionType) {
     case 'reframe': return RESOURCE_THRESHOLDS.REFRAME;
@@ -450,6 +450,5 @@ function getMomentumRequired(actionType: StrategicActionType): number {
     default: return 0;
   }
 }
-
 
 export default useResourceStore;

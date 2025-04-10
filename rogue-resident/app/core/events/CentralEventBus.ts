@@ -1,18 +1,16 @@
 // app/core/events/CentralEventBus.ts
 /**
- * Simplified Central Event Bus for Vertical Slice
+ * Hybrid Event Bus Implementation
  * 
- * This streamlined implementation maintains essential robustness
- * while removing unnecessary complexity. It provides:
+ * This implementation bridges two architectural patterns:
+ * 1. Modern Zustand-based state management for React components
+ * 2. Classic singleton pattern for non-React systems
  * 
- * 1. Reliable event subscription and dispatch
- * 2. Error handling for critical events
- * 3. Event history for debugging
- * 4. Clean React integration
- * 
- * Compared to the previous implementation (~300 lines), this version
- * focuses on core functionality (~150 lines) while maintaining
- * the essential safety features.
+ * Features:
+ * - Singleton facade for legacy code compatibility
+ * - Zustand store for reactive state updates
+ * - Unified API surface for both patterns
+ * - Robust error handling and debugging
  */
 
 import { create } from 'zustand';
@@ -42,7 +40,7 @@ interface EventBusState {
 }
 
 /**
- * Main event bus store
+ * Main event bus store using Zustand
  */
 export const useEventBus = create<EventBusState>()((set, get) => ({
   listeners: new Map<GameEventType, Set<EventCallback>>(),
@@ -201,6 +199,70 @@ export const useEventBus = create<EventBusState>()((set, get) => ({
   }
 }));
 
+/**
+ * Singleton class to provide backwards compatibility
+ * This bridges legacy code expecting a singleton with the modern Zustand store
+ */
+class CentralEventBus {
+  private static instance: CentralEventBus | null = null;
+  
+  private constructor() {
+    // Private constructor for singleton pattern
+  }
+  
+  /**
+   * Get the singleton instance
+   */
+  public static getInstance(): CentralEventBus {
+    if (!this.instance) {
+      this.instance = new CentralEventBus();
+    }
+    return this.instance;
+  }
+  
+  /**
+   * Subscribe to an event
+   */
+  public subscribe<T>(eventType: GameEventType, callback: EventCallback<T>): () => void {
+    return useEventBus.getState().subscribe(eventType, callback);
+  }
+  
+  /**
+   * Subscribe to multiple events
+   */
+  public subscribeMany<T>(types: GameEventType[], listener: EventCallback<T>): () => void {
+    return useEventBus.getState().subscribeMany(types, listener);
+  }
+  
+  /**
+   * Dispatch an event
+   */
+  public dispatch<T>(eventType: GameEventType, payload: T, source?: string): void {
+    useEventBus.getState().dispatch(eventType, payload, source);
+  }
+  
+  /**
+   * Get event history
+   */
+  public getEventHistory(eventType?: GameEventType, limit?: number): GameEvent[] {
+    return useEventBus.getState().getEventHistory(eventType, limit);
+  }
+  
+  /**
+   * Clear event log
+   */
+  public clearEventLog(): void {
+    useEventBus.getState().clearEventLog();
+  }
+  
+  /**
+   * Access to getState for compatibility with code expecting store
+   */
+  public getState(): EventBusState {
+    return useEventBus.getState();
+  }
+}
+
 // ======== React Integration ========
 
 /**
@@ -241,7 +303,7 @@ export function useEventSubscription<T = any>(
         console.error('[useEventSubscription] Error unsubscribing:', error);
       }
     };
-  }, [eventType, stableCallback]); // Re-subscribe if event type or callback dependencies change
+  }, [eventType, stableCallback]); // Re-subscribe if event type or callback changes
 }
 
 // ======== Helper Functions ========
@@ -372,4 +434,6 @@ if (typeof window !== 'undefined') {
   };
 }
 
-export default useEventBus;
+// CRITICAL CHANGE: Export the class itself, not the instance
+// This allows code that expects CentralEventBus.getInstance() to work
+export default CentralEventBus;

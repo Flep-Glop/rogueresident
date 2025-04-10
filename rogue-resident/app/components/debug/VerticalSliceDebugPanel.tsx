@@ -1,26 +1,33 @@
 // app/components/debug/VerticalSliceDebugPanel.tsx
 'use client';
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { shallow } from 'zustand/shallow';
 import { useGameStore } from '../../store/gameStore';
 import { useDialogueStateMachine } from '../../core/dialogue/DialogueStateMachine';
 import { useJournalStore } from '../../store/journalStore';
 import { useGameState } from '../../core/statemachine/GameStateMachine';
 import { useEventBus } from '../../core/events/CentralEventBus';
-import { useKnowledgeStore, KnowledgeDomain } from '../../store/knowledgeStore'; // Import KnowledgeDomain
+import { useKnowledgeStore, KnowledgeDomain } from '../../store/knowledgeStore';
 import { GameEventType } from '../../core/events/EventTypes';
-import { getDomainColor } from '../../core/themeConstants'; // Import helper
+import { getDomainColor } from '../../core/themeConstants';
+
+// Custom hook for stable primitive value extraction
+function usePrimitiveValue<T, V>(
+  useStore: () => T,
+  selector: (state: T) => V,
+  defaultValue: V
+): V {
+  return useStore(useCallback(state => selector(state), [])) ?? defaultValue;
+}
 
 // Helper to check local storage safely
 function checkLocalStorage(key: string): string {
-  // Ensure localStorage is available (prevents errors during SSR or in certain environments)
   if (typeof window === 'undefined' || typeof window.localStorage === 'undefined') {
     return 'Unavailable';
   }
   try {
     const item = localStorage.getItem(key);
-    // *** FIX: Check if item is not null before accessing .length ***
     if (item !== null) {
-      // Calculate size in KB, handle potential large items
       const sizeKB = Math.round(item.length / 1024);
       return `${sizeKB} KB`;
     } else {
@@ -32,7 +39,6 @@ function checkLocalStorage(key: string): string {
   }
 }
 
-
 /**
  * Enhanced Vertical Slice Debug Panel
  *
@@ -42,9 +48,17 @@ function checkLocalStorage(key: string): string {
  * - Visual timeline of critical events
  * - State visualization with visual indicators of health
  * - Direct state manipulations for faster testing
+ * 
+ * ARCHITECTURE NOTES:
+ * - Uses primitive selectors to avoid reference instability
+ * - Batches state reads using shallow comparison
+ * - Separates UI state from game state
+ * - Uses refs for DOM manipulations rather than state when possible
  */
 export default function VerticalSliceDebugPanel() {
-  // Panel UI state
+  // ==========================================
+  // LOCAL UI STATE - Completely separate from game state
+  // ==========================================
   const [isExpanded, setIsExpanded] = useState(true);
   const [activeTab, setActiveTab] = useState<'overview' | 'events' | 'state' | 'tools'>('overview');
   const [copiedFeedback, setCopiedFeedback] = useState(false);
@@ -61,92 +75,133 @@ export default function VerticalSliceDebugPanel() {
     tools: true
   });
 
-  // Ref for auto-scrolling event log
+  // Refs for DOM operations
   const eventsEndRef = useRef<HTMLDivElement>(null);
-
-  // Game state from core systems
-  const gameState = useGameState();
-  const dialogueState = useDialogueStateMachine();
-  const gameStore = useGameStore();
-  const journalStore = useJournalStore();
-  const knowledgeStore = useKnowledgeStore();
-
-  // Track critical path events
-  useEffect(() => {
-    const eventBus = useEventBus.getState();
-
-    // Subscribe to critical events
-    const unsubDialogueEvents = eventBus.subscribe(
-      GameEventType.DIALOGUE_CRITICAL_PATH,
-      (event) => {
-        const payload = event.payload as any; // Cast for easier access
-        setCriticalEvents(prev => [
-          ...prev,
-          {
-            event: `Critical dialogue: ${payload?.stateId || 'unknown'}`, // Safe access
-            timestamp: Date.now()
-          }
-        ]);
-        addConsoleMessage(`🔑 Critical path: ${payload?.stateId || 'unknown'}`);
-      }
-    );
-
-    const unsubJournalEvents = eventBus.subscribe(
-      GameEventType.JOURNAL_ACQUIRED,
-      (event) => {
-         const payload = event.payload as any; // Cast for easier access
-        setCriticalEvents(prev => [
-          ...prev,
-          {
-            event: `Journal acquired: ${payload?.tier || 'unknown'}`, // Safe access
-            timestamp: Date.now()
-          }
-        ]);
-        addConsoleMessage(`📓 Journal acquired: ${payload?.tier || 'unknown'} (from ${payload?.character || 'unknown'})`);
-      }
-    );
-
-    const unsubPhaseEvents = eventBus.subscribe(
-      GameEventType.GAME_PHASE_CHANGED,
-      (event) => {
-         const payload = event.payload as any; // Cast for easier access
-        setCriticalEvents(prev => [
-          ...prev,
-          {
-            event: `Phase changed: ${payload?.from || '?'} → ${payload?.to || '?'}`, // Safe access
-            timestamp: Date.now()
-          }
-        ]);
-        addConsoleMessage(`🔄 Phase change: ${payload?.from || '?'} → ${payload?.to || '?'}`);
-      }
-    );
-
-    const unsubKnowledgeEvents = eventBus.subscribe(
-      GameEventType.KNOWLEDGE_GAINED,
-      (event) => {
-        const payload = event.payload as any; // Cast for easier access
-        addConsoleMessage(`✨ Knowledge gained: ${payload?.conceptId || '?'} +${payload?.amount || '?'}%`);
-      }
-    );
-
-    // Clean up subscriptions
-    return () => {
-      unsubDialogueEvents();
-      unsubJournalEvents();
-      unsubPhaseEvents();
-      unsubKnowledgeEvents();
-    };
-  }, []); // Empty dependency array ensures this runs only once
-
-  // Auto-scroll event log
-  useEffect(() => {
-    if (eventsEndRef.current) {
-      eventsEndRef.current.scrollIntoView({ behavior: 'smooth' });
+  
+  // ==========================================
+  // STABLE PRIMITIVE SELECTORS - Extract only what we need
+  // ==========================================
+  
+  // Game state - extract primitives directly
+  const gamePhase = usePrimitiveValue(useGameState, state => state.gamePhase, 'day');
+  const gameStateValue = usePrimitiveValue(useGameState, state => state.gameState, 'not_started');
+  const currentDay = usePrimitiveValue(useGameState, state => state.currentDay, 1);
+  const completedNodeIds = useGameState(useCallback(state => state.completedNodeIds, []), shallow);
+  const isTransitioning = usePrimitiveValue(useGameState, state => state.isTransitioning, false);
+  
+  // Game store - extract primitives directly
+  const currentNodeId = usePrimitiveValue(useGameStore, state => state.currentNodeId, null);
+  const inventoryLength = usePrimitiveValue(useGameStore, state => state.inventory?.length, 0);
+  
+  // Player stats - extract primitives directly
+  const playerStats = useGameStore(
+    useCallback(state => ({
+      health: state.player?.health ?? 100,
+      maxHealth: state.player?.maxHealth ?? 100,
+      insight: state.player?.insight ?? 0,
+      momentum: state.player?.momentum ?? 0,
+      maxMomentum: state.player?.maxMomentum ?? 3
+    }), []),
+    shallow
+  );
+  
+  // Journal store
+  const journalStats = useJournalStore(
+    useCallback(state => ({
+      hasJournal: state.hasJournal,
+      currentUpgrade: state.currentUpgrade,
+      entriesLength: state.entries?.length ?? 0,
+      isOpen: state.isOpen,
+      currentPage: state.currentPage,
+      hasKapoorReferenceSheets: state.hasKapoorReferenceSheets,
+      hasKapoorAnnotatedNotes: state.hasKapoorAnnotatedNotes
+    }), []),
+    shallow
+  );
+  
+  // Dialogue state machine
+  const dialogueStats = useDialogueStateMachine(
+    useCallback(state => ({
+      isActive: state.isActive,
+      currentNodeId: state.currentNodeId,
+      activeFlowId: state.activeFlow?.id ?? 'unknown',
+      selectedOptionId: state.selectedOption?.id,
+      showResponse: state.showResponse,
+      showBackstory: state.showBackstory
+    }), []),
+    shallow
+  );
+  
+  // Knowledge store
+  const knowledgeStats = useKnowledgeStore(
+    useCallback(state => ({
+      totalMastery: state.totalMastery,
+      discoveredNodesCount: state.nodes.filter(n => n.discovered).length,
+      totalNodesCount: state.nodes.length,
+      connectionsCount: state.connections.length,
+      newlyDiscoveredCount: state.newlyDiscovered.length
+    }), []),
+    shallow
+  );
+  
+  const domainMastery = useKnowledgeStore(
+    useCallback(state => state.domainMastery, []),
+    shallow
+  );
+  
+  // Stable async action handlers
+  // These are memoized to avoid recreating functions on every render
+  const forceGiveJournal = useCallback(() => {
+    if (!journalStats.hasJournal) {
+      useJournalStore.getState().initializeJournal('technical');
+      addConsoleMessage('🔧 DEBUG: Forced journal acquisition');
     }
-  }, [consoleOutput]);
+  }, [journalStats.hasJournal]);
 
-  // Helper to add console messages
-  const addConsoleMessage = (message: string) => {
+  const forceNightPhase = useCallback(() => {
+    if (gamePhase === 'day') {
+      useGameState.getState().beginDayCompletion();
+      addConsoleMessage('🔧 DEBUG: Initiated day completion');
+    }
+  }, [gamePhase]);
+
+  const forceNewDay = useCallback(() => {
+    if (gamePhase === 'night') {
+      useGameState.getState().beginNightCompletion();
+      addConsoleMessage('🔧 DEBUG: Initiated night completion');
+    }
+  }, [gamePhase]);
+  
+  const resetGame = useCallback(() => {
+    try {
+      localStorage.removeItem('rogue-resident-game-v2');
+      localStorage.removeItem('rogue-resident-journal');
+      localStorage.removeItem('rogue-resident-knowledge');
+      
+      if ((window as any).__GAME_STATE_MACHINE_DEBUG__) {
+          (window as any).__GAME_STATE_MACHINE_DEBUG__.reset();
+      }
+      window.location.reload();
+    } catch (e) {
+        console.error("Error resetting game:", e);
+        addConsoleMessage('❌ Error resetting game state.');
+    }
+  }, []);
+
+  const forceKnowledgeGain = useCallback(() => {
+    try {
+        const knowledgeStore = useKnowledgeStore.getState();
+        knowledgeStore.updateMastery('radiation-dosimetry', 15);
+        knowledgeStore.discoverConcept('radiation-dosimetry');
+        addConsoleMessage('🔧 DEBUG: Added 15% mastery to radiation-dosimetry');
+    } catch (e) {
+        console.error("Error forcing knowledge gain:", e);
+        addConsoleMessage('❌ Error adding knowledge.');
+    }
+  }, []);
+
+  // Helper to add console messages - stable across renders
+  const addConsoleMessage = useCallback((message: string) => {
     const timestamp = new Date().toLocaleTimeString();
     setConsoleOutput(prev => {
       const newOutput = [...prev, `[${timestamp}] ${message}`];
@@ -156,59 +211,142 @@ export default function VerticalSliceDebugPanel() {
       }
       return newOutput;
     });
-  };
+  }, []);
 
-  // Kapoor Node ID - needed for some debug tools
-  // Ideally, this would be dynamically determined or passed in
-  const kapoorNodeId = 'calibration_node'; // Assuming this is the ID
-
-  // Critical path steps
+  // Critical path steps - computed from primitives
   const criticalPathSteps = [
     {
       id: 'game-initialized',
       label: 'Game Initialized',
-      isComplete: !!gameStore.map, // Check if map exists in gameStore
-      details: gameStore.map ? `Map Seed: ${gameStore.map.seed || 'unknown'}` : 'Not initialized'
+      isComplete: gameStateValue === 'in_progress',
+      details: gameStateValue === 'in_progress' 
+        ? 'Game started successfully' 
+        : 'Not initialized'
     },
     {
       id: 'calibration-node-selected',
       label: 'Calibration Node Selected',
-      isComplete: !!gameStore.currentNodeId && gameStore.currentNodeId.includes('calibration'),
-      details: gameStore.currentNodeId || 'No node selected'
+      isComplete: !!currentNodeId && currentNodeId.includes('calibration'),
+      details: currentNodeId || 'No node selected'
     },
     {
       id: 'dialogue-started',
       label: 'Dialogue Started',
-      isComplete: dialogueState.isActive,
-      details: dialogueState.isActive
-        ? `Current State: ${dialogueState.currentNodeId || 'unknown'}` // Use state machine's node ID
+      isComplete: dialogueStats.isActive,
+      details: dialogueStats.isActive
+        ? `Current State: ${dialogueStats.currentNodeId || 'unknown'}`
         : 'Not started'
     },
     {
       id: 'journal-acquired',
       label: 'Journal Acquired',
-      isComplete: journalStore.hasJournal,
-      details: journalStore.hasJournal
-        ? `Journal Tier: ${journalStore.currentUpgrade}`
+      isComplete: journalStats.hasJournal,
+      details: journalStats.hasJournal
+        ? `Journal Tier: ${journalStats.currentUpgrade}`
         : 'Not acquired'
     },
     {
       id: 'night-phase',
       label: 'Night Phase Transition',
-      isComplete: gameState.gamePhase === 'night' || gameState.isTransitioning, // Include transition state
-      details: `Current Phase: ${gameState.gamePhase}`
+      isComplete: gamePhase === 'night' || isTransitioning,
+      details: `Current Phase: ${gamePhase}`
     },
     {
       id: 'new-day',
       label: 'New Day Started',
-      isComplete: gameState.currentDay > 1,
-      details: `Current Day: ${gameState.currentDay}`
+      isComplete: currentDay > 1,
+      details: `Current Day: ${currentDay}`
     }
   ];
 
-  // Get completion percentage for progress bar
+  // Get completion percentage for progress bar - derived value, not state
   const completionPercentage = criticalPathSteps.filter(step => step.isComplete).length /
                               criticalPathSteps.length * 100;
+
+  // ==========================================
+  // EFFECTS - Carefully controlled dependencies
+  // ==========================================
+  
+  // Event subscription effect - runs only once
+  useEffect(() => {
+    const eventBus = useEventBus.getState();
+    const subscriptions: (() => void)[] = [];
+
+    // Subscribe to critical events - captures in one subscription call
+    subscriptions.push(
+      eventBus.subscribe(
+        GameEventType.DIALOGUE_CRITICAL_PATH,
+        (event) => {
+          const payload = event.payload as any;
+          setCriticalEvents(prev => [
+            ...prev,
+            {
+              event: `Critical dialogue: ${payload?.stateId || 'unknown'}`,
+              timestamp: Date.now()
+            }
+          ]);
+          addConsoleMessage(`🔑 Critical path: ${payload?.stateId || 'unknown'}`);
+        }
+      )
+    );
+
+    // Other event subscriptions
+    subscriptions.push(
+      eventBus.subscribe(
+        GameEventType.JOURNAL_ACQUIRED,
+        (event) => {
+          const payload = event.payload as any;
+          setCriticalEvents(prev => [
+            ...prev,
+            {
+              event: `Journal acquired: ${payload?.tier || 'unknown'}`,
+              timestamp: Date.now()
+            }
+          ]);
+          addConsoleMessage(`📓 Journal acquired: ${payload?.tier || 'unknown'} (from ${payload?.character || 'unknown'})`);
+        }
+      )
+    );
+
+    subscriptions.push(
+      eventBus.subscribe(
+        GameEventType.GAME_PHASE_CHANGED,
+        (event) => {
+          const payload = event.payload as any;
+          setCriticalEvents(prev => [
+            ...prev,
+            {
+              event: `Phase changed: ${payload?.from || '?'} → ${payload?.to || '?'}`,
+              timestamp: Date.now()
+            }
+          ]);
+          addConsoleMessage(`🔄 Phase change: ${payload?.from || '?'} → ${payload?.to || '?'}`);
+        }
+      )
+    );
+
+    subscriptions.push(
+      eventBus.subscribe(
+        GameEventType.KNOWLEDGE_GAINED,
+        (event) => {
+          const payload = event.payload as any;
+          addConsoleMessage(`✨ Knowledge gained: ${payload?.conceptId || '?'} +${payload?.amount || '?'}%`);
+        }
+      )
+    );
+
+    // Clean up all subscriptions at once
+    return () => {
+      subscriptions.forEach(unsub => unsub());
+    };
+  }, []); // Empty dependency array ensures this runs only once
+
+  // Auto-scroll event log - only runs when consoleOutput changes
+  useEffect(() => {
+    if (eventsEndRef.current) {
+      eventsEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [consoleOutput]);
 
   // Only render in development
   if (process.env.NODE_ENV === 'production') return null;
@@ -217,27 +355,36 @@ export default function VerticalSliceDebugPanel() {
   const generateStateSummary = () => {
     const summary = {
       gameState: {
-        state: gameState.gameState, // Use state machine state
-        phase: gameState.gamePhase,
-        day: gameState.currentDay,
-        currentNodeId: gameStore.currentNodeId, // Current node from gameStore
-        completedNodes: gameState.completedNodeIds, // Completed nodes from state machine
-        player: gameStore.player
+        state: gameStateValue,
+        phase: gamePhase,
+        day: currentDay,
+        currentNodeId: currentNodeId,
+        completedNodes: completedNodeIds,
+        player: {
+          insight: playerStats.insight,
+          momentum: playerStats.momentum,
+          maxMomentum: playerStats.maxMomentum,
+          // Add health only if it exists in the model
+          ...(playerStats.health !== undefined && { 
+            health: playerStats.health, 
+            maxHealth: playerStats.maxHealth 
+          })
+        }
       },
       journalState: {
-        acquired: journalStore.hasJournal,
-        tier: journalStore.currentUpgrade,
-        entryCount: journalStore.entries?.length || 0 // Safe access
+        acquired: journalStats.hasJournal,
+        tier: journalStats.currentUpgrade,
+        entryCount: journalStats.entriesLength
       },
       dialogueState: {
-        active: dialogueState.isActive,
-        currentNodeId: dialogueState.currentNodeId // Use state machine's node ID
+        active: dialogueStats.isActive,
+        currentNodeId: dialogueStats.currentNodeId
       },
       knowledgeState: {
-        totalMastery: knowledgeStore.totalMastery,
-        discoveredNodes: knowledgeStore.nodes.filter(n => n.discovered).length,
-        totalNodes: knowledgeStore.nodes.length,
-        connections: knowledgeStore.connections.length
+        totalMastery: knowledgeStats.totalMastery,
+        discoveredNodes: knowledgeStats.discoveredNodesCount,
+        totalNodes: knowledgeStats.totalNodesCount,
+        connections: knowledgeStats.connectionsCount
       },
       criticalPath: {
         progress: `${criticalPathSteps.filter(step => step.isComplete).length}/${criticalPathSteps.length}`,
@@ -262,56 +409,6 @@ export default function VerticalSliceDebugPanel() {
     addConsoleMessage('📋 Copied state summary to clipboard');
   };
 
-  // Force critical progression (for debugging)
-  const forceGiveJournal = () => {
-    if (!journalStore.hasJournal) {
-      journalStore.initializeJournal('technical');
-      addConsoleMessage('🔧 DEBUG: Forced journal acquisition');
-    }
-  };
-
-  const forceNightPhase = () => {
-    if (gameState.gamePhase === 'day') {
-      gameState.beginDayCompletion(); // Use the state machine method
-      addConsoleMessage('🔧 DEBUG: Initiated day completion');
-    }
-  };
-
-  const forceNewDay = () => {
-    if (gameState.gamePhase === 'night') {
-      gameState.beginNightCompletion(); // Use the state machine method
-      addConsoleMessage('🔧 DEBUG: Initiated night completion');
-    }
-  };
-
-  const resetGame = () => {
-    try {
-      localStorage.removeItem('rogue-resident-game-v2'); // Use updated key
-      localStorage.removeItem('rogue-resident-journal');
-      localStorage.removeItem('rogue-resident-knowledge');
-      // Also reset the state machine
-      if ((window as any).__GAME_STATE_MACHINE_DEBUG__) {
-          (window as any).__GAME_STATE_MACHINE_DEBUG__.reset();
-      }
-      window.location.reload();
-    } catch (e) {
-        console.error("Error resetting game:", e);
-        addConsoleMessage('❌ Error resetting game state.');
-    }
-  };
-
-  const forceKnowledgeGain = () => {
-    try {
-        // Award some knowledge to radiation-dosimetry concept
-        knowledgeStore.updateMastery('radiation-dosimetry', 15);
-        knowledgeStore.discoverConcept('radiation-dosimetry');
-        addConsoleMessage('🔧 DEBUG: Added 15% mastery to radiation-dosimetry');
-    } catch (e) {
-        console.error("Error forcing knowledge gain:", e);
-        addConsoleMessage('❌ Error adding knowledge.');
-    }
-  };
-
   // Toggle section visibility
   const toggleSection = (section: keyof typeof sections) => {
     setSections(prev => ({
@@ -320,9 +417,12 @@ export default function VerticalSliceDebugPanel() {
     }));
   };
 
+  // ==========================================
+  // RENDER - The actual component UI
+  // ==========================================
   return (
     <div
-      className="fixed top-1/2 right-0 transform -translate-y-1/2 bg-gray-900/90 text-white z-[10000] rounded-l-lg shadow-xl overflow-hidden transition-all duration-300" // Increased z-index
+      className="fixed top-1/2 right-0 transform -translate-y-1/2 bg-gray-900/90 text-white z-[10000] rounded-l-lg shadow-xl overflow-hidden transition-all duration-300"
       style={{
         width: isExpanded ? '350px' : '40px',
         height: isExpanded ? '550px' : '160px',
@@ -472,11 +572,11 @@ export default function VerticalSliceDebugPanel() {
                     </div>
                     <div className="px-2 py-0.5 text-xs rounded" style={{
                       backgroundColor:
-                        gameState.gamePhase === 'day' ? 'rgba(59, 130, 246, 0.5)' :
-                        gameState.gamePhase === 'night' ? 'rgba(124, 58, 237, 0.5)' :
+                        gamePhase === 'day' ? 'rgba(59, 130, 246, 0.5)' :
+                        gamePhase === 'night' ? 'rgba(124, 58, 237, 0.5)' :
                         'rgba(209, 213, 219, 0.2)'
                     }}>
-                      {gameState.gamePhase}
+                      {gamePhase}
                     </div>
                   </div>
 
@@ -484,35 +584,38 @@ export default function VerticalSliceDebugPanel() {
                     <div className="mt-2 text-xs space-y-1 bg-gray-900 p-2 rounded">
                        <div className="flex justify-between">
                         <span className="text-gray-400">Game State:</span>
-                        <span>{gameState.gameState}</span>
+                        <span>{gameStateValue}</span>
                       </div>
                        <div className="flex justify-between">
                         <span className="text-gray-400">Current Day:</span>
-                        <span>{gameState.currentDay}</span>
+                        <span>{currentDay}</span>
                       </div>
-                      <div className="flex justify-between">
-                        <span className="text-gray-400">Player Health:</span>
-                        <span>{gameStore.player.health}/{gameStore.player.maxHealth}</span>
-                      </div>
+                      {/* Only show health if it exists in the player model */}
+                      {playerStats.health !== undefined && (
+                        <div className="flex justify-between">
+                          <span className="text-gray-400">Player Health:</span>
+                          <span>{playerStats.health}/{playerStats.maxHealth}</span>
+                        </div>
+                      )}
                       <div className="flex justify-between">
                         <span className="text-gray-400">Insight:</span>
-                        <span>{gameStore.player.insight}</span>
+                        <span>{playerStats.insight}</span>
                       </div>
                       <div className="flex justify-between">
                         <span className="text-gray-400">Momentum:</span>
-                        <span>{gameStore.player.momentum}/{gameStore.player.maxMomentum}</span>
+                        <span>{playerStats.momentum}/{playerStats.maxMomentum}</span>
                       </div>
                       <div className="flex justify-between">
                         <span className="text-gray-400">Selected Node:</span>
-                        <span className="truncate max-w-[160px]">{gameStore.currentNodeId || 'none'}</span>
+                        <span className="truncate max-w-[160px]">{currentNodeId || 'none'}</span>
                       </div>
                       <div className="flex justify-between">
                         <span className="text-gray-400">Completed Nodes:</span>
-                        <span>{gameState.completedNodeIds.length}</span>
+                        <span>{completedNodeIds.length}</span>
                       </div>
                       <div className="flex justify-between">
                         <span className="text-gray-400">Inventory Items:</span>
-                        <span>{gameStore.inventory.length}</span>
+                        <span>{inventoryLength}</span>
                       </div>
                     </div>
                   )}
@@ -529,34 +632,34 @@ export default function VerticalSliceDebugPanel() {
                       Journal State
                     </div>
                     <div className="px-2 py-0.5 text-xs rounded" style={{
-                      backgroundColor: journalStore.hasJournal ? 'rgba(16, 185, 129, 0.5)' : 'rgba(239, 68, 68, 0.5)'
+                      backgroundColor: journalStats.hasJournal ? 'rgba(16, 185, 129, 0.5)' : 'rgba(239, 68, 68, 0.5)'
                     }}>
-                      {journalStore.hasJournal ? 'Acquired' : 'Missing'}
+                      {journalStats.hasJournal ? 'Acquired' : 'Missing'}
                     </div>
                   </div>
 
-                  {sections.journalState && journalStore.hasJournal && (
+                  {sections.journalState && journalStats.hasJournal && (
                     <div className="mt-2 text-xs space-y-1 bg-gray-900 p-2 rounded">
                       <div className="flex justify-between">
                         <span className="text-gray-400">Journal Tier:</span>
-                        <span>{journalStore.currentUpgrade}</span>
+                        <span>{journalStats.currentUpgrade}</span>
                       </div>
                       <div className="flex justify-between">
                         <span className="text-gray-400">Entries:</span>
-                        <span>{journalStore.entries?.length || 0}</span>
+                        <span>{journalStats.entriesLength}</span>
                       </div>
                       <div className="flex justify-between">
                         <span className="text-gray-400">Opened:</span>
-                        <span>{journalStore.isOpen ? 'Yes' : 'No'}</span>
+                        <span>{journalStats.isOpen ? 'Yes' : 'No'}</span>
                       </div>
                       <div className="flex justify-between">
                         <span className="text-gray-400">Current Page:</span>
-                        <span>{journalStore.currentPage}</span>
+                        <span>{journalStats.currentPage}</span>
                       </div>
-                      {journalStore.hasKapoorReferenceSheets && (
+                      {journalStats.hasKapoorReferenceSheets && (
                         <div className="text-green-400">Has Kapoor reference sheets</div>
                       )}
-                      {journalStore.hasKapoorAnnotatedNotes && (
+                      {journalStats.hasKapoorAnnotatedNotes && (
                         <div className="text-green-400">Has Kapoor annotated notes</div>
                       )}
                     </div>
@@ -568,22 +671,22 @@ export default function VerticalSliceDebugPanel() {
                   <div className="flex justify-between items-center">
                     <div className="text-sm font-medium">Knowledge State</div>
                     <div className="px-2 py-0.5 text-xs bg-purple-500/50 rounded">
-                      {knowledgeStore.totalMastery}% Mastery
+                      {knowledgeStats.totalMastery}% Mastery
                     </div>
                   </div>
 
                   <div className="mt-2 text-xs space-y-1">
                     <div className="flex justify-between">
                       <span className="text-gray-400">Discovered:</span>
-                      <span>{knowledgeStore.nodes.filter(n => n.discovered).length}/{knowledgeStore.nodes.length}</span>
+                      <span>{knowledgeStats.discoveredNodesCount}/{knowledgeStats.totalNodesCount}</span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-gray-400">Connections:</span>
-                      <span>{knowledgeStore.connections.length}</span>
+                      <span>{knowledgeStats.connectionsCount}</span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-gray-400">Newly Discovered:</span>
-                      <span>{knowledgeStore.newlyDiscovered.length}</span>
+                      <span>{knowledgeStats.newlyDiscoveredCount}</span>
                     </div>
                   </div>
                 </div>
@@ -649,37 +752,37 @@ export default function VerticalSliceDebugPanel() {
                       Dialogue System
                     </div>
                     <div className="px-2 py-0.5 text-xs rounded" style={{
-                      backgroundColor: dialogueState.isActive ? 'rgba(16, 185, 129, 0.5)' : 'rgba(209, 213, 219, 0.2)'
+                      backgroundColor: dialogueStats.isActive ? 'rgba(16, 185, 129, 0.5)' : 'rgba(209, 213, 219, 0.2)'
                     }}>
-                      {dialogueState.isActive ? 'Active' : 'Inactive'}
+                      {dialogueStats.isActive ? 'Active' : 'Inactive'}
                     </div>
                   </div>
 
-                  {sections.dialogueState && dialogueState.isActive && (
+                  {sections.dialogueState && dialogueStats.isActive && (
                     <div className="mt-2 text-xs space-y-1 bg-gray-900 p-2 rounded">
                       <div className="flex justify-between">
                         <span className="text-gray-400">Current State ID:</span>
-                        <span className="truncate max-w-[160px]">{dialogueState.currentNodeId || 'unknown'}</span>
+                        <span className="truncate max-w-[160px]">{dialogueStats.currentNodeId || 'unknown'}</span>
                       </div>
                       <div className="flex justify-between">
                         <span className="text-gray-400">Flow ID:</span>
                         <span className="truncate max-w-[160px]">
-                          {dialogueState.activeFlow?.id || 'unknown'}
+                          {dialogueStats.activeFlowId}
                         </span>
                       </div>
-                      {dialogueState.selectedOption && (
+                      {dialogueStats.selectedOptionId && (
                         <div className="flex justify-between">
                           <span className="text-gray-400">Selected Option:</span>
-                          <span>{dialogueState.selectedOption.id}</span>
+                          <span>{dialogueStats.selectedOptionId}</span>
                         </div>
                       )}
                       <div className="flex justify-between">
                         <span className="text-gray-400">Showing Response:</span>
-                        <span>{dialogueState.showResponse ? 'Yes' : 'No'}</span>
+                        <span>{dialogueStats.showResponse ? 'Yes' : 'No'}</span>
                       </div>
                       <div className="flex justify-between">
                         <span className="text-gray-400">Showing Backstory:</span>
-                        <span>{dialogueState.showBackstory ? 'Yes' : 'No'}</span>
+                        <span>{dialogueStats.showBackstory ? 'Yes' : 'No'}</span>
                       </div>
                     </div>
                   )}
@@ -690,12 +793,12 @@ export default function VerticalSliceDebugPanel() {
                   <div className="flex justify-between items-center mb-2">
                     <div className="text-sm font-medium">Domain Mastery</div>
                     <div className="px-2 py-0.5 text-xs bg-purple-500/50 rounded">
-                      {knowledgeStore.totalMastery}%
+                      {knowledgeStats.totalMastery}%
                     </div>
                   </div>
 
                   {/* Domain bars */}
-                  {Object.entries(knowledgeStore.domainMastery).map(([domain, mastery]) => (
+                  {Object.entries(domainMastery).map(([domain, mastery]) => (
                     <div key={domain} className="mb-2">
                       <div className="flex justify-between text-xs mb-1">
                         <span>{domain}</span>
@@ -720,7 +823,6 @@ export default function VerticalSliceDebugPanel() {
                   <div className="text-xs space-y-1">
                     <div className="flex justify-between">
                       <span className="text-gray-400">Game Store:</span>
-                      {/* *** FIX APPLIED HERE *** */}
                       <span>{checkLocalStorage('rogue-resident-game-v2')}</span>
                     </div>
                     <div className="flex justify-between">
@@ -758,7 +860,7 @@ export default function VerticalSliceDebugPanel() {
                       <button
                         className="px-2 py-1 bg-green-600 text-white text-xs rounded hover:bg-green-500 disabled:opacity-50"
                         onClick={forceGiveJournal}
-                        disabled={journalStore.hasJournal}
+                        disabled={journalStats.hasJournal}
                       >
                         Give Journal
                       </button>
@@ -766,7 +868,7 @@ export default function VerticalSliceDebugPanel() {
                       <button
                         className="px-2 py-1 bg-purple-600 text-white text-xs rounded hover:bg-purple-500 disabled:opacity-50"
                         onClick={forceNightPhase}
-                        disabled={gameState.gamePhase !== 'day'}
+                        disabled={gamePhase !== 'day'}
                       >
                         Night Phase
                       </button>
@@ -774,7 +876,7 @@ export default function VerticalSliceDebugPanel() {
                       <button
                         className="px-2 py-1 bg-yellow-600 text-white text-xs rounded hover:bg-yellow-500 disabled:opacity-50"
                         onClick={forceNewDay}
-                        disabled={gameState.gamePhase !== 'night'}
+                        disabled={gamePhase !== 'night'}
                       >
                         New Day
                       </button>
@@ -788,7 +890,7 @@ export default function VerticalSliceDebugPanel() {
 
                       <button
                         className="px-2 py-1 bg-indigo-600 text-white text-xs rounded hover:bg-indigo-500"
-                        onClick={() => gameStore.updateInsight(10)}
+                        onClick={() => useGameStore.getState().updateInsight(10)}
                       >
                         +10 Insight
                       </button>
@@ -812,13 +914,17 @@ export default function VerticalSliceDebugPanel() {
                       className="w-full px-2 py-1 bg-gray-700 text-white text-xs rounded hover:bg-gray-600 text-left"
                       onClick={() => {
                         // Force a completion of all critical path steps
+                        const journalStore = useJournalStore.getState();
+                        const gameState = useGameState.getState();
+                        
                         if (!journalStore.hasJournal) {
                           journalStore.initializeJournal('technical');
                         }
 
                         // Ensure a node is completed
+                        const kapoorNodeId = 'calibration_node'; // Assuming this is the ID
                         if (gameState.completedNodeIds.length === 0 && kapoorNodeId) {
-                           gameState.markNodeCompleted(kapoorNodeId); // Use state machine method
+                           gameState.markNodeCompleted(kapoorNodeId);
                         }
 
                         addConsoleMessage('🔧 Force-completed critical path steps');
@@ -832,11 +938,11 @@ export default function VerticalSliceDebugPanel() {
                       onClick={() => {
                         // Open the browser console
                         console.group('%c🔍 Debug State Dump', 'font-size: 14px; font-weight: bold; color: #3b82f6;');
-                        console.log('Game State Machine:', gameState);
-                        console.log('Game Store:', gameStore);
-                        console.log('Journal Store:', journalStore);
-                        console.log('Knowledge Store:', knowledgeStore);
-                        console.log('Dialogue State Machine:', dialogueState);
+                        console.log('Game State Machine:', useGameState.getState());
+                        console.log('Game Store:', useGameStore.getState());
+                        console.log('Journal Store:', useJournalStore.getState());
+                        console.log('Knowledge Store:', useKnowledgeStore.getState());
+                        console.log('Dialogue State Machine:', useDialogueStateMachine.getState());
                         console.groupEnd();
 
                         addConsoleMessage('🔍 Dumped state objects to browser console');

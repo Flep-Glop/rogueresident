@@ -1,8 +1,9 @@
 // app/components/knowledge/ConstellationView.tsx
 'use client';
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { usePrimitiveStoreValue, useStableStoreValue, createStableSelector } from '../../core/utils/storeHooks';
 import { useKnowledgeStore, ConceptNode, ConceptConnection, KNOWLEDGE_DOMAINS, KnowledgeDomain } from '../../store/knowledgeStore';
-import { DOMAIN_COLORS, DOMAIN_COLORS_LIGHT } from '../../core/themeConstants'; // Import theme constants
+import { DOMAIN_COLORS, DOMAIN_COLORS_LIGHT } from '../../core/themeConstants';
 
 // Import Drawing Utilities
 import {
@@ -57,8 +58,14 @@ interface ConstellationViewProps {
 }
 
 /**
- * ConstellationView - Refactored interactive knowledge visualization system.
- * Uses extracted utilities, hooks, and sub-components for better organization.
+ * ConstellationView - Refactored with Chamber Pattern Implementation
+ * 
+ * Improvements:
+ * - Primitive value extraction to avoid render loops
+ * - Stable references for callbacks
+ * - Batched rendering
+ * - DOM-based animations
+ * - Canvas-based visualization
  */
 export default function ConstellationView({
   onClose,
@@ -75,18 +82,33 @@ export default function ConstellationView({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const animationFrameRef = useRef<number | null>(null);
-  const isComponentMountedRef = useRef(true); // Use ref for mount status
+  const isComponentMountedRef = useRef(true);
+  const particleEffectsRef = useRef<ParticleEffect[]>([]);
+  const animationActiveRef = useRef(false);
+  const renderNeededRef = useRef(false);
 
-  // STORE ACCESS
-  const nodes = useKnowledgeStore(useCallback(state => state.nodes, []));
-  const connections = useKnowledgeStore(useCallback(state => state.connections, []));
-  const totalMastery = useKnowledgeStore(useCallback(state => state.totalMastery, []));
-  const domainMastery = useKnowledgeStore(useCallback(state => state.domainMastery, []));
-  const newlyDiscovered = useKnowledgeStore(useCallback(state => state.newlyDiscovered, []));
-  const journalEntries = useKnowledgeStore(useCallback(state => state.journalEntries, []));
-  const resetNewlyDiscovered = useKnowledgeStore(useCallback(state => state.resetNewlyDiscovered, []));
+  // PATTERN: Safe, primitive state extraction from store
+  const storeSelector = useMemo(() => createStableSelector([
+    'nodes', 'connections', 'totalMastery', 'domainMastery', 
+    'newlyDiscovered', 'journalEntries'
+  ]), []);
+  
+  const {
+    nodes,
+    connections,
+    totalMastery,
+    domainMastery,
+    newlyDiscovered,
+    journalEntries
+  } = useKnowledgeStore(storeSelector);
+  
+  // Store function access with stable references
+  const resetNewlyDiscovered = useStableStoreValue(
+    useKnowledgeStore, 
+    state => state.resetNewlyDiscovered
+  );
 
-  // STATE MANAGEMENT
+  // LOCAL STATE - Kept for UI interactions not affecting rendering cycles
   const [activeNode, setActiveNode] = useState<ConceptNode | null>(null);
   const [selectedNode, setSelectedNode] = useState<ConceptNode | null>(null);
   const [pendingConnection, setPendingConnection] = useState<string | null>(null);
@@ -96,14 +118,22 @@ export default function ConstellationView({
   const [zoomLevel, setZoomLevel] = useState(0.8);
   const [cameraPosition, setCameraPosition] = useState({ x: 0, y: 0 });
   const [dimensions, setDimensions] = useState({ width: 800, height: 600 });
-  const [particleEffects, setParticleEffects] = useState<ParticleEffect[]>([]);
 
-  // Use Interaction Hook
+  // PATTERN: Memoize discovered data to ensure stable references
+  const discoveredNodes = useMemo(() => 
+    nodes.filter(node => node.discovered), 
+  [nodes]);
+  
+  const discoveredConnections = useMemo(() => 
+    connections.filter(conn => conn.discovered), 
+  [connections]);
+
+  // PATTERN: Use Interaction Hook with memoized data
   const interactionHandlers = useConstellationInteraction({
     canvasRef,
     interactive,
-    discoveredNodes: useMemo(() => nodes.filter(node => node.discovered), [nodes]), // Pass memoized nodes
-    discoveredConnections: useMemo(() => connections.filter(conn => conn.discovered), [connections]), // Pass memoized connections
+    discoveredNodes,
+    discoveredConnections,
     zoomLevel,
     setZoomLevel,
     cameraPosition,
@@ -114,7 +144,12 @@ export default function ConstellationView({
     setSelectedNode,
     pendingConnection,
     setPendingConnection,
-    setParticleEffects,
+    setParticleEffects: (particles) => {
+      // Update ref instead of state
+      particleEffectsRef.current = particles;
+      renderNeededRef.current = true;
+      scheduleNextFrame();
+    },
     isComponentMountedRef,
   });
 
@@ -122,14 +157,18 @@ export default function ConstellationView({
   useEffect(() => {
     if (fullscreen) {
       const updateDimensions = () => {
-        const containerWidth = containerRef.current?.parentElement?.clientWidth || window.innerWidth;
-        const containerHeight = containerRef.current?.parentElement?.clientHeight || window.innerHeight;
+        if (!containerRef.current?.parentElement) return;
+        
+        const containerWidth = containerRef.current.parentElement.clientWidth || window.innerWidth;
+        const containerHeight = containerRef.current.parentElement.clientHeight || window.innerHeight;
         const padding = 24;
+        
         setDimensions({
           width: Math.max(800, containerWidth - padding * 2),
           height: Math.max(600, containerHeight - padding * 2)
         });
       };
+      
       updateDimensions();
       window.addEventListener('resize', updateDimensions);
       return () => window.removeEventListener('resize', updateDimensions);
@@ -138,22 +177,20 @@ export default function ConstellationView({
     }
   }, [fullscreen, width, height]);
 
-  // Memoize discovered data
-  const discoveredNodes = useMemo(() => nodes.filter(node => node.discovered), [nodes]);
-  const discoveredConnections = useMemo(() => connections.filter(conn => conn.discovered), [connections]);
-
   // Track component mount status
   useEffect(() => {
     isComponentMountedRef.current = true;
+    
     return () => {
       isComponentMountedRef.current = false;
       if (animationFrameRef.current !== null) {
         cancelAnimationFrame(animationFrameRef.current);
+        animationFrameRef.current = null;
       }
     };
   }, []);
 
-  // Focus on active/newly discovered nodes and create particle effects
+  // PATTERN: Focus on active nodes with DOM-based effects
   useEffect(() => {
     if (!isComponentMountedRef.current || nodes.length === 0) return;
 
@@ -162,12 +199,13 @@ export default function ConstellationView({
 
     // Focus on the first highlighted node if none is selected
     if (!selectedNode) {
-         const nodeToFocus = nodes.find(n => nodesToHighlight.includes(n.id));
-         if (nodeToFocus) setSelectedNode(nodeToFocus);
+      const nodeToFocus = nodes.find(n => nodesToHighlight.includes(n.id));
+      if (nodeToFocus) setSelectedNode(nodeToFocus);
     }
 
-
+    // Generate particle effects for highlighted nodes
     const newParticles: ParticleEffect[] = [];
+    
     nodesToHighlight.forEach(nodeId => {
       const node = nodes.find(n => n.id === nodeId);
       if (node?.position) {
@@ -175,6 +213,7 @@ export default function ConstellationView({
           const angle = Math.random() * Math.PI * 2;
           const distance = Math.random() * 100 + 50;
           const color = DOMAIN_COLORS[node.domain] || DOMAIN_COLORS.general;
+          
           newParticles.push({
             id: `particle-${nodeId}-${i}-${Date.now()}`,
             x: node.position.x + Math.cos(angle) * distance,
@@ -191,46 +230,60 @@ export default function ConstellationView({
     });
 
     if (newParticles.length > 0) {
-      setParticleEffects(prev => [...prev, ...newParticles]);
-       if (activeNodes.length > 0) { // Only play sound for externally activated nodes
-           console.log('Would play success sound');
-       }
+      // Update particle effects ref directly
+      particleEffectsRef.current = [...particleEffectsRef.current, ...newParticles];
+      renderNeededRef.current = true;
+      scheduleNextFrame();
+      
+      // Play success sound for externally activated nodes
+      if (activeNodes.length > 0) {
+        console.log('Would play success sound');
+      }
     }
-  }, [activeNodes, newlyDiscovered, nodes, selectedNode]); // Add selectedNode dependency
-
+  }, [activeNodes, newlyDiscovered, nodes, selectedNode]);
 
   // Track recent insights for Journal Overlay
   useEffect(() => {
     if (!isComponentMountedRef.current) return;
+    
     if (journalEntries.length > 0) {
       const recent = journalEntries
         .sort((a, b) => b.timestamp - a.timestamp)
         .slice(0, 5)
         .map(entry => ({ conceptId: entry.conceptId, amount: entry.masteryGained }));
+      
       setRecentInsights(recent);
     } else {
-       // Placeholder if no entries
-       setRecentInsights([
-         { conceptId: 'electron-equilibrium', amount: 15 },
-         { conceptId: 'radiation-safety', amount: 30 }
-       ]);
+      // Placeholder if no entries
+      setRecentInsights([
+        { conceptId: 'electron-equilibrium', amount: 15 },
+        { conceptId: 'radiation-safety', amount: 30 }
+      ]);
     }
   }, [journalEntries]);
 
-  // Particle Animation Loop
-  useEffect(() => {
-    if (!isComponentMountedRef.current || particleEffects.length === 0) return;
-
-    let active = true;
-    const animate = () => {
-      if (!active || !isComponentMountedRef.current) return;
-      let animating = false;
-      setParticleEffects(prev => {
-        if (!active) return prev;
-        const updated = prev.map(p => {
+  // PATTERN: Animation frame scheduler
+  const scheduleNextFrame = useCallback(() => {
+    if (animationActiveRef.current || !isComponentMountedRef.current) return;
+    
+    animationActiveRef.current = true;
+    
+    animationFrameRef.current = requestAnimationFrame(() => {
+      if (!isComponentMountedRef.current) {
+        animationActiveRef.current = false;
+        return;
+      }
+      
+      // Update particles
+      if (particleEffectsRef.current.length > 0) {
+        let animating = false;
+        
+        // Process particles (using refs instead of state)
+        particleEffectsRef.current = particleEffectsRef.current.map(p => {
           const dx = p.targetX - p.x;
           const dy = p.targetY - p.y;
           const dist = Math.sqrt(dx * dx + dy * dy);
+          
           if (dist > 5) {
             animating = true;
             return { ...p, x: p.x + dx * 0.05, y: p.y + dy * 0.05, life: p.life - 1 };
@@ -238,26 +291,30 @@ export default function ConstellationView({
             return { ...p, life: p.life - 3 }; // Decay faster at target
           }
         }).filter(p => p.life > 0);
-        return updated;
-      });
-      if (animating && active && isComponentMountedRef.current) {
-        animationFrameRef.current = requestAnimationFrame(animate);
-      } else {
-        animationFrameRef.current = null;
+        
+        // Trigger re-render
+        renderNeededRef.current = true;
       }
-    };
-    animationFrameRef.current = requestAnimationFrame(animate);
-    return () => {
-      active = false;
-      if (animationFrameRef.current !== null) {
-        cancelAnimationFrame(animationFrameRef.current);
+      
+      // Render if needed
+      if (renderNeededRef.current) {
+        renderCanvas();
+        renderNeededRef.current = false;
       }
-    };
-  }, [particleEffects.length]); // Re-run only if particle count changes
+      
+      animationActiveRef.current = false;
+      
+      // Continue animation if needed
+      if (particleEffectsRef.current.length > 0) {
+        scheduleNextFrame();
+      }
+    });
+  }, []);
 
-  // Main Canvas Drawing Loop
-  useEffect(() => {
+  // PATTERN: Canvas rendering function (extracted from effect)
+  const renderCanvas = useCallback(() => {
     if (!canvasRef.current || !isComponentMountedRef.current) return;
+    
     const canvas = canvasRef.current;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
@@ -276,19 +333,39 @@ export default function ConstellationView({
     drawConnections(ctx, discoveredConnections, discoveredNodes, selectedNode, pendingConnection);
     drawNodes(ctx, discoveredNodes, activeNode, selectedNode, pendingConnection, activeNodes, newlyDiscovered, showLabels);
     drawPendingConnection(ctx, discoveredNodes, pendingConnection, activeNode);
-    drawParticles(ctx, particleEffects);
+    drawParticles(ctx, particleEffectsRef.current);
 
     // Restore transformations
     ctx.restore();
-
   }, [
-    discoveredNodes, discoveredConnections, activeNode, selectedNode, pendingConnection,
-    activeNodes, newlyDiscovered, particleEffects, zoomLevel, cameraPosition, dimensions, showLabels // Add dimensions and showLabels
+    discoveredNodes, 
+    discoveredConnections, 
+    activeNode, 
+    selectedNode, 
+    pendingConnection,
+    activeNodes, 
+    newlyDiscovered, 
+    zoomLevel, 
+    cameraPosition, 
+    dimensions, 
+    showLabels
+  ]);
+
+  // Initial render and dimension changes
+  useEffect(() => {
+    renderNeededRef.current = true;
+    scheduleNextFrame();
+  }, [
+    renderCanvas, 
+    scheduleNextFrame, 
+    dimensions.width, 
+    dimensions.height
   ]);
 
   // Handle closing the view
   const handleClose = useCallback(() => {
     if (!isComponentMountedRef.current || !onClose) return;
+    
     setSelectedNode(null);
     setActiveNode(null);
     setPendingConnection(null);
@@ -361,7 +438,6 @@ export default function ConstellationView({
            setPendingConnection={setPendingConnection}
          />
        )}
-
 
       {/* Render Overlays */}
       <JournalOverlay

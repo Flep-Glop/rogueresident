@@ -1,0 +1,75 @@
+flowchart TD
+    %% Strategic Action Decision Tree for Player Choice Mapping
+    
+    DifficultSituation["Difficult Knowledge Challenge\n(Complex concept or tough dialogue)"]
+    
+    %% Resources Assessment
+    DifficultSituation --> ResourceAssessment{"Resource\nAssessment"}
+    
+    %% Branch based on Insight level
+    ResourceAssessment -->|"Low Insight\n(<25)"| NoActionOptions["No Strategic Actions\n(Basic dialogue only)"]
+    ResourceAssessment -->|"Medium Insight\n(25-49)"| ReframeAvailable["Reframe Available\n(25 Insight Cost)"]
+    ResourceAssessment -->|"High Insight\n(50-74)"| ExtrapAvailable["Extrapolate Available*\n(50 Insight Cost)"]
+    ResourceAssessment -->|"Max Insight\n(75+)"| SynthesisAvailable["Synthesis Available\n(75 Insight Cost)"]
+    
+    %% Momentum assessment
+    MomentumCheck{"Momentum\nAssessment"}
+    ExtrapAvailable -->|"Requires\nL2+ Momentum"| MomentumCheck
+    MomentumCheck -->|"Momentum < 2"| ExtrapLocked["Extrapolate Locked\n(Need higher Momentum)"]
+    MomentumCheck -->|"Momentum >= 2"| ExtrapUnlocked["Extrapolate Unlocked\n(Can Use)"]
+    
+    %% Max Momentum provides special option
+    ResourceAssessment -->|"Any Insight +\nMax Momentum"| BoastAvailable["Challenge Available\n(No Insight Cost)"]
+    
+    %% Action outcomes - Reframe
+    ReframeAvailable --> UseReframe{"Use Reframe?"}
+    UseReframe -->|"Yes"| ReframeEffects["Easier Dialogue Options\n- Less Knowledge Gain\n- Safer Answers\n- Builds Relationship"]
+    UseReframe -->|"No"| SaveInsight["Save Insight\n(Risk failure or\nsave for later action)"]
+    
+    %% Action outcomes - Extrapolate
+    ExtrapUnlocked --> UseExtrapolate{"Use Extrapolate?"}
+    UseExtrapolate -->|"Yes"| ExtrapolateEffects["Form Knowledge Connections\n- Cross-Domain Insights\n- Higher Mastery Gain\n- Constellation Growth"]
+    UseExtrapolate -->|"No"| SaveForSynthesis["Save for Synthesis\n(Higher value but needs more)"]
+    
+    %% Action outcomes - Synthesis
+    SynthesisAvailable --> UseSynthesis{"Use Synthesis?"}
+    UseSynthesis -->|"Yes"| SynthesisEffects["Discover New Domains\n- Open New Challenge Types\n- Major Mastery Increase\n- Unlock Special Options"]
+    UseSynthesis -->|"No"| SaveForNextDay["Save for Next Day\n(Capitalize on opportunities)"]
+    
+    %% Action outcomes - Boast/Challenge
+    BoastAvailable --> UseBoast{"Use Challenge?"}
+    UseBoast -->|"Yes"| BoastOutcome{"Success?"}
+    BoastOutcome -->|"Yes\n(High diff check)"| BoastSuccess["Double Insight Gain\n- Major Mentor Approval\n- Maintains Momentum"]
+    BoastOutcome -->|"No\n(Failure)"| BoastFailure["Momentum Reset\n- Mentor Disapproval\n- Insight Opportunity Lost"]
+    UseBoast -->|"No"| KeepMomentum["Keep Momentum\n(Use for Extrapolate\nor maintain bonus)"]
+    
+    %% Character-specific modifiers
+    subgraph characterMods["Character-Specific Action Modifiers"]
+        KapoorMod["Dr. Kapoor\n- Precision +25% effectiveness\n- Extrapolate +20% success rate"]
+        JesseMod["Technician Jesse\n- Reframe +25% effectiveness\n- Challenge -10% difficulty"]
+        QuinnMod["Dr. Quinn\n- Synthesis +25% effectiveness\n- +15% Cross-domain bonus"]
+        GarciaMod["Dr. Garcia\n- Balanced bonuses\n- Relationship gains +20%"]
+    end
+    
+    ReframeEffects -.-> characterMods
+    ExtrapolateEffects -.-> characterMods
+    SynthesisEffects -.-> characterMods
+    BoastSuccess -.-> characterMods
+    
+    %% Style
+    classDef situation fill:#ff6b6b,stroke:#f03e3e,color:white,stroke-width:2px
+    classDef resource fill:#4dabf7,stroke:#339af0,color:white,stroke-width:2px
+    classDef action fill:#ffc078,stroke:#fd7e14,color:black,stroke-width:2px
+    classDef outcome fill:#a9e34b,stroke:#82c91e,color:black,stroke-width:2px
+    classDef negative fill:#d9480f,stroke:#bf400d,color:white,stroke-width:2px
+    classDef decision fill:#9775fa,stroke:#7950f2,color:white,stroke-width:2px
+    classDef character fill:#66d9e8,stroke:#22b8cf,color:black,stroke-width:2px
+    
+    class DifficultSituation situation
+    class ResourceAssessment,MomentumCheck resource
+    class ReframeAvailable,ExtrapAvailable,ExtrapUnlocked,ExtrapLocked,SynthesisAvailable,BoastAvailable action
+    class ReframeEffects,ExtrapolateEffects,SynthesisEffects,BoastSuccess outcome
+    class BoastFailure negative
+    class UseReframe,UseExtrapolate,UseSynthesis,UseBoast,BoastOutcome decision
+    class KapoorMod,JesseMod,QuinnMod,GarciaMod character
+    class NoActionOptions,SaveInsight,SaveForSynthesis,SaveForNextDay,KeepMomentum resource

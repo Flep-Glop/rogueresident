@@ -1,23 +1,38 @@
 // app/hooks/useDialogueFlow.ts
 /**
- * Enhanced Dialogue Flow Hook
+ * Chamber Pattern Implementation for Dialogue Flow Hook
  * 
- * A resilient React integration for the dialogue system with proper lifecycle management.
- * Designed to handle narrative persistence across component boundaries and state transitions.
+ * This refactored hook implements the Chamber Transition Pattern:
+ * 1. Returns primitive values instead of objects
+ * 2. Uses stable function references
+ * 3. Makes atomic state updates
+ * 4. Isolates rendering state from data state
+ * 5. Manages lifecycle properly to prevent memory leaks
  * 
- * Philosophical approach:
- * - Narrative continuity should transcend component lifecycles
- * - Character interactions build on a foundation of emotional momentum
- * - Dialogue serves both gameplay and storytelling simultaneously
+ * Design Philosophy:
+ * - Dialogue models the flow of learning and connection
+ * - Characters develop meaningful relationships with the player
+ * - Every interaction should contribute to narrative momentum
  */
 
-import { useState, useEffect, useCallback, useRef } from 'react';
-import { useDialogueStateMachine, createKapoorCalibrationFlow, createJesseEquipmentFlow } from '@/app/core/dialogue/DialogueStateMachine';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { 
+  useDialogueStateMachine, 
+  useDialogueValue, 
+  useDialogueValues,
+  useDialogueFunctions,
+  createKapoorCalibrationFlow, 
+  createJesseEquipmentFlow 
+} from '@/app/core/dialogue/DialogueStateMachine';
 import { useEventBus, safeDispatch } from '@/app/core/events/CentralEventBus';
 import { GameEventType } from '@/app/core/events/EventTypes';
 import { useJournalStore } from '@/app/store/journalStore';
+import { usePrimitiveStoreValue } from '@/app/core/utils/storeHooks';
+import { shallow } from 'zustand/shallow';
 
-// Comprehensive interface definitions that match actual usage patterns
+// ===== CORE TYPES =====
+
+// Dialogue stages and options with view-specific properties
 export interface DialogueStage {
   id: string;
   text: string;
@@ -60,7 +75,7 @@ export interface DialogueOptionView extends DialogueOption {
   highlighted?: boolean;
 }
 
-// Flow progression tracking
+// Flow progression tracking - Used internally, not for rendering
 interface DialogueProgressionStatus {
   // Core tracking
   nodeId: string | null;
@@ -86,7 +101,7 @@ interface DialogueProgressionStatus {
   } | null;
 }
 
-// All possible dialogue hook parameters in one interface
+// Hook parameters
 interface DialogueFlowParams {
   characterId: string;
   nodeId?: string;
@@ -96,11 +111,39 @@ interface DialogueFlowParams {
   onStageChange?: (newStageId: string, prevStageId: string) => void;
 }
 
+// Hook return interface - primitives and stable functions only
+interface DialogueFlowResult {
+  // State - primitives only
+  isLoading: boolean;
+  error: string | null;
+  currentStageId: string;
+  showResponse: boolean;
+  showBackstory: boolean;
+  backstoryText: string;
+  instanceId: string;
+  
+  // Data access functions - primitive returns only
+  getCurrentStage: () => DialogueStage | null;
+  getSelectedOption: () => DialogueOptionView | null;
+  
+  // Actions - stable function references
+  handleOptionSelect: (option: DialogueOptionView) => void;
+  handleContinue: () => void;
+  completeDialogue: () => void;
+  
+  // Status - formatted primitive values
+  status: {
+    started: boolean;
+    completed: boolean;
+    errorCount: number;
+  };
+}
+
 /**
- * React hook for dialogue flow management with enhanced reliability
+ * Enhanced React hook for dialogue flow management with Chamber Pattern
  * 
- * This hook serves as the narrative backbone of character interactions,
- * handling state transitions with graceful fallbacks for edge cases.
+ * This hook implements the Chamber Transition Pattern for optimal
+ * rendering performance while maintaining robust dialogue functionality.
  */
 export function useDialogueFlow({
   characterId,
@@ -109,20 +152,15 @@ export function useDialogueFlow({
   stages,
   onOptionSelected,
   onStageChange
-}: DialogueFlowParams) {
-  // Core state management
-  const [isLoading, setIsLoading] = useState<boolean>(true);
-  const [error, setError] = useState<string | null>(null);
-  const [currentStage, setCurrentStage] = useState<DialogueStage | null>(null);
-  const [currentStageId, setCurrentStageId] = useState<string>('');
-  const [selectedOption, setSelectedOption] = useState<DialogueOptionView | null>(null);
-  const [showResponse, setShowResponse] = useState<boolean>(false);
-  const [showBackstory, setShowBackstory] = useState<boolean>(false);
-  const [backstoryText, setBackstoryText] = useState<string>('');
-  
-  // Use refs to track instance and status across renders
+}: DialogueFlowParams): DialogueFlowResult {
+  // ===== REFERENCES AND LIFECYCLE =====
+  // Generate stable instance ID
   const instanceIdRef = useRef<string>(`dialogue_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`);
+  // Cleanup function reference
   const cleanupFunctionRef = useRef<(() => void) | null>(null);
+  // Track component mount state
+  const isMountedRef = useRef(true);
+  // Track progression status
   const progressionStatusRef = useRef<DialogueProgressionStatus>({
     nodeId: nodeId || null,
     characterId,
@@ -137,15 +175,62 @@ export function useDialogueFlow({
     lastEvent: null
   });
   
-  // Get dialogue state machine interface
-  const dialogueState = useDialogueStateMachine();
-  const journalStore = useJournalStore();
+  // ===== LOCAL STATE =====
+  // Only for values not directly tied to dialogue state machine
+  const [localState, setLocalState] = useState({
+    isLoading: true,
+    error: null as string | null,
+    currentStage: null as DialogueStage | null,
+    selectedOption: null as DialogueOptionView | null
+  });
   
-  // Track mounted state to prevent updates after unmount
-  const isMountedRef = useRef(true);
+  // ===== PRIMITIVE STORE VALUES =====
+  // Extract only primitives from dialogue state machine
+  const dialogueValues = useDialogueValues(state => ({
+    activeFlowId: state.activeFlowId,
+    currentStateId: state.currentStateId,
+    showResponse: state.showResponse,
+    showBackstory: state.showBackstory,
+    backstoryText: state.backstoryText,
+    isActive: state.isActive,
+    errorState: state.errorState
+  }));
   
-  // Update metadata safely
-  const updateMetadata = useCallback((updates: Partial<DialogueProgressionStatus>) => {
+  // Journal state as primitive
+  const hasJournal = usePrimitiveStoreValue(
+    useJournalStore,
+    state => state.hasJournal,
+    false
+  );
+  
+  // ===== STABLE FUNCTION REFERENCES =====
+  // Get dialogue action functions with stable references
+  const dialogueFunctions = useDialogueFunctions();
+  
+  // Journal functions with stable references
+  const initializeJournal = usePrimitiveStoreValue(
+    useJournalStore,
+    state => state.initializeJournal,
+    (tier) => console.warn(`initializeJournal not available for ${tier}`)
+  );
+  
+  // Event bus dispatch with stable reference
+  const eventBusDispatch = usePrimitiveStoreValue(
+    useEventBus,
+    state => state.dispatch,
+    () => console.warn('Event bus dispatch not available')
+  );
+  
+  // ===== SAFE STATE UPDATERS =====
+  // Safe updater for local state
+  const updateLocalState = useCallback((updates: Partial<typeof localState>) => {
+    if (isMountedRef.current) {
+      setLocalState(prev => ({ ...prev, ...updates }));
+    }
+  }, []);
+  
+  // Safe updater for progression status
+  const updateProgressionStatus = useCallback((updates: Partial<DialogueProgressionStatus>) => {
     if (isMountedRef.current) {
       progressionStatusRef.current = {
         ...progressionStatusRef.current,
@@ -154,14 +239,66 @@ export function useDialogueFlow({
     }
   }, []);
   
-  // Type-safe state updater to avoid React 18 batching issues
-  const safeSetState = useCallback(<T>(setter: React.Dispatch<React.SetStateAction<T>>, value: T) => {
-    if (isMountedRef.current) {
-      setter(() => value);
+  // ===== DIALOGUE CONTENT INITIALIZATION =====
+  // Create and memoize dialogue stages with fallback mechanisms
+  const dialogueStages = useMemo(() => {
+    // If custom stages are provided, use them
+    if (stages) {
+      return stages;
     }
-  }, []);
+    
+    try {
+      // Otherwise create from factory function based on character
+      switch (characterId) {
+        case 'kapoor': {
+          const flow = createKapoorCalibrationFlow(nodeId || dialogueId);
+          return flow.stages || [];
+        }
+        case 'jesse': {
+          const flow = createJesseEquipmentFlow(nodeId || dialogueId);
+          return flow.stages || [];
+        }
+        default:
+          throw new Error(`Unknown character: ${characterId}`);
+      }
+    } catch (error) {
+      console.error(`Error creating dialogue for ${characterId}:`, error);
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      
+      updateLocalState({ error: errorMessage });
+      updateProgressionStatus({ 
+        errorCount: progressionStatusRef.current.errorCount + 1,
+        lastEvent: {
+          type: 'dialogue_creation_error',
+          timestamp: Date.now(),
+          details: { error: errorMessage }
+        }
+      });
+      
+      // Return minimal emergency dialogue to prevent UI breakage
+      return [
+        {
+          id: 'error-fallback',
+          text: "I'm having trouble processing this information. Let me try again.",
+          options: [
+            {
+              id: 'retry',
+              text: 'Please continue',
+              nextStageId: 'error-conclusion'
+            }
+          ]
+        },
+        {
+          id: 'error-conclusion',
+          text: "Let's move on and try something else.",
+          isConclusion: true
+        }
+      ];
+    }
+  }, [characterId, nodeId, dialogueId, stages, updateLocalState, updateProgressionStatus]);
   
-  // Initialize dialogue flow
+  // ===== INITIALIZATION EFFECT =====
+  // Initialize dialogue flow on mount and handle cleanup on unmount
   useEffect(() => {
     console.log(`[DialogueFlow] Initializing ${characterId} flow for node ${nodeId || 'custom'}`);
     
@@ -175,12 +312,11 @@ export function useDialogueFlow({
       return;
     }
     
-    // Set initial loading state
-    safeSetState(setIsLoading, true);
-    safeSetState(setError, null);
+    // Start loading
+    updateLocalState({ isLoading: true, error: null });
     
     // Update progression tracking
-    updateMetadata({
+    updateProgressionStatus({
       nodeId: nodeId || null,
       characterId,
       started: true,
@@ -194,87 +330,68 @@ export function useDialogueFlow({
     
     // Initialize the flow
     try {
-      // Handle both predefined and custom flows
-      if (stages) {
-        // Custom stages provided - use direct initialization
-        if (stages.length > 0) {
-          // Set the first stage
-          const initialStage = stages[0];
-          safeSetState(setCurrentStage, initialStage);
-          safeSetState(setCurrentStageId, initialStage.id);
-          
-          console.log(`[DialogueFlow] Initialized custom flow with ${stages.length} stages`);
-        } else {
-          throw new Error('Empty stages array provided');
-        }
-      } else {
-        // Use predefined flow from state machine
-        let flow;
-        
+      if (dialogueStages.length === 0) {
+        throw new Error('No dialogue stages available');
+      }
+      
+      // Set the first stage
+      const initialStage = dialogueStages[0];
+      updateLocalState({
+        currentStage: initialStage,
+        isLoading: false
+      });
+      
+      // If using dialogue state machine, initialize flow there too
+      if (dialogueFunctions.initializeFlow) {
         try {
-          switch (characterId) {
-            case 'kapoor':
-              flow = createKapoorCalibrationFlow(nodeId || dialogueId);
-              break;
-            case 'jesse':
-              flow = createJesseEquipmentFlow(nodeId || dialogueId);
-              break;
-            default:
-              throw new Error(`Unknown character: ${characterId}`);
-          }
+          // Create compatible flow format
+          const flow = {
+            id: dialogueId,
+            initialStateId: initialStage.id,
+            states: dialogueStages.reduce((acc, stage) => {
+              acc[stage.id] = {
+                id: stage.id,
+                type: (stage.type as any) || 'standard',
+                text: stage.text,
+                options: stage.options,
+                isConclusion: stage.isConclusion,
+                isCriticalPath: stage.isCriticalPath,
+                nextStateId: stage.nextStageId
+              };
+              return acc;
+            }, {} as Record<string, any>),
+            context: {
+              characterId,
+              nodeId: nodeId || dialogueId,
+              playerScore: 0,
+              selectedOptionIds: [],
+              knowledgeGained: {},
+              visitedStateIds: []
+            },
+            progressionCheckpoints: dialogueStages
+              .filter(s => s.isCriticalPath)
+              .map(s => s.id)
+          };
           
-          // Validate flow structure before proceeding
-          if (!flow || !flow.stages || !Array.isArray(flow.stages) || flow.stages.length === 0) {
-            throw new Error(`Invalid flow structure for ${characterId}. Flow or stages array is missing.`);
-          }
-          
-          // Initialize flow in state machine
-          const initialStageId = dialogueState.initializeFlow(flow);
-          
-          // Validate returned stage ID
-          if (!initialStageId) {
-            throw new Error(`State machine didn't return a valid initial stage ID`);
-          }
-          
-          // Get the initial stage and set it
-          const initialStage = flow.stages.find(s => s.id === initialStageId);
-          if (!initialStage) {
-            throw new Error(`Initial stage ${initialStageId} not found in flow`);
-          }
-          
-          safeSetState(setCurrentStage, initialStage);
-          safeSetState(setCurrentStageId, initialStageId);
-          
-          console.log(`[DialogueFlow] Initialized predefined ${characterId} flow`);
-        } catch (flowError) {
-          console.error(`[DialogueFlow] Flow initialization error:`, flowError);
-          
-          // Fallback to first stage if available
-          if (flow?.stages?.length > 0) {
-            console.warn(`[DialogueFlow] Using fallback initialization`);
-            const fallbackStage = flow.stages[0];
-            safeSetState(setCurrentStage, fallbackStage);
-            safeSetState(setCurrentStageId, fallbackStage.id);
-          } else {
-            // Re-throw if we can't recover
-            throw flowError;
-          }
+          dialogueFunctions.initializeFlow(flow);
+        } catch (machineError) {
+          console.warn(`[DialogueFlow] State machine initialization failed, operating standalone:`, machineError);
         }
       }
       
-      // Complete loading
-      safeSetState(setIsLoading, false);
-      
+      console.log(`[DialogueFlow] Initialized with ${dialogueStages.length} stages`);
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
       console.error(`[DialogueFlow] Initialization error:`, error);
+      const errorMessage = error instanceof Error ? error.message : String(error);
       
       // Update error state
-      safeSetState(setError, errorMessage);
-      safeSetState(setIsLoading, false);
+      updateLocalState({
+        error: errorMessage,
+        isLoading: false
+      });
       
       // Update tracking
-      updateMetadata({
+      updateProgressionStatus({
         errorCount: progressionStatusRef.current.errorCount + 1,
         lastEvent: {
           type: 'initialization_error',
@@ -283,25 +400,29 @@ export function useDialogueFlow({
         }
       });
       
-      // Try to recover by forcing manual cleanup
-      safeDispatch(
-        GameEventType.DIALOGUE_ERROR,
-        {
-          dialogueId: dialogueId,
-          characterId,
-          nodeId: nodeId || null,
-          error: errorMessage,
-          reason: 'initialization_error'
-        },
-        'useDialogueFlow_error'
-      );
+      // Report error to event system
+      try {
+        safeDispatch(
+          GameEventType.DIALOGUE_ERROR,
+          {
+            dialogueId,
+            characterId,
+            nodeId: nodeId || null,
+            error: errorMessage,
+            reason: 'initialization_error'
+          },
+          'useDialogueFlow_error'
+        );
+      } catch (e) {
+        console.error('Failed to dispatch error event:', e);
+      }
     }
     
-    // Cleanup function
+    // Cleanup function for unmount
     return () => {
       console.log(`[DialogueFlow] Unmounting ${characterId} flow`);
       
-      // Mark as unmounted first
+      // Mark as unmounted first to prevent state updates
       isMountedRef.current = false;
       
       // Run any cleanup we registered
@@ -317,57 +438,87 @@ export function useDialogueFlow({
     characterId, 
     nodeId, 
     dialogueId, 
-    stages, 
-    dialogueState, 
-    safeSetState, 
-    updateMetadata
+    dialogueStages, 
+    dialogueFunctions, 
+    updateLocalState, 
+    updateProgressionStatus
   ]);
   
+  // ===== SYNC WITH DIALOGUE STATE MACHINE =====
+  // Keep local stage in sync with dialogue state machine
+  useEffect(() => {
+    if (!dialogueValues.currentStateId || localState.isLoading) return;
+    
+    // Find the corresponding stage by ID
+    const currentStage = dialogueStages.find(s => s.id === dialogueValues.currentStateId);
+    if (currentStage && currentStage !== localState.currentStage) {
+      updateLocalState({ currentStage });
+      
+      // Call stage change callback if provided
+      if (onStageChange && localState.currentStage) {
+        onStageChange(currentStage.id, localState.currentStage.id);
+      }
+    }
+  }, [
+    dialogueValues.currentStateId, 
+    dialogueStages, 
+    localState.currentStage, 
+    localState.isLoading,
+    onStageChange, 
+    updateLocalState
+  ]);
+  
+  // ===== ACTION HANDLERS =====
   // Handle dialogue option selection
   const handleOptionSelect = useCallback((option: DialogueOptionView) => {
+    if (!isMountedRef.current || !localState.currentStage) return;
+    
     try {
-      if (!currentStage) {
-        console.error('[DialogueFlow] Cannot select option, no current stage');
-        return;
-      }
-      
-      // Update state
-      safeSetState(setSelectedOption, option);
-      safeSetState(setShowResponse, true);
+      // Update local state
+      updateLocalState({ selectedOption: option });
       
       // Call external handler if provided
       if (onOptionSelected) {
-        onOptionSelected(option, currentStageId);
+        onOptionSelected(option, localState.currentStage.id);
+      }
+      
+      // Update dialogue state machine
+      if (dialogueFunctions.selectOption) {
+        dialogueFunctions.selectOption(option.id);
       }
       
       // Track event
-      updateMetadata({
+      updateProgressionStatus({
         interactionCount: progressionStatusRef.current.interactionCount + 1,
         lastEvent: {
           type: 'option_selected',
           timestamp: Date.now(),
-          details: { optionId: option.id, stageId: currentStageId }
+          details: { optionId: option.id, stageId: localState.currentStage.id }
         }
       });
       
-      // Log option selection using UI_BUTTON_CLICKED
-      safeDispatch(
-        GameEventType.UI_BUTTON_CLICKED,
-        {
-          componentId: 'dialogue_system',
-          action: 'option_selected',
-          metadata: {
-            optionId: option.id,
-            character: characterId,
-            stageId: currentStageId
-          }
-        },
-        'dialogue_flow_option_selection'
-      );
-      
+      // Log option selection
+      try {
+        safeDispatch(
+          GameEventType.UI_BUTTON_CLICKED,
+          {
+            componentId: 'dialogue_system',
+            action: 'option_selected',
+            metadata: {
+              optionId: option.id,
+              character: characterId,
+              stageId: localState.currentStage.id
+            }
+          },
+          'dialogue_flow_option_selection'
+        );
+      } catch (error) {
+        console.debug('Failed to dispatch option selection event:', error);
+      }
     } catch (error) {
       console.error('[DialogueFlow] Error selecting option:', error);
-      updateMetadata({ 
+      
+      updateProgressionStatus({ 
         errorCount: progressionStatusRef.current.errorCount + 1,
         lastEvent: {
           type: 'option_selection_error',
@@ -376,124 +527,107 @@ export function useDialogueFlow({
         }
       });
     }
-  }, [currentStage, currentStageId, characterId, onOptionSelected, safeSetState, updateMetadata]);
+  }, [
+    localState.currentStage, 
+    dialogueFunctions, 
+    characterId, 
+    onOptionSelected, 
+    updateLocalState, 
+    updateProgressionStatus
+  ]);
   
-  // Handle dialogue advancement
+  // Handle dialogue continuation
   const handleContinue = useCallback(() => {
+    if (!isMountedRef.current || !localState.currentStage) return;
+    
     try {
-      if (!currentStage) {
-        console.error('[DialogueFlow] Cannot advance dialogue, no current stage');
+      // Determine the next stage ID
+      let nextStageId = '';
+      
+      // If showing response, find the next stage from selected option
+      if (dialogueValues.showResponse || dialogueValues.showBackstory) {
+        // Use state machine's advance
+        if (dialogueFunctions.advanceState) {
+          dialogueFunctions.advanceState();
+          return; // State machine will handle the transition
+        }
+        
+        // Otherwise handle manually
+        if (localState.selectedOption?.nextStageId) {
+          nextStageId = localState.selectedOption.nextStageId;
+        }
+      }
+      // If not showing response, check for direct next stage
+      else if (localState.currentStage.nextStageId) {
+        nextStageId = localState.currentStage.nextStageId;
+      }
+      // If we're at a conclusion, complete the dialogue
+      else if (localState.currentStage.isConclusion) {
+        completeDialogue();
+        return;
+      }
+      // Otherwise, we can't advance
+      else {
+        console.warn(`[DialogueFlow] No next stage defined for ${localState.currentStage.id}`);
         return;
       }
       
-      // If showing response, move to next stage
-      if (showResponse) {
-        // Find the selected option (should exist)
-        if (!selectedOption) {
-          console.error('[DialogueFlow] No selected option found');
-          return;
-        }
-        
-        // Find the next stage
-        const nextStageId = selectedOption.nextStageId;
-        
-        // If we have stages, use them to find the next stage
-        if (stages) {
-          const nextStage = stages.find(s => s.id === nextStageId);
-          if (nextStage) {
-            // Trigger the onStageChange callback if provided
-            if (onStageChange) {
-              onStageChange(nextStageId, currentStageId);
-            }
-            
-            // Update state
-            safeSetState(setCurrentStage, nextStage);
-            safeSetState(setCurrentStageId, nextStageId);
-            safeSetState(setShowResponse, false);
-            safeSetState(setSelectedOption, null);
-            
-            // Handle backstory if needed
-            if (selectedOption.triggersBackstory) {
-              // Find the backstory stage
-              const backstoryStage = stages.find(s => s.id === `backstory-${nextStageId}`);
-              if (backstoryStage) {
-                safeSetState(setBackstoryText, backstoryStage.text);
-                safeSetState(setShowBackstory, true);
-              }
-            }
-          } else {
-            console.error(`[DialogueFlow] Next stage ${nextStageId} not found`);
+      // Find the next stage
+      if (nextStageId) {
+        const nextStage = dialogueStages.find(s => s.id === nextStageId);
+        if (nextStage) {
+          // Call onStageChange callback if provided
+          if (onStageChange) {
+            onStageChange(nextStageId, localState.currentStage.id);
           }
-        }
-        // Otherwise use the state machine
-        else if (dialogueState.activeFlow) {
-          // Safely get the next stage
+          
+          // Update local state
+          updateLocalState({
+            currentStage: nextStage,
+            selectedOption: null
+          });
+          
+          // Update state machine if available
+          if (dialogueFunctions.advanceToStage) {
+            dialogueFunctions.advanceToStage(nextStageId);
+          }
+          
+          // Log advancement
           try {
-            dialogueState.advanceToStage(nextStageId);
-            
-            // Sync our state with the state machine
-            safeSetState(setCurrentStageId, nextStageId);
-            
-            // Get the next stage
-            if (dialogueState.activeFlow?.stages) {
-              const nextStage = dialogueState.activeFlow.stages.find(s => s.id === nextStageId);
-              if (nextStage) {
-                safeSetState(setCurrentStage, nextStage);
-              } else {
-                console.error(`[DialogueFlow] Next stage ${nextStageId} not found in active flow`);
-              }
-            }
-            
-            safeSetState(setShowResponse, false);
-            safeSetState(setSelectedOption, null);
-            
-            // Trigger the onStageChange callback if provided
-            if (onStageChange) {
-              onStageChange(nextStageId, currentStageId);
-            }
-          } catch (advanceError) {
-            console.error(`[DialogueFlow] Error advancing to stage ${nextStageId}:`, advanceError);
+            safeDispatch(
+              GameEventType.UI_BUTTON_CLICKED,
+              {
+                componentId: 'dialogue_system',
+                action: 'advance_stage',
+                metadata: {
+                  fromStage: localState.currentStage.id,
+                  toStage: nextStageId,
+                  character: characterId
+                }
+              },
+              'dialogue_flow_stage_advancement'
+            );
+          } catch (error) {
+            console.debug('Failed to dispatch stage advancement event:', error);
           }
+        } else {
+          console.error(`[DialogueFlow] Next stage ${nextStageId} not found`);
         }
-        
-        // Log advancement
-        safeDispatch(
-          GameEventType.UI_BUTTON_CLICKED,
-          {
-            componentId: 'dialogue_system',
-            action: 'advance_stage',
-            metadata: {
-              fromStage: currentStageId,
-              toStage: nextStageId,
-              character: characterId
-            }
-          },
-          'dialogue_flow_stage_advancement'
-        );
-      }
-      // If showing backstory, hide it
-      else if (showBackstory) {
-        safeSetState(setShowBackstory, false);
-        safeSetState(setBackstoryText, '');
-      }
-      // Otherwise just hide the response
-      else {
-        safeSetState(setShowResponse, false);
       }
       
       // Track event
-      updateMetadata({
+      updateProgressionStatus({
         interactionCount: progressionStatusRef.current.interactionCount + 1,
         lastEvent: {
           type: 'dialogue_advanced',
           timestamp: Date.now(),
-          details: { stageId: currentStageId }
+          details: { stageId: localState.currentStage.id }
         }
       });
-      
     } catch (error) {
       console.error('[DialogueFlow] Error advancing dialogue:', error);
-      updateMetadata({ 
+      
+      updateProgressionStatus({ 
         errorCount: progressionStatusRef.current.errorCount + 1,
         lastEvent: {
           type: 'dialogue_advancement_error',
@@ -503,51 +637,62 @@ export function useDialogueFlow({
       });
     }
   }, [
-    currentStage, 
-    currentStageId, 
-    selectedOption, 
-    showResponse, 
-    showBackstory,
-    stages, 
-    dialogueState, 
-    characterId, 
-    onStageChange, 
-    safeSetState, 
-    updateMetadata
+    localState.currentStage,
+    localState.selectedOption,
+    dialogueValues.showResponse,
+    dialogueValues.showBackstory,
+    dialogueFunctions,
+    dialogueStages,
+    characterId,
+    onStageChange,
+    updateLocalState,
+    updateProgressionStatus,
+    completeDialogue
   ]);
   
   // Complete dialogue flow
   const completeDialogue = useCallback(() => {
+    if (!isMountedRef.current) return;
+    
     try {
       // Mark as completed for tracking
-      updateMetadata({
+      updateProgressionStatus({
         completed: true,
         endTime: Date.now(),
         lastEvent: {
           type: 'dialogue_completed',
           timestamp: Date.now(),
-          details: { stageId: currentStageId }
+          details: { stageId: localState.currentStage?.id }
         }
       });
       
+      // Complete in state machine if available
+      if (dialogueFunctions.completeFlow) {
+        dialogueFunctions.completeFlow();
+      }
+      
       // Signal completion via event system
-      safeDispatch(
-        GameEventType.DIALOGUE_COMPLETED,
-        {
-          dialogueId,
-          characterId,
-          nodeId: nodeId || null,
-          completed: true,
-          reason: 'natural_completion'
-        },
-        'useDialogueFlow_completion'
-      );
+      try {
+        safeDispatch(
+          GameEventType.DIALOGUE_COMPLETED,
+          {
+            dialogueId,
+            characterId,
+            nodeId: nodeId || null,
+            completed: true,
+            reason: 'natural_completion'
+          },
+          'useDialogueFlow_completion'
+        );
+      } catch (error) {
+        console.error('Failed to dispatch completion event:', error);
+      }
       
       console.log(`[DialogueFlow] Completed ${characterId} flow`);
-      
     } catch (error) {
       console.error('[DialogueFlow] Error completing dialogue:', error);
-      updateMetadata({ 
+      
+      updateProgressionStatus({ 
         errorCount: progressionStatusRef.current.errorCount + 1,
         lastEvent: {
           type: 'dialogue_completion_error',
@@ -557,16 +702,16 @@ export function useDialogueFlow({
       });
       
       // Special recovery for the important Kapoor journal flow
-      if (characterId === 'kapoor' && !progressionStatusRef.current.journalAcquired) {
+      if (characterId === 'kapoor' && !progressionStatusRef.current.journalAcquired && !hasJournal) {
         try {
           console.warn('[DialogueFlow] Attempting critical path recovery for journal acquisition');
           
           // Try to force journal acquisition directly
-          if (!journalStore.hasJournal) {
+          if (typeof initializeJournal === 'function') {
             console.warn('[DialogueFlow] Forcing journal acquisition');
-            journalStore.initializeJournal('technical');
+            initializeJournal('technical');
             
-            updateMetadata({ 
+            updateProgressionStatus({ 
               journalAcquired: true,
               recoveryAttempted: true,
               lastEvent: {
@@ -576,43 +721,74 @@ export function useDialogueFlow({
             });
             
             // Log emergency recovery action
-            safeDispatch(
-              GameEventType.JOURNAL_ACQUIRED,
-              {
-                tier: 'technical',
-                character: characterId,
-                source: 'dialogue_hook_recovery',
-                forced: true
-              },
-              'critical_path_recovery'
-            );
+            try {
+              safeDispatch(
+                GameEventType.JOURNAL_ACQUIRED,
+                {
+                  tier: 'technical',
+                  character: characterId,
+                  source: 'dialogue_hook_recovery',
+                  forced: true
+                },
+                'critical_path_recovery'
+              );
+            } catch (error) {
+              console.debug('Failed to dispatch journal acquisition event:', error);
+            }
           }
         } catch (recoveryError) {
           console.error('[DialogueFlow] Critical path recovery failed:', recoveryError);
         }
       }
     }
-  }, [dialogueId, characterId, nodeId, currentStageId, updateMetadata, journalStore]);
+  }, [
+    dialogueId, 
+    characterId, 
+    nodeId, 
+    localState.currentStage, 
+    dialogueFunctions, 
+    hasJournal, 
+    initializeJournal, 
+    updateProgressionStatus
+  ]);
   
-  // Return the interface for dialogue flow control
+  // ===== ACCESSOR FUNCTIONS =====
+  // Get current stage safely
+  const getCurrentStage = useCallback((): DialogueStage | null => {
+    return localState.currentStage;
+  }, [localState.currentStage]);
+  
+  // Get selected option safely
+  const getSelectedOption = useCallback((): DialogueOptionView | null => {
+    return localState.selectedOption;
+  }, [localState.selectedOption]);
+  
+  // ===== RETURN INTERFACE =====
+  // Return only primitives and stable function references
   return {
-    // State
-    isLoading,
-    error,
-    currentStage,
-    currentStageId,
-    selectedOption,
-    showResponse,
-    showBackstory,
-    backstoryText,
+    // State as primitives
+    isLoading: localState.isLoading,
+    error: localState.error,
+    currentStageId: localState.currentStage?.id || '',
+    showResponse: dialogueValues.showResponse,
+    showBackstory: dialogueValues.showBackstory,
+    backstoryText: dialogueValues.backstoryText,
+    instanceId: instanceIdRef.current,
     
-    // Actions
+    // Data access functions
+    getCurrentStage,
+    getSelectedOption,
+    
+    // Actions with stable references
     handleOptionSelect,
     handleContinue,
     completeDialogue,
     
-    // Status information for debugging
-    status: progressionStatusRef.current,
-    instanceId: instanceIdRef.current
+    // Status as formatted primitives
+    status: {
+      started: progressionStatusRef.current.started,
+      completed: progressionStatusRef.current.completed,
+      errorCount: progressionStatusRef.current.errorCount
+    }
   };
 }

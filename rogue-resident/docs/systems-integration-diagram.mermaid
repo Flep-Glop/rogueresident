@@ -1,0 +1,74 @@
+flowchart TD
+    %% Core State Management Systems
+    StateMachine["Game State Machine\n(Phase & Transitions)"]
+    EventBus["Central Event Bus\n(Event Pub/Sub)"]
+    ProgResolver["Progression Resolver\n(Safety Net)"]
+    
+    %% Core Stores
+    subgraph stores["Core Stores"]
+        GameStore["Game Store\n(Day, Nodes, Map)"]
+        ResourceStore["Resource Store\n(Insight, Momentum)"]
+        KnowledgeStore["Knowledge Store\n(Concepts, Mastery)"]
+        JournalStore["Journal Store\n(Entries, Display)"]
+    end
+    
+    %% Main UI Systems
+    subgraph ui["UI Systems"]
+        DayPhase["Day Phase\n(Hospital Challenges)"]
+        NightPhase["Night Phase\n(Knowledge Constellation)"]
+        ActionsSystem["Strategic Actions\n(Player Abilities)"]
+        DialogueSystem["Dialogue System\n(Mentor Interactions)"]
+        StatDisplay["Stats & Resources\n(Player Feedback)"]
+    end
+    
+    %% System Integrations
+    StateMachine <---> EventBus
+    EventBus <---> ProgResolver
+    
+    EventBus --> DialogueSystem
+    EventBus --> DayPhase
+    EventBus --> NightPhase
+    
+    ProgResolver --> GameStore
+    ProgResolver --> JournalStore
+    ProgResolver --> KnowledgeStore
+    
+    GameStore --> DayPhase
+    GameStore --> StateMachine
+    
+    ResourceStore <--> ActionsSystem
+    ResourceStore --> StatDisplay
+    ResourceStore --> DialogueSystem
+    
+    KnowledgeStore --> NightPhase
+    KnowledgeStore --> StatDisplay
+    
+    JournalStore --> DayPhase
+    JournalStore --> NightPhase
+    
+    DayPhase <---> NightPhase
+    
+    %% Transaction System
+    Transactions["Narrative Transaction System\n(Critical Path Safety)"]
+    Transactions <--> EventBus
+    DialogueSystem <--> Transactions
+    
+    %% Persistence Layer
+    subgraph persistence["Persistence Layer"]
+        LocalStorage["LocalStorage\n(Progress & State)"]
+    end
+    
+    JournalStore <--> LocalStorage
+    KnowledgeStore <--> LocalStorage
+    GameStore <--> LocalStorage
+    
+    %% Style
+    classDef primary fill:#3b82f6,stroke:#1d4ed8,color:white,stroke-width:2px
+    classDef secondary fill:#8b5cf6,stroke:#6d28d9,color:white,stroke-width:2px
+    classDef tertiary fill:#10b981,stroke:#047857,color:white,stroke-width:2px
+    classDef warning fill:#f59e0b,stroke:#b45309,color:white,stroke-width:2px
+    
+    class StateMachine,EventBus,ProgResolver primary
+    class GameStore,ResourceStore,KnowledgeStore,JournalStore secondary
+    class DayPhase,NightPhase,DialogueSystem,ActionsSystem tertiary
+    class Transactions,LocalStorage warning

@@ -1,9 +1,9 @@
-// Correct imports based on latest understanding
-import ActualCentralEventBus from '../core/events/CentralEventBus'; // Default import
-import { GameStateMachine } from '../core/statemachine/GameStateMachine'; // Assuming class export
-import { progressionResolver } from '../core/progression/ProgressionResolver'; // Assuming instance export
-import { DialogueStateMachine } from '../core/dialogue/DialogueStateMachine'; // Assuming class export
-import { NarrativeEventType } from '../core/events/EventTypes'; // Assuming 'NarrativeEventType' is the correct export name
+// app/types/game.ts
+import useEventBus from '../core/events/CentralEventBus'; 
+import useGameStateMachine from '../core/statemachine/GameStateMachine';
+import { progressionResolver } from '../core/progression/ProgressionResolver';
+import useDialogueStateMachine from '../core/dialogue/DialogueStateMachine';
+import { GameEventType } from '../core/events/EventTypes';
 
 // --- Core Data Structures ---
 
@@ -12,9 +12,26 @@ export interface Position {
   y: number;
 }
 
-// Define NarrativeEvent structure using the assumed NarrativeEventType import
+// Game-specific enums
+export enum GameEvent {
+  NODE_INTERACTION = 'NODE_INTERACTION',
+  DEBUG_COMMAND = 'DEBUG_COMMAND',
+  // Add other events needed by SimplifiedKapoorMap
+}
+
+// Map-related types
+export interface MapNode {
+  id: string;
+  x: number;
+  y: number;
+  label: string;
+  type: string;
+  connections: string[];
+  data: Record<string, any>;
+}
+
 export interface NarrativeEvent<T = any> {
-  type: NarrativeEventType | string; // Use assumed NarrativeEventType import
+  type: GameEventType | string; 
   payload?: T;
 }
 
@@ -52,7 +69,6 @@ export interface DialogueSystemConfig {
     globalVariables: GlobalVariables;
 }
 
-
 export interface InsightNode {
   id: string;
   label: string;
@@ -72,30 +88,26 @@ export interface InsightConnection {
 
 export interface JournalEntry {
   id: string;
-  timestamp: Date; // Keep as Date
+  timestamp: Date; 
   title: string;
   content: string;
-  relatedInsights?: string[];
+  tags: string[]; // Add tags property
   category: 'Log' | 'Observation' | 'Personal' | 'Objective';
+  isNew?: boolean; // Make optional if needed
 }
 
 // --- State Slice Definitions ---
 
-// Define instance types based on the assumed class exports
-type GameStateMachineInstance = GameStateMachine;
-type DialogueStateMachineInstance = DialogueStateMachine;
-// Define instance type based on the type of the exported instance
-type ProgressionResolverInstance = typeof progressionResolver;
-
-
 // Game State (Core loop, mode, loading)
 export interface GameState {
-  // Use the correctly defined instance types
-  stateMachine: GameStateMachineInstance | null;
-  progressionResolver: ProgressionResolverInstance | null; // Use the typeof instance type
+  stateMachine: typeof useGameStateMachine | null;
+  progressionResolver: typeof progressionResolver | null;
   currentMode: 'exploration' | 'dialogue' | 'cutscene' | 'menu' | 'knowledge';
   isLoading: boolean;
   error: string | null;
+  currentSystem?: string; // Added for SimplifiedKapoorMap
+  currentNode?: string; // Added for SimplifiedKapoorMap
+  currentNodeId?: string; // Added for consistency
 }
 
 export interface GameStateActions {
@@ -107,8 +119,7 @@ export interface GameStateActions {
 
 // Dialogue State
 export interface DialogueState {
-  // Use the correctly defined instance type
-  dialogueStateMachine: DialogueStateMachineInstance | null;
+  dialogueStateMachine: typeof useDialogueStateMachine | null;
   currentDialogueId: string | null;
   currentNodeId: string | null;
   currentSpeaker: string | null;
@@ -130,13 +141,11 @@ export interface DialogueActions {
 
 // Event Bus State
 export interface EventBusState {
-  // Use the actual class name for the instance type
-  instance: ActualCentralEventBus;
+  instance: typeof useEventBus;
 }
 
 export interface EventBusActions {
-  // Use assumed NarrativeEventType import
-  emit: <T = any>(eventType: NarrativeEventType | string, payload?: T) => void;
+  emit: <T = any>(eventType: GameEventType | string, payload?: T) => void;
 }
 
 // Knowledge State
@@ -154,6 +163,8 @@ export interface KnowledgeActions {
   unlockTopic: (topicId: string) => void;
   setConstellationVisibility: (isVisible: boolean) => void;
   setActiveInsight: (insightId: string | null) => void;
+  // Add methods used in SimplifiedKapoorMap
+  unlockKnowledge: (knowledgeId: string) => void;
 }
 
 // Resource State
@@ -165,6 +176,7 @@ export interface ResourceActions {
   addResource: (resourceId: string, amount: number) => void;
   setResource: (resourceId: string, amount: number) => void;
   hasEnoughResource: (resourceId: string, amount: number) => boolean;
+  resetResources: () => void; // Added for init.ts
 }
 
 // Journal State
@@ -175,7 +187,8 @@ export interface JournalState {
 }
 
 export interface JournalActions {
-  addJournalEntry: (entryData: Omit<JournalEntry, 'timestamp' | 'id'>) => void;
+  addEntry: (entryData: Omit<JournalEntry, 'timestamp' | 'id'>) => void; // Renamed to match usage
+  addJournalEntry: (entryData: Omit<JournalEntry, 'timestamp' | 'id'>) => void; // Keep for compatibility
   setJournalOpen: (isOpen: boolean) => void;
 }
 
@@ -203,4 +216,3 @@ export type FullGameState = GameState &
     KnowledgeState &
     ResourceState &
     JournalState;
-

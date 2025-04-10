@@ -1,8 +1,9 @@
 // app/components/gameplay/InsightMeter.tsx
 'use client';
-import { useState, useEffect, useRef } from 'react';
+import { useEffect, useRef, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useResourceStore, RESOURCE_THRESHOLDS } from '../../store/resourceStore';
+import { useResourceStore } from '../../store/resourceStore';
+import { usePrimitiveStoreValue, useStableStoreValue } from '../../core/utils/storeHooks';
 
 interface InsightMeterProps {
   showLabel?: boolean;
@@ -15,11 +16,13 @@ interface InsightMeterProps {
 }
 
 /**
- * Insight Meter Component - Enhanced Visual Design
+ * Insight Meter Component - Enhanced Visual Design with Render Optimization
  * 
- * A strategic resource meter inspired by roguelite persistent resources
- * (like Darkness in Hades). Features clear threshold markers and
- * distinctive visual states as player approaches key unlocks.
+ * Refactored to use the "Chamber Transition Pattern":
+ * - Extract primitive values instead of objects
+ * - Use refs for DOM manipulation
+ * - CSS-driven animations
+ * - Stable function references
  */
 export default function InsightMeter({
   showLabel = true,
@@ -30,39 +33,56 @@ export default function InsightMeter({
   vertical = false,
   showAnimation = false
 }: InsightMeterProps) {
-  // Get resource state
-  const { 
-    insight, 
-    insightMax, 
-    insightEffect,
-  } = useResourceStore();
+  // PATTERN: Extract primitive values using specialized hooks
+  const insight = usePrimitiveStoreValue(useResourceStore, state => state.insight, 0);
+  const insightMax = usePrimitiveStoreValue(useResourceStore, state => state.insightMax, 100);
   
-  // Refs for tracking previous values
-  const prevInsightRef = useRef(insight);
+  // Stable extraction of the effect object to avoid reference changes
+  const insightEffect = useStableStoreValue(useResourceStore, state => state.insightEffect || { 
+    active: false, 
+    duration: 2000, 
+    intensity: 'medium' 
+  });
   
-  // Local state
-  const [insightDelta, setInsightDelta] = useState(0);
-  const [pulseEffect, setPulseEffect] = useState(false);
-  const [thresholdCrossed, setThresholdCrossed] = useState<number | null>(null);
-  const [actionAvailable, setActionAvailable] = useState<string | null>(null);
+  // Refs for DOM manipulation
+  const fillRef = useRef<HTMLDivElement>(null);
+  const deltaRef = useRef<HTMLDivElement>(null);
+  const lastInsightRef = useRef(insight);
+  const thresholdCrossedRef = useRef<number | null>(null);
+  const actionAvailableRef = useRef<string | null>(null);
+  const timeoutRefs = useRef<NodeJS.Timeout[]>([]);
   
-  // Calculate fill percentage
-  const fillPercentage = Math.min(100, Math.max(0, (insight / insightMax) * 100));
+  // Calculate fill percentage once per render
+  const fillPercentage = useMemo(() => 
+    Math.min(100, Math.max(0, (insight / insightMax) * 100)),
+  [insight, insightMax]);
   
-  // Process insight changes and threshold crossings
+  // PATTERN: Process insight changes via refs and effects
   useEffect(() => {
-    const prevPercentage = (prevInsightRef.current / insightMax) * 100;
+    const prevInsight = lastInsightRef.current;
+    const delta = insight - prevInsight;
     
-    // Calculate delta for animation
-    const delta = insight - prevInsightRef.current;
+    // Clear existing timeouts to prevent overlapping animations
+    timeoutRefs.current.forEach(clearTimeout);
+    timeoutRefs.current = [];
+    
     if (delta !== 0) {
-      setInsightDelta(delta);
-      // Clear delta after animation duration
-      const clearTimer = setTimeout(() => setInsightDelta(0), 1500);
-      return () => clearTimeout(clearTimer);
+      // Update delta indicator via DOM manipulation
+      if (deltaRef.current) {
+        // Show delta
+        deltaRef.current.textContent = `${delta > 0 ? '+' : ''}${delta}`;
+        deltaRef.current.classList.add('insight-delta-show');
+        
+        // Clear after animation
+        const clearTimer = setTimeout(() => {
+          if (deltaRef.current) deltaRef.current.classList.remove('insight-delta-show');
+        }, 1500);
+        timeoutRefs.current.push(clearTimer);
+      }
     }
     
-    // Check if we crossed important thresholds
+    // Check threshold crossings
+    const prevPercentage = (prevInsight / insightMax) * 100;
     const thresholds = [
       { value: 25, name: 'REFRAME' },
       { value: 50, name: 'EXTRAPOLATE' },
@@ -71,27 +91,62 @@ export default function InsightMeter({
     
     thresholds.forEach(threshold => {
       if (prevPercentage < threshold.value && fillPercentage >= threshold.value) {
-        setThresholdCrossed(threshold.value);
-        setActionAvailable(threshold.name);
-        setTimeout(() => setThresholdCrossed(null), 2000);
+        // Threshold crossed - update refs
+        thresholdCrossedRef.current = threshold.value;
+        actionAvailableRef.current = threshold.name;
+        
+        // Add threshold animation class to corresponding marker
+        const markerEl = document.querySelector(`.threshold-marker-${threshold.value}`);
+        if (markerEl) {
+          markerEl.classList.add('threshold-crossed');
+          
+          const clearTimer = setTimeout(() => {
+            markerEl.classList.remove('threshold-crossed');
+            thresholdCrossedRef.current = null;
+            actionAvailableRef.current = null;
+          }, 2000);
+          timeoutRefs.current.push(clearTimer);
+        }
       }
     });
     
-    prevInsightRef.current = insight;
+    // Update fill bar via DOM
+    if (fillRef.current) {
+      // Using CSS custom property for animation
+      fillRef.current.style.setProperty('--target-fill', `${fillPercentage}%`);
+      fillRef.current.classList.add('insight-fill-animate');
+    }
+    
+    // Update ref for next comparison
+    lastInsightRef.current = insight;
+    
+    // Cleanup
+    return () => {
+      timeoutRefs.current.forEach(clearTimeout);
+      timeoutRefs.current = [];
+    };
   }, [insight, insightMax, fillPercentage]);
   
-  // Handle animation from gameplay effect
+  // PATTERN: Handle animation from gameplay effect with refs
   useEffect(() => {
     if (insightEffect.active || showAnimation) {
-      setPulseEffect(true);
-      
-      const timer = setTimeout(() => {
-        setPulseEffect(false);
-      }, insightEffect.duration || 2000);
-      
-      return () => clearTimeout(timer);
+      // Direct DOM manipulation for pulse effect
+      document.querySelectorAll('.insight-meter-container').forEach(el => {
+        el.classList.add('pulse-effect');
+        
+        const timer = setTimeout(() => {
+          el.classList.remove('pulse-effect');
+        }, insightEffect.duration || 2000);
+        
+        timeoutRefs.current.push(timer);
+      });
     }
-  }, [insightEffect, showAnimation]);
+    
+    return () => {
+      timeoutRefs.current.forEach(clearTimeout);
+      timeoutRefs.current = [];
+    };
+  }, [insightEffect.active, insightEffect.duration, showAnimation]);
   
   // Size classes based on orientation
   const sizeClasses = vertical 
@@ -108,51 +163,60 @@ export default function InsightMeter({
         xl: "h-8 w-full"
       };
   
-  // Get appropriate fill color based on level
-  const getFillColor = () => {
-    if (fillPercentage >= 75) return '#2dd4bf'; // Teal for highest tier
-    if (fillPercentage >= 50) return '#a855f7'; // Purple for medium tier
-    if (fillPercentage >= 25) return '#3b82f6'; // Blue for first tier
-    return '#1d4ed8'; // Dark blue for starting tier
-  };
-  
-  // Get appropriate shader colors
-  const getShaderColors = () => {
-    if (fillPercentage >= 75) {
-      return {
-        darkShade: '#0d9488',
-        lightShade: '#5eead4',
-        pattern: 'teal',
-        glow: 'rgba(45, 212, 191, 0.5)'
-      };
-    }
-    if (fillPercentage >= 50) {
-      return {
-        darkShade: '#7e22ce',
-        lightShade: '#c084fc',
-        pattern: 'purple',
-        glow: 'rgba(168, 85, 247, 0.5)'
-      };
-    }
-    return {
-      darkShade: '#1d4ed8',
-      lightShade: '#60a5fa',
-      pattern: 'blue',
-      glow: 'rgba(59, 130, 246, 0.4)'
+  // PATTERN: Compute derived values once per render
+  const colors = useMemo(() => {
+    // Get appropriate fill color based on level
+    const getFillColor = () => {
+      if (fillPercentage >= 75) return '#2dd4bf'; // Teal for highest tier
+      if (fillPercentage >= 50) return '#a855f7'; // Purple for medium tier
+      if (fillPercentage >= 25) return '#3b82f6'; // Blue for first tier
+      return '#1d4ed8'; // Dark blue for starting tier
     };
-  };
-  
-  // Get pattern SVG for the fill texture
-  const getPatternSvg = () => {
-    const { darkShade, lightShade } = getShaderColors();
-    const darkHex = darkShade.replace('#', '');
-    const lightHex = lightShade.replace('#', '');
     
-    return `url("data:image/svg+xml,%3Csvg width='4' height='4' viewBox='0 0 4 4' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Crect width='4' height='4' fill='%23${darkHex}'/%3E%3Crect width='1' height='1' fill='%23${lightHex}'/%3E%3Crect x='2' y='2' width='1' height='1' fill='%23${lightHex}'/%3E%3C/svg%3E")`;
-  };
+    // Get appropriate shader colors
+    const getShaderColors = () => {
+      if (fillPercentage >= 75) {
+        return {
+          darkShade: '#0d9488',
+          lightShade: '#5eead4',
+          pattern: 'teal',
+          glow: 'rgba(45, 212, 191, 0.5)'
+        };
+      }
+      if (fillPercentage >= 50) {
+        return {
+          darkShade: '#7e22ce',
+          lightShade: '#c084fc',
+          pattern: 'purple',
+          glow: 'rgba(168, 85, 247, 0.5)'
+        };
+      }
+      return {
+        darkShade: '#1d4ed8',
+        lightShade: '#60a5fa',
+        pattern: 'blue',
+        glow: 'rgba(59, 130, 246, 0.4)'
+      };
+    };
+    
+    // Generate pattern SVG for the fill texture
+    const getPatternSvg = () => {
+      const { darkShade, lightShade } = getShaderColors();
+      const darkHex = darkShade.replace('#', '');
+      const lightHex = lightShade.replace('#', '');
+      
+      return `url("data:image/svg+xml,%3Csvg width='4' height='4' viewBox='0 0 4 4' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Crect width='4' height='4' fill='%23${darkHex}'/%3E%3Crect width='1' height='1' fill='%23${lightHex}'/%3E%3Crect x='2' y='2' width='1' height='1' fill='%23${lightHex}'/%3E%3C/svg%3E")`;
+    };
+    
+    return {
+      fillColor: getFillColor(),
+      shaderColors: getShaderColors(),
+      patternSvg: getPatternSvg()
+    };
+  }, [fillPercentage]);
   
   // Threshold markers with improved visualization
-  const thresholdMarkers = [
+  const thresholdMarkers = useMemo(() => [
     { 
       percent: 25, 
       label: 'R', 
@@ -171,7 +235,7 @@ export default function InsightMeter({
       action: 'SYNTHESIS',
       colorClass: 'teal' 
     }
-  ];
+  ], []);
   
   return (
     <div className={`${className} ${vertical ? 'flex items-end' : ''}`}>
@@ -213,7 +277,7 @@ export default function InsightMeter({
       {/* Main meter container */}
       <div className={`
         relative bg-blue-900/30 ${sizeClasses[size]}
-        overflow-hidden
+        overflow-hidden insight-meter-container
         ${vertical ? 'flex flex-col-reverse' : ''}
       `}
       style={{ 
@@ -223,23 +287,16 @@ export default function InsightMeter({
         borderImage: 'url("data:image/svg+xml,%3Csvg width=\'3\' height=\'3\' viewBox=\'0 0 3 3\' fill=\'none\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Crect width=\'1\' height=\'1\' fill=\'%231a1f2e\'/%3E%3Crect width=\'3\' height=\'3\' fill=\'none\' stroke=\'%23374151\' stroke-width=\'2\'/%3E%3C/svg%3E") 2 stretch'
       }}>
         {/* Enhanced pixelated fill with dynamic color and pattern */}
-        <motion.div
-          className={`absolute ${vertical ? 'inset-x-0 bottom-0' : 'inset-y-0 left-0'}`}
+        <div
+          ref={fillRef}
+          className={`insight-fill absolute ${vertical ? 'inset-x-0 bottom-0' : 'inset-y-0 left-0'}`}
           style={{ 
-            backgroundImage: getPatternSvg(),
+            backgroundImage: colors.patternSvg,
             backgroundSize: '4px 4px',
             imageRendering: 'pixelated',
-            boxShadow: `0 0 8px ${getShaderColors().glow}`,
-            [vertical ? 'height' : 'width']: `${fillPercentage}%` 
-          }}
-          initial={{ [vertical ? 'height' : 'width']: `${fillPercentage}%` }}
-          animate={{ 
-            [vertical ? 'height' : 'width']: `${fillPercentage}%`,
-            transition: { 
-              type: 'spring', 
-              damping: 30,
-              stiffness: 400
-            }
+            boxShadow: `0 0 8px ${colors.shaderColors.glow}`,
+            [vertical ? 'height' : 'width']: `var(--target-fill, ${fillPercentage}%)`,
+            transition: 'width 0.3s ease-out, height 0.3s ease-out'
           }}
         >
           {/* Scan lines effect */}
@@ -252,26 +309,13 @@ export default function InsightMeter({
             }}
           />
           
-          {/* Animated scanline */}
-          <motion.div 
-            className="absolute inset-0 bg-white/10 origin-top"
-            style={{ scaleY: 0.05 }}
-            animate={{ 
-              top: ['-10%', '110%'],
-              transition: { 
-                repeat: Infinity, 
-                duration: 1.5, 
-                ease: 'linear',
-                repeatDelay: 1
-              }
-            }}
-          />
-        </motion.div>
+          {/* Animated scanline - CSS driven */}
+          <div className="insight-scanline"></div>
+        </div>
         
         {/* Threshold markers with improved visibility */}
         {thresholdMarkers.map((marker, index) => {
           const isActive = fillPercentage >= marker.percent;
-          const isHighlighted = thresholdCrossed === marker.percent;
           const markerColor = marker.colorClass === 'teal' 
             ? (isActive ? 'text-teal-400' : 'text-teal-900') 
             : marker.colorClass === 'purple'
@@ -281,7 +325,7 @@ export default function InsightMeter({
           return (
             <div 
               key={`threshold-${index}`} 
-              className={`absolute ${vertical ? 'inset-x-0' : 'inset-y-0'}`} 
+              className={`threshold-marker-${marker.percent} absolute ${vertical ? 'inset-x-0' : 'inset-y-0'}`} 
               style={{ 
                 [vertical ? 'bottom' : 'left']: `${marker.percent}%`, 
                 zIndex: 2
@@ -298,7 +342,6 @@ export default function InsightMeter({
                       : 'bg-blue-400'
                   : 'bg-gray-700'
                 }
-                ${isHighlighted ? 'animate-pulse' : ''}
               `}></div>
               
               {/* Action label */}
@@ -310,89 +353,17 @@ export default function InsightMeter({
                     : '-top-6 -translate-x-1/2'} 
                   text-xs font-pixel
                   ${markerColor}
-                  ${isHighlighted ? 'text-glow-sm animate-pulse' : ''}
                   ${isActive ? 'font-bold' : 'opacity-50'}
                 `}
                 style={{
-                  textShadow: isHighlighted 
-                    ? `0 0 6px ${marker.colorClass === 'teal' 
-                        ? '#2dd4bf' 
-                        : marker.colorClass === 'purple' 
-                          ? '#a855f7' 
-                          : '#3b82f6'
-                      }`
-                    : 'none'
+                  left: vertical ? '100%' : `${marker.percent}%`,
                 }}>
                   {marker.label}
                 </div>
               )}
-              
-              {/* Threshold crossing animation */}
-              {isHighlighted && (
-                <motion.div 
-                  className={`
-                    absolute ${vertical ? 'inset-x-0 h-3' : 'inset-y-0 w-3'} 
-                    ${marker.colorClass === 'teal' 
-                      ? 'bg-teal-400' 
-                      : marker.colorClass === 'purple' 
-                        ? 'bg-purple-400' 
-                        : 'bg-blue-400'
-                    }
-                  `}
-                  initial={{ opacity: 0.8 }}
-                  animate={{ 
-                    opacity: [0.8, 0.3, 0],
-                    [vertical ? 'height' : 'width']: ['3px', '16px', '24px'],
-                    transition: { duration: 0.8 }
-                  }}
-                />
-              )}
             </div>
           );
         })}
-        
-        {/* Pulse effect animation */}
-        <AnimatePresence>
-          {pulseEffect && (
-            <motion.div
-              className="absolute inset-0 bg-white/20"
-              initial={{ opacity: 0 }}
-              animate={{ 
-                opacity: [0, 0.4, 0],
-                transition: { 
-                  repeat: insightEffect.intensity === 'high' ? 3 : 2,
-                  duration: 0.5 
-                }
-              }}
-              exit={{ opacity: 0 }}
-            />
-          )}
-        </AnimatePresence>
-        
-        {/* Delta indicator */}
-        <AnimatePresence>
-          {insightDelta !== 0 && (
-            <motion.div
-              className={`
-                absolute ${vertical ? 'right-full mr-1' : 'bottom-full mb-1'} 
-                font-pixel text-xs ${insightDelta > 0 ? 'text-green-400' : 'text-red-400'}
-              `}
-              initial={{ opacity: 0, y: insightDelta > 0 ? 10 : -10 }}
-              animate={{ 
-                opacity: 1, 
-                y: 0,
-                transition: { type: 'spring', damping: 15 }
-              }}
-              exit={{ 
-                opacity: 0, 
-                y: insightDelta > 0 ? -10 : 10,
-                transition: { duration: 0.3 }
-              }}
-            >
-              {insightDelta > 0 ? '+' : ''}{insightDelta}
-            </motion.div>
-          )}
-        </AnimatePresence>
         
         {/* Decorative corners */}
         <div className="absolute top-0 left-0 w-1 h-1 bg-white/50"></div>
@@ -401,32 +372,14 @@ export default function InsightMeter({
         <div className="absolute bottom-0 right-0 w-1 h-1 bg-black/30"></div>
       </div>
       
-      {/* Action unlocked notification */}
-      <AnimatePresence>
-        {actionAvailable && (
-          <motion.div
-            className={`
-              mt-1 text-xs font-pixel 
-              ${actionAvailable === 'SYNTHESIS' 
-                ? 'text-teal-300' 
-                : actionAvailable === 'EXTRAPOLATE' 
-                  ? 'text-purple-300' 
-                  : 'text-blue-300'
-              }
-              ${vertical ? 'ml-2' : ''}
-            `}
-            initial={{ opacity: 0, y: 5 }}
-            animate={{ 
-              opacity: 1, 
-              y: 0, 
-              transition: { type: 'spring', damping: 15 }
-            }}
-            exit={{ opacity: 0, y: -5 }}
-          >
-            {actionAvailable} unlocked!
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {/* Delta indicator - styled with CSS instead of motion */}
+      <div 
+        ref={deltaRef} 
+        className="insight-delta"
+      ></div>
+      
+      {/* Action unlocked notification - now CSS-driven */}
+      <div className="insight-action-notification"></div>
       
       {/* Threshold labels */}
       {size === 'lg' && !compact && !vertical && (
@@ -449,6 +402,104 @@ export default function InsightMeter({
           <div>0</div>
         </div>
       )}
+      
+      {/* CSS Animations */}
+      <style jsx>{`
+        /* Animation for threshold crossing */
+        @keyframes threshold-glow {
+          0%, 100% { filter: drop-shadow(0 0 3px currentColor); }
+          50% { filter: drop-shadow(0 0 8px currentColor); }
+        }
+        
+        /* Animation for scanline */
+        @keyframes scanline-move {
+          0% { top: -10%; }
+          100% { top: 110%; }
+        }
+        
+        /* Animation for fill */
+        @keyframes fill-pulse {
+          0%, 100% { opacity: 1; }
+          50% { opacity: 0.8; }
+        }
+        
+        /* Animation for delta */
+        @keyframes delta-fade {
+          0% { opacity: 0; transform: translateY(10px); }
+          20% { opacity: 1; transform: translateY(0); }
+          80% { opacity: 1; transform: translateY(0); }
+          100% { opacity: 0; transform: translateY(-10px); }
+        }
+        
+        /* Animation for action notification */
+        @keyframes action-notification {
+          0% { opacity: 0; transform: translateY(5px); }
+          10% { opacity: 1; transform: translateY(0); }
+          90% { opacity: 1; transform: translateY(0); }
+          100% { opacity: 0; transform: translateY(-5px); }
+        }
+        
+        /* Animation for container pulse */
+        @keyframes container-pulse {
+          0%, 100% { box-shadow: 0 0 0 0 transparent; }
+          50% { box-shadow: 0 0 15px 5px var(--pulse-color, rgba(59, 130, 246, 0.4)); }
+        }
+        
+        /* Delta indicator */
+        .insight-delta {
+          position: absolute;
+          right: 0;
+          bottom: 100%;
+          margin-bottom: 4px;
+          font-size: 0.75rem;
+          font-family: 'VT323', monospace;
+          opacity: 0;
+          pointer-events: none;
+        }
+        
+        .insight-delta-show {
+          animation: delta-fade 1.5s ease-out forwards;
+        }
+        
+        /* Action notification */
+        .insight-action-notification {
+          margin-top: 4px;
+          height: 1.25rem;
+          font-size: 0.75rem;
+          font-family: 'VT323', monospace;
+        }
+        
+        /* Scanline */
+        .insight-scanline {
+          position: absolute;
+          left: 0;
+          right: 0;
+          height: 5%;
+          background-color: rgba(255, 255, 255, 0.2);
+          animation: scanline-move 1.5s linear infinite;
+          animation-delay: 1s;
+        }
+        
+        /* Fill animation */
+        .insight-fill-animate {
+          animation: fill-pulse 1s ease-in-out;
+        }
+        
+        /* Threshold animation */
+        .threshold-crossed {
+          animation: threshold-glow 1s ease-in-out infinite;
+        }
+        
+        /* Container pulse effect */
+        .pulse-effect {
+          --pulse-color: ${fillPercentage >= 75 
+            ? 'rgba(45, 212, 191, 0.5)' 
+            : fillPercentage >= 50 
+              ? 'rgba(168, 85, 247, 0.5)'
+              : 'rgba(59, 130, 246, 0.4)'};
+          animation: container-pulse 1s ease-in-out 2;
+        }
+      `}</style>
     </div>
   );
 }

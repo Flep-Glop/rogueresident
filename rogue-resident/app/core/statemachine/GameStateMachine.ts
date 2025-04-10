@@ -378,4 +378,68 @@ if (typeof window !== 'undefined') {
   };
 }
 
+// Add this class below all the other code but before the export default
+export class GameStateMachine {
+  private _eventBus: any;
+
+  constructor(eventBusInstance: any) {
+    this._eventBus = eventBusInstance;
+    
+    // Initialize the state machine if needed
+    const stateMachine = useGameStateMachine.getState();
+    if (stateMachine.gameState === 'not_started') {
+      // Start with default state
+      stateMachine.transitionToState('in_progress', 'initialization');
+    }
+    
+    console.log('[GameStateMachine] Class adapter initialized');
+  }
+  
+  // Proxy to state machine methods
+  beginDayCompletion(): boolean {
+    return useGameStateMachine.getState().beginDayCompletion();
+  }
+  
+  beginNightCompletion(): boolean {
+    return useGameStateMachine.getState().beginNightCompletion();
+  }
+  
+  finalizeDayTransition(): void {
+    useGameStateMachine.getState().finalizeDayTransition();
+  }
+  
+  finalizeNightTransition(): void {
+    useGameStateMachine.getState().finalizeNightTransition();
+  }
+  
+  transitionToState(state: GameState, reason?: string): boolean {
+    return useGameStateMachine.getState().transitionToState(state, reason);
+  }
+  
+  transitionToPhase(phase: GamePhase, reason?: string): boolean {
+    return useGameStateMachine.getState().transitionToPhase(phase, reason);
+  }
+  
+  getCurrentState(): {gameState: GameState, gamePhase: GamePhase} {
+    const state = useGameStateMachine.getState();
+    return {
+      gameState: state.gameState,
+      gamePhase: state.gamePhase
+    };
+  }
+  
+  getCompletedNodeIds(): string[] {
+    return useGameStateMachine.getState().getCompletedNodeIds();
+  }
+  
+  markNodeCompleted(nodeId: string): void {
+    useGameStateMachine.getState().markNodeCompleted(nodeId);
+  }
+  
+  resetState(preserveMeta: boolean = false): void {
+    useGameStateMachine.getState().resetState(preserveMeta);
+  }
+}
+
+// Update the export to include the class
 export default useGameStateMachine;

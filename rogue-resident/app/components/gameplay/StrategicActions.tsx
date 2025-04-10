@@ -1,9 +1,10 @@
 // app/components/gameplay/StrategicActions.tsx
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useRef, useEffect, useMemo, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useResourceStore } from '../../store/resourceStore';
+import { usePrimitiveStoreValue, useStableStoreValue } from '../../core/utils/storeHooks';
 import { PixelText } from '../PixelThemeProvider';
 
 // Type definitions
@@ -19,9 +20,13 @@ interface StrategicActionsProps {
 }
 
 /**
- * Strategic Actions Component
+ * Strategic Actions Component - Refactored with Pattern Implementation
  * 
- * Control options that help shape dialogue flow using action icons
+ * Improvements:
+ * - Primitive value extraction
+ * - DOM-based hover state
+ * - Memoized definitions
+ * - Stable references for callbacks
  */
 export default function StrategicActions({
   characterId,
@@ -31,21 +36,38 @@ export default function StrategicActions({
   onActionComplete,
   onActionCancel
 }: StrategicActionsProps) {
-  // Track hover and expanded states
-  const [hoveredAction, setHoveredAction] = useState<StrategicActionType | null>(null);
+  // Refs for hover tracking via DOM
+  const hoveredActionRef = useRef<StrategicActionType | null>(null);
+  const tooltipRef = useRef<HTMLDivElement>(null);
   
-  // Access resource store for action availability
-  const { availableActions, activeAction, insight } = useResourceStore();
+  // PATTERN: Extract primitive values using specialized hooks
+  const insight = usePrimitiveStoreValue(useResourceStore, state => state.insight, 0);
+  const activeAction = usePrimitiveStoreValue(
+    useResourceStore, 
+    state => state.activeAction as StrategicActionType | null, 
+    null
+  );
   
-  // Action definitions with metadata
-  const actionDefinitions: Record<StrategicActionType, {
+  // PATTERN: Extract available actions with stable reference
+  const availableActions = useStableStoreValue(
+    useResourceStore,
+    state => state.availableActions || {
+      reframe: false,
+      extrapolate: false,
+      boast: false,
+      synthesis: false
+    }
+  );
+  
+  // PATTERN: Memoize action definitions for stable reference
+  const actionDefinitions = useMemo<Record<StrategicActionType, {
     label: string;
     description: string;
     cost: number;
     bgClass: string;
     borderClass: string;
     iconPath: string;
-  }> = {
+  }>>(() => ({
     reframe: {
       label: 'Reframe',
       description: 'Shift to more approachable topics',
@@ -78,130 +100,151 @@ export default function StrategicActions({
       borderClass: 'border-green-900',
       iconPath: "M4,5 H12 M4,8 H10 M4,11 H8" // Narrowing text lines
     }
-  };
+  }), []);
   
-  // SVG icon component for pixel art icons
-  const PixelIcon = ({ path, className = '' }: { path: string, className?: string }) => (
-    <svg 
-      width="16" 
-      height="16" 
-      viewBox="0 0 16 16" 
-      fill="none" 
-      className={`stroke-white stroke-[1.5px] ${className}`}
-      style={{ imageRendering: 'pixelated' }}
-    >
-      <path d={path} strokeLinecap="square" />
-    </svg>
-  );
+  // PATTERN: Stable callback for action activation
+  const handleActionActivate = useCallback((type: StrategicActionType) => {
+    if (onActionActivate) onActionActivate(type);
+  }, [onActionActivate]);
   
-  // Button component for strategic actions
-  const ActionButton = ({ 
-    type, 
-    isAvailable 
-  }: { 
-    type: StrategicActionType, 
-    isAvailable: boolean 
-  }) => {
-    const def = actionDefinitions[type];
-    const isActive = activeAction === type;
-    const affordabilityClass = def.cost > 0 && insight < def.cost ? 'opacity-50' : '';
+  // PATTERN: Stable callback for action cancellation  
+  const handleActionCancel = useCallback((type: StrategicActionType) => {
+    if (onActionCancel) onActionCancel(type);
+  }, [onActionCancel]);
+  
+  // PATTERN: Handle hover state via DOM
+  const handleActionHover = useCallback((type: StrategicActionType | null) => {
+    // Only update if changed
+    if (type === hoveredActionRef.current) return;
     
-    return (
-      <motion.button
-        className={`
-          w-16 h-16 relative 
-          ${def.bgClass} ${def.borderClass}
-          border-2 box-content
-          flex items-center justify-center
-          transition-colors duration-150
-          ${isActive ? 'ring-1 ring-white' : ''}
-          ${isAvailable ? '' : 'opacity-40'}
-          ${affordabilityClass}
-          pixel-borders
-        `}
-        disabled={!isAvailable || (def.cost > 0 && insight < def.cost)}
-        onClick={() => isAvailable && onActionActivate && onActionActivate(type)}
-        onMouseEnter={() => setHoveredAction(type)}
-        onMouseLeave={() => setHoveredAction(null)}
-        whileHover={{ y: isAvailable ? -2 : 0 }}
-        whileTap={{ y: isAvailable ? 1 : 0 }}
-        initial={{ scale: 1 }}
-        animate={isActive ? { 
-          scale: [1, 1.05, 1],
-          transition: { repeat: Infinity, duration: 1.5 }
-        } : { scale: 1 }}
-      >
-        <PixelIcon path={def.iconPath} className="w-8 h-8" />
-        
-        {/* Cost indicator */}
-        {def.cost > 0 && (
-          <div className="absolute -bottom-1 -right-1 text-sm bg-black/80 px-1 rounded-sm">
-            {def.cost}◆
+    hoveredActionRef.current = type;
+    
+    // Update tooltip visibility via DOM
+    if (tooltipRef.current) {
+      if (type) {
+        const def = actionDefinitions[type];
+        tooltipRef.current.innerHTML = `
+          <div class="p-3">
+            <div class="text-sm font-pixel text-white mb-1">${def.label}</div>
+            <div class="text-xs text-gray-300">${def.description}</div>
+            ${def.cost > 0 ? 
+              `<div class="text-xs mt-1 ${insight >= def.cost ? 'text-blue-300' : 'text-red-300'}">
+                Cost: ${def.cost} Insight
+              </div>` : 
+              `<div class="text-xs mt-1 text-orange-300">
+                Requires max momentum
+              </div>`
+            }
           </div>
-        )}
+        `;
+        tooltipRef.current.classList.add('tooltip-visible');
         
-        {/* Active indicator pulse */}
-        {isActive && (
-          <motion.div 
-            className="absolute inset-0 bg-white"
-            initial={{ opacity: 0 }}
-            animate={{ 
-              opacity: [0, 0.3, 0],
-              transition: { repeat: Infinity, duration: 2 }
-            }}
-          />
-        )}
-        
-        {/* Tooltip on hover */}
-        <AnimatePresence>
-          {hoveredAction === type && !isActive && (
-            <motion.div
-              className="absolute top-full mt-2 left-1/2 -translate-x-1/2 w-48 z-50
-                        bg-gray-900/95 border border-gray-700 pixel-borders-thin shadow-lg"
-              initial={{ opacity: 0, y: -5, scale: 0.95 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: -5, scale: 0.95 }}
-              transition={{ duration: 0.15 }}
-            >
-              <div className="p-3">
-                <div className="text-sm font-pixel text-white mb-1">{def.label}</div>
-                <div className="text-xs text-gray-300">{def.description}</div>
-                {def.cost > 0 ? (
-                  <div className={`text-xs mt-1 ${insight >= def.cost ? 'text-blue-300' : 'text-red-300'}`}>
-                    Cost: {def.cost} Insight
-                  </div>
-                ) : (
-                  <div className="text-xs mt-1 text-orange-300">
-                    Requires max momentum
-                  </div>
-                )}
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </motion.button>
-    );
-  };
+        // Position tooltip relative to hovered button
+        const buttonEl = document.querySelector(`[data-action-id="${type}"]`);
+        if (buttonEl) {
+          const rect = buttonEl.getBoundingClientRect();
+          tooltipRef.current.style.top = `${rect.bottom + 8}px`;
+          tooltipRef.current.style.left = `${rect.left + rect.width/2}px`;
+        }
+      } else {
+        tooltipRef.current.classList.remove('tooltip-visible');
+      }
+    }
+  }, [actionDefinitions, insight]);
   
-  // Render the action buttons with proper spacing
+  // PATTERN: SVG icon component (stable)
+  const PixelIcon = useMemo(() => 
+    ({ path, className = '' }: { path: string, className?: string }) => (
+      <svg 
+        width="16" 
+        height="16" 
+        viewBox="0 0 16 16" 
+        fill="none" 
+        className={`stroke-white stroke-[1.5px] ${className}`}
+        style={{ imageRendering: 'pixelated' }}
+      >
+        <path d={path} strokeLinecap="square" />
+      </svg>
+    ),
+  []);
+  
+  // PATTERN: Button component with DOM-based hover handling
+  const ActionButton = useMemo(() => 
+    ({ type, isAvailable }: { type: StrategicActionType, isAvailable: boolean }) => {
+      const def = actionDefinitions[type];
+      const isActive = activeAction === type;
+      const affordabilityClass = def.cost > 0 && insight < def.cost ? 'opacity-50' : '';
+      
+      return (
+        <motion.button
+          data-action-id={type}
+          className={`
+            w-16 h-16 relative 
+            ${def.bgClass} ${def.borderClass}
+            border-2 box-content
+            flex items-center justify-center
+            transition-colors duration-150
+            ${isActive ? 'ring-1 ring-white' : ''}
+            ${isAvailable ? '' : 'opacity-40'}
+            ${affordabilityClass}
+            pixel-borders
+            action-button
+          `}
+          disabled={!isAvailable || (def.cost > 0 && insight < def.cost)}
+          onClick={() => isAvailable && handleActionActivate(type)}
+          onMouseEnter={() => handleActionHover(type)}
+          onMouseLeave={() => handleActionHover(null)}
+          whileHover={{ y: isAvailable ? -2 : 0 }}
+          whileTap={{ y: isAvailable ? 1 : 0 }}
+          initial={{ scale: 1 }}
+          animate={isActive ? { 
+            scale: [1, 1.05, 1],
+            transition: { repeat: Infinity, duration: 1.5 }
+          } : { scale: 1 }}
+        >
+          <PixelIcon path={def.iconPath} className="w-8 h-8" />
+          
+          {/* Cost indicator */}
+          {def.cost > 0 && (
+            <div className="absolute -bottom-1 -right-1 text-sm bg-black/80 px-1 rounded-sm">
+              {def.cost}◆
+            </div>
+          )}
+          
+          {/* Active indicator pulse */}
+          {isActive && (
+            <motion.div 
+              className="absolute inset-0 bg-white"
+              initial={{ opacity: 0 }}
+              animate={{ 
+                opacity: [0, 0.3, 0],
+                transition: { repeat: Infinity, duration: 2 }
+              }}
+            />
+          )}
+        </motion.button>
+      );
+    },
+  [actionDefinitions, activeAction, insight, handleActionActivate, handleActionHover, PixelIcon]);
+  
+  // Clear hover state on unmount
+  useEffect(() => {
+    return () => {
+      hoveredActionRef.current = null;
+    };
+  }, []);
+  
   return (
-    <div className={`flex items-center gap-3 ${className}`}>
+    <div className={`flex items-center gap-3 ${className} relative`}>
       {availableActions.reframe && <ActionButton type="reframe" isAvailable={availableActions.reframe} />}
       {availableActions.extrapolate && <ActionButton type="extrapolate" isAvailable={availableActions.extrapolate} />}
       {availableActions.synthesis && <ActionButton type="synthesis" isAvailable={availableActions.synthesis} />}
-    </div>
-  );
-}
-
-/**
- * Container version with expanded state support
- */
-export function StrategicActionsContainer(props: StrategicActionsProps) {
-  const { activeAction } = useResourceStore();
-  
-  return (
-    <div className="relative">
-      <StrategicActions {...props} />
+      
+      {/* Tooltip using DOM-based positioning */}
+      <div 
+        ref={tooltipRef}
+        className="absolute z-50 w-48 bg-gray-900/95 border border-gray-700 pixel-borders-thin shadow-lg transform -translate-x-1/2 tooltip"
+      ></div>
       
       {/* Expanded state panel - shows when an action is active */}
       <AnimatePresence>
@@ -231,7 +274,7 @@ export function StrategicActionsContainer(props: StrategicActionsProps) {
               {/* Optional cancel button */}
               <button 
                 className="mt-2 text-xs text-gray-400 hover:text-white"
-                onClick={() => props.onActionCancel && props.onActionCancel(activeAction)}
+                onClick={() => handleActionCancel(activeAction)}
               >
                 Cancel (recover cost)
               </button>
@@ -239,6 +282,61 @@ export function StrategicActionsContainer(props: StrategicActionsProps) {
           </motion.div>
         )}
       </AnimatePresence>
+      
+      {/* CSS for tooltip */}
+      <style jsx>{`
+        .tooltip {
+          opacity: 0;
+          visibility: hidden;
+          pointer-events: none;
+          transform: translate(-50%, 0.5rem) scale(0.95);
+          transition: opacity 0.15s ease, transform 0.15s ease, visibility 0.15s;
+        }
+        
+        .tooltip-visible {
+          opacity: 1;
+          visibility: visible;
+          transform: translate(-50%, 0) scale(1);
+        }
+        
+        /* Interactive feedback */
+        .action-button {
+          position: relative;
+        }
+        
+        .action-button::after {
+          content: '';
+          position: absolute;
+          inset: -2px;
+          z-index: -1;
+          opacity: 0;
+          transition: opacity 0.15s ease;
+          border-radius: 2px;
+        }
+        
+        .action-button:not(:disabled):hover::after {
+          opacity: 0.3;
+          box-shadow: 0 0 12px 4px currentColor;
+        }
+      `}</style>
+    </div>
+  );
+}
+
+/**
+ * Container version with expanded state support
+ */
+export function StrategicActionsContainer(props: StrategicActionsProps) {
+  // PATTERN: Extract primitive value for active action
+  const activeAction = usePrimitiveStoreValue(
+    useResourceStore, 
+    state => state.activeAction as StrategicActionType | null, 
+    null
+  );
+  
+  return (
+    <div className="relative">
+      <StrategicActions {...props} />
     </div>
   );
 }

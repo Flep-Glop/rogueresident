@@ -50,8 +50,12 @@
 │   │   │   └── ProgressionResolver.ts
 │   │   ├── statemachine
 │   │   │   └── GameStateMachine.ts
-│   │   └── themeConstants.ts
+│   │   ├── themeConstants.ts
+│   │   └── utils
+│   │       └── storeHooks.ts
 │   ├── data
+│   │   ├── concepts
+│   │   │   └── medicalPhysicsConcepts.ts
 │   │   ├── dialogues
 │   │   │   └── calibrations
 │   │   │       └── kapoor-calibration.ts
@@ -61,7 +65,9 @@
 │   ├── hooks
 │   │   ├── useConstellationInteraction.ts
 │   │   ├── useDialogueFlow.ts
+│   │   ├── useGameState.ts
 │   │   ├── useGameplayEffects.ts
+│   │   ├── usePrimitiveStoreValue.ts
 │   │   └── useTypewriter.ts
 │   ├── layout.tsx
 │   ├── page.tsx
@@ -71,11 +77,28 @@
 │   │   ├── knowledgeStore.ts
 │   │   └── resourceStore.ts
 │   └── types
-│       └── game.ts
+│       ├── game.ts
+│       └── player.ts
 ├── combined_tsx.txt
+├── components
+│   └── ui
+│       └── button.tsx
+├── components.json
+├── docs
+│   ├── day-night-transition-sequence.mermaid
+│   ├── documentation-review.md
+│   ├── enhanced-architecture-doc.md
+│   ├── knowledge-mastery-progression.mermaid
+│   ├── mentor-personality-matrix.mermaid
+│   ├── mentor-response-system.mermaid
+│   ├── player-satisfaction-loops.mermaid
+│   ├── strategic-action-decision-tree.mermaid
+│   └── systems-integration-diagram.mermaid
 ├── eslint.config.mjs
 ├── filestructure.txt
 ├── jest-config.js
+├── lib
+│   └── utils.ts
 ├── next-env.d.ts
 ├── next.config.ts
 ├── package-lock.json
@@ -92,4 +115,4 @@
 │   └── verticalSliceIntegrationTest.js
 └── tsconfig.json
 
-22 directories, 70 files
+28 directories, 87 files

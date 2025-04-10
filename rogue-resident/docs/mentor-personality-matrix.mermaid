@@ -1,0 +1,119 @@
+flowchart TD
+    %% Mentor Personality Matrix
+
+    subgraph coreTraits["Core Mentor Traits"]
+        direction TB
+        TeachingStyle["Teaching Style\n(Approach & Methods)"]
+        Expertise["Domain Expertise\n(Specialty & Focus)"]
+        Personality["Personality Traits\n(Character & Values)"]
+        ResponseStyle["Response Style\n(Tone & Language)"]
+    end
+    
+    subgraph mentorMatrix["Mentor Matrix"]
+        direction LR
+        subgraph kapoor["Dr. Kapoor"]
+            KTeaching["Methodical\nProtocol-Driven\nDetail-Oriented"]
+            KExpertise["Quality Assurance\nCalibration\nRadiation Physics"]
+            KPersonality["Precise\nReserved\nRigorous\nThorough"]
+            KResponse["Formal language\nTechnical terms\nCorrection-focused"]
+        end
+        
+        subgraph jesse["Technician Jesse"]
+            JTeaching["Hands-on\nExperiential\nPractical"]
+            JExpertise["Equipment Ops\nMaintenance\nTroubleshooting"]
+            JPersonality["Casual\nDirect\nResourceful\nPatient"]
+            JResponse["Informal language\nAnecdotes\nSupportive tone"]
+        end
+        
+        subgraph quinn["Dr. Quinn"]
+            QTeaching["Conceptual\nInnovative\nQuestion-Based"]
+            QExpertise["Research\nExperimental Physics\nTheoretical Models"]
+            QPersonality["Creative\nEnergetic\nAbstract\nChallenger"]
+            QResponse["Enthusiastic language\nOpen-ended questions\nThought experiments"]
+        end
+        
+        subgraph garcia["Dr. Garcia"]
+            GTeaching["Integrated\nHolistic\nPatient-Centered"]
+            GExpertise["Clinical Practice\nRadiation Oncology\nPatient Outcomes"]
+            GPersonality["Empathetic\nNuanced\nBalanced\nCollaborative"]
+            GResponse["Contextual language\nClinical examples\nGuided questioning"]
+        end
+    end
+    
+    subgraph playerApproaches["Player Approach Types"]
+        direction TB
+        Humble["Humble Approach\n- Ask for guidance\n- Acknowledge limits\n- Seek advice"]
+        Precise["Precision Approach\n- Technical accuracy\n- Procedural focus\n- Detail-oriented"]
+        Confident["Confidence Approach\n- Direct assertions\n- Creative solutions\n- Independent thinking"]
+    end
+    
+    subgraph responseModifiers["Response Modifiers"]
+        direction TB
+        RelationshipLevel["Relationship Level\n(1-5)"]
+        PreviousChoices["Previous Choices\n(Conversation History)"]
+        KnowledgeDomain["Knowledge Domain\n(Subject Area)"]
+        PlayerMastery["Player Mastery Level\n(Concept Understanding)"]
+    end
+    
+    subgraph gameplayEffects["Gameplay Effects"]
+        direction TB
+        MasteryGain["Knowledge Mastery Gain\n- Base: 5-15 points\n- Modified by mentor match"]
+        RelationshipChange["Relationship Change\n- -2 to +2 points\n- Affects future options"]
+        InsightBonus["Insight Bonus\n- 0-25% bonus based on\nmentor relationship"]
+        DialogueUnlocks["Dialogue Unlocks\n- New options\n- Backstory revelations"]
+    end
+    
+    %% Connections between player approach and mentor preference
+    PlayerApproach{"Player Approach\nSelection"}
+    
+    PlayerApproach -->|"Humble"| MentorResponse
+    PlayerApproach -->|"Precise"| MentorResponse
+    PlayerApproach -->|"Confident"| MentorResponse
+    
+    MentorResponse{{"Mentor Response\nGeneration"}}
+    
+    %% Mentor preferences for approaches
+    Humble --> |"Strongly favored by"| jesse
+    Humble --> |"Favored by"| garcia
+    Humble --> |"Neutral for"| kapoor
+    Humble --> |"Slightly disfavored by"| quinn
+    
+    Precise --> |"Strongly favored by"| kapoor
+    Precise --> |"Slightly favored by"| garcia
+    Precise --> |"Neutral for"| quinn
+    Precise --> |"Slightly disfavored by"| jesse
+    
+    Confident --> |"Strongly favored by"| quinn
+    Confident --> |"Slightly favored by"| jesse
+    Confident --> |"Neutral for"| garcia
+    Confident --> |"Strongly disfavored by"| kapoor
+    
+    %% Response generation system
+    MentorResponse --> |"Apply personality"| mentorMatrix
+    responseModifiers --> MentorResponse
+    
+    %% Gameplay effects
+    MentorResponse --> gameplayEffects
+    
+    %% Style
+    classDef trait fill:#dbe2ef,stroke:#3f72af,color:black,stroke-width:2px
+    classDef kapoorClass fill:#395B64,stroke:#2C3333,color:white,stroke-width:2px
+    classDef jesseClass fill:#F97B22,stroke:#D44C2E,color:white,stroke-width:2px
+    classDef quinnClass fill:#9D3C72,stroke:#7B2869,color:white,stroke-width:2px
+    classDef garciaClass fill:#3AA6B9,stroke:#4FB0B7,color:white,stroke-width:2px
+    classDef approach fill:#FFE194,stroke:#FF9B00,color:black,stroke-width:2px
+    classDef modifier fill:#967E76,stroke:#7A6855,color:white,stroke-width:2px
+    classDef effect fill:#BBD6B8,stroke:#94AF9F,color:black,stroke-width:2px
+    classDef processor fill:#5F264A,stroke:#4C0033,color:white,stroke-width:2px,style:dashed
+    
+    class TeachingStyle,Expertise,Personality,ResponseStyle trait
+    
+    class KTeaching,KExpertise,KPersonality,KResponse kapoorClass
+    class JTeaching,JExpertise,JPersonality,JResponse jesseClass
+    class QTeaching,QExpertise,QPersonality,QResponse quinnClass
+    class GTeaching,GExpertise,GPersonality,GResponse garciaClass
+    
+    class Humble,Precise,Confident approach
+    class RelationshipLevel,PreviousChoices,KnowledgeDomain,PlayerMastery modifier
+    class MasteryGain,RelationshipChange,InsightBonus,DialogueUnlocks effect
+    class PlayerApproach,MentorResponse processor

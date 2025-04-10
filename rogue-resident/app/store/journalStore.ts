@@ -1,68 +1,98 @@
 // app/store/journalStore.ts
 /**
- * Journal Store for Vertical Slice
+ * Journal System
  * 
- * Streamlined implementation focused on the core vertical slice experience
- * of obtaining and using a journal from Dr. Kapoor's interactions.
+ * Manages the player's in-game journal - a record of discoveries, observations,
+ * and character interactions that serves as both a narrative device and a
+ * gameplay mechanic supporting knowledge acquisition.
+ * 
+ * Design Philosophy:
+ * - Journal entries connect gameplay moments to knowledge context
+ * - Entries evolve with the player's growing understanding
+ * - Multiple sources (dialogue, observation, experiments) feed into journal
  */
 
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
-import { GameEventType } from '../core/events/EventTypes';
-import { useEventBus, safeDispatch } from '../core/events/CentralEventBus';
+import { nanoid } from 'nanoid';
+import { safeDispatch } from '@/app/core/events/CentralEventBus';
+import { GameEventType } from '@/app/core/events/EventTypes';
 
-export type JournalEntry = {
+// Journal entry categories to organize different types of notes
+export type JournalCategory = 'Log' | 'Observation' | 'Personal' | 'Objective';
+
+export type JournalTier = 'base' | 'technical' | 'annotated';
+
+// Core interfaces
+export interface JournalEntry {
   id: string;
+  timestamp: Date;
   title: string;
-  date: string;
   content: string;
   tags: string[];
-  relatedConcepts?: string[];
-};
+  category: JournalCategory;
+  isNew?: boolean; // Tracks entries the player hasn't viewed yet
+  relatedConceptIds?: string[]; // Links to knowledge constellation
+  mentorName?: string; // Associated mentor if from dialogue
+  experimentData?: any; // Optional data from experiments
+  location?: string; // Where entry was recorded
+}
 
-export type JournalCharacterNote = {
+export interface CharacterNote {
   characterId: string;
+  name: string;
   notes: string;
-  relationshipLevel: number;
-  lastInteraction: string;
-};
+  lastUpdated: Date;
+}
 
-export type JournalUpgrade = 
-  | 'base'        // Basic notebook (all players)
-  | 'technical'   // Technical upgrade from decent Kapoor performance
-  | 'annotated';  // Special upgrade from excellent Kapoor performance
+export interface CustomAnnotation {
+  id: string;
+  referenceId: string; // Entry ID or concept ID being annotated
+  content: string;
+  timestamp: Date;
+  tags: string[];
+}
 
-type JournalState = {
-  // Core journal properties
-  hasJournal: boolean;
-  currentUpgrade: JournalUpgrade;
+interface JournalState {
+  // Core state
+  hasJournal: boolean; // Whether player has acquired journal
+  currentUpgrade: JournalTier;
   entries: JournalEntry[];
-  characterNotes: JournalCharacterNote[];
-  customAnnotations: Record<string, string>; // Custom player notes by category
+  characterNotes: CharacterNote[];
+  customAnnotations: CustomAnnotation[];
+  isJournalOpen: boolean;
+  activeEntryId: string | null;
   
-  // Journal upgrade items - focused on Kapoor for vertical slice
-  hasKapoorReferenceSheets: boolean;
-  hasKapoorAnnotatedNotes: boolean;
+  // Filters
+  activeFilters: {
+    categories: JournalCategory[];
+    tags: string[];
+    searchTerm: string;
+  };
   
-  // Journal UI state
-  isOpen: boolean;
-  currentPage: 'knowledge' | 'characters' | 'notes' | 'references';
+  // Methods
+  addEntry: (entryData: Omit<JournalEntry, 'timestamp' | 'id'>) => void;
+  addJournalEntry: (entryData: Omit<JournalEntry, 'timestamp' | 'id'>) => void; // Alias
+  updateEntry: (id: string, content: string) => void;
+  addCharacterNote: (characterId: string, name: string, notes: string) => void;
+  updateCharacterNote: (characterId: string, notes: string) => void;
+  addAnnotation: (referenceId: string, content: string, tags?: string[]) => void;
+  markEntryAsRead: (id: string) => void;
+  markAllEntriesAsRead: () => void;
+  updateFilters: (filters: Partial<JournalState['activeFilters']>) => void;
+  setJournalOpen: (isOpen: boolean) => void;
+  setActiveEntry: (id: string | null) => void;
+  upgradeJournal: (tier: JournalTier) => boolean;
   
-  // Actions
-  initializeJournal: (upgrade?: JournalUpgrade) => void;
-  upgradeJournal: (upgrade: JournalUpgrade) => void;
-  addEntry: (entry: JournalEntry) => void;
-  updateCharacterNote: (characterId: string, note: string, relationshipChange?: number) => void;
-  setAnnotation: (category: string, text: string) => void;
-  toggleJournal: () => void;
-  setCurrentPage: (page: 'knowledge' | 'characters' | 'notes' | 'references') => void;
+  // Queries
+  getNewEntryCount: () => number;
+  getFilteredEntries: () => JournalEntry[];
+  getEntryById: (id: string) => JournalEntry | null;
   
-  // Special items - focused on Kapoor for vertical slice
-  addKapoorReferenceSheets: () => void;
-  addKapoorAnnotatedNotes: () => void;
-};
+  // Development helpers
+  clearJournal: () => void;
+}
 
-// Create persisted store to ensure journal state survives refreshes
 export const useJournalStore = create<JournalState>()(
   persist(
     (set, get) => ({
@@ -71,95 +101,83 @@ export const useJournalStore = create<JournalState>()(
       currentUpgrade: 'base',
       entries: [],
       characterNotes: [],
-      customAnnotations: {},
+      customAnnotations: [],
+      isJournalOpen: false,
+      activeEntryId: null,
+      activeFilters: {
+        categories: [],
+        tags: [],
+        searchTerm: ''
+      },
       
-      hasKapoorReferenceSheets: false,
-      hasKapoorAnnotatedNotes: false,
-      
-      isOpen: false,
-      currentPage: 'knowledge',
-      
-      // Actions
-      initializeJournal: (upgrade = 'base') => {
-        // Only initialize if journal doesn't already exist
-        if (get().hasJournal) {
-          console.log('[JOURNAL] Journal already initialized, skipping');
-          return;
-        }
+      // Add a new journal entry
+      addEntry: (entryData: Omit<JournalEntry, 'timestamp' | 'id'>) => {
+        const id = `journal-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
         
-        console.log(`[JOURNAL] Initializing journal with upgrade: ${upgrade}`);
+        console.log(`Adding journal entry: ${id}`, entryData);
         
-        set({
-          hasJournal: true,
-          currentUpgrade: upgrade,
+        set(state => ({
           entries: [
+            ...state.entries,
             {
-              id: 'initial',
-              title: 'Journal Initialized',
-              date: new Date().toISOString(),
-              content: 'This journal has been provided to track your medical physics residency progress.',
-              tags: ['system']
+              id,
+              timestamp: new Date(),
+              ...entryData,
+              isNew: true
             }
           ]
-        });
+        }));
         
-        // Emit simplified UI event when journal is initialized
-        safeDispatch(
-          GameEventType.UI_BUTTON_CLICKED, 
-          {
-            componentId: 'journal',
-            action: 'initialize',
-            metadata: {
-              upgrade,
-              source: 'initializeJournal'
-            }
-          }
-        );
+        // Fire appropriate events
+        safeDispatch(GameEventType.JOURNAL_ENTRY_TRIGGERED, { 
+          entryId: id, 
+          title: entryData.title 
+        }, 'journalStore');
       },
       
-      upgradeJournal: (upgrade) => {
-        set({
-          currentUpgrade: upgrade,
-        });
+      // Alias for addEntry (for compatibility)
+      addJournalEntry: (entryData: Omit<JournalEntry, 'timestamp' | 'id'>) => {
+        get().addEntry(entryData);
       },
       
-      addEntry: (entry) => {
-        // Check for duplicate entries by ID
-        const existingEntry = get().entries.find(e => e.id === entry.id);
-        if (existingEntry) {
-          console.log(`[JOURNAL] Entry with ID ${entry.id} already exists, skipping`);
-          return;
-        }
-        
-        set((state) => ({
-          entries: [...state.entries, entry]
+      // Update an existing entry's content
+      updateEntry: (id: string, content: string) => {
+        set(state => ({
+          entries: state.entries.map(entry =>
+            entry.id === id 
+              ? { ...entry, content, isNew: false } 
+              : entry
+          )
         }));
       },
       
-      updateCharacterNote: (characterId, note, relationshipChange = 0) => {
-        set((state) => {
-          const existingNoteIndex = state.characterNotes.findIndex(n => n.characterId === characterId);
+      // Add notes about a character
+      addCharacterNote: (characterId: string, name: string, notes: string) => {
+        set(state => {
+          // Check if character already has notes
+          const existingIndex = state.characterNotes.findIndex(
+            note => note.characterId === characterId
+          );
           
-          if (existingNoteIndex >= 0) {
+          if (existingIndex >= 0) {
             // Update existing note
             const updatedNotes = [...state.characterNotes];
-            updatedNotes[existingNoteIndex] = {
-              ...updatedNotes[existingNoteIndex],
-              notes: note,
-              relationshipLevel: Math.max(0, Math.min(5, updatedNotes[existingNoteIndex].relationshipLevel + relationshipChange)),
-              lastInteraction: new Date().toISOString()
+            updatedNotes[existingIndex] = {
+              ...updatedNotes[existingIndex],
+              notes,
+              lastUpdated: new Date()
             };
             return { characterNotes: updatedNotes };
           } else {
-            // Add new note
+            // Add new character note
             return {
               characterNotes: [
                 ...state.characterNotes,
                 {
                   characterId,
-                  notes: note,
-                  relationshipLevel: Math.max(0, Math.min(5, relationshipChange)),
-                  lastInteraction: new Date().toISOString()
+                  name,
+                  notes,
+                  lastUpdated: new Date()
                 }
               ]
             };
@@ -167,62 +185,152 @@ export const useJournalStore = create<JournalState>()(
         });
       },
       
-      setAnnotation: (category, text) => set((state) => ({
-        customAnnotations: {
-          ...state.customAnnotations,
-          [category]: text
-        }
-      })),
+      // Update an existing character note
+      updateCharacterNote: (characterId: string, notes: string) => {
+        set(state => ({
+          characterNotes: state.characterNotes.map(note =>
+            note.characterId === characterId
+              ? { ...note, notes, lastUpdated: new Date() }
+              : note
+          )
+        }));
+      },
       
-      toggleJournal: () => {
-        const nextIsOpen = !get().isOpen;
-        set({ isOpen: nextIsOpen });
+      // Add a custom annotation
+      addAnnotation: (referenceId: string, content: string, tags: string[] = []) => {
+        const id = nanoid();
         
-        // Use UI_BUTTON_CLICKED instead of specific journal events
-        safeDispatch(
-          GameEventType.UI_BUTTON_CLICKED, 
-          { 
-            componentId: 'journal',
-            action: nextIsOpen ? 'open' : 'close',
-            metadata: { page: get().currentPage }
+        set(state => ({
+          customAnnotations: [
+            ...state.customAnnotations,
+            {
+              id,
+              referenceId,
+              content,
+              timestamp: new Date(),
+              tags
+            }
+          ]
+        }));
+      },
+      
+      // Mark a specific entry as read
+      markEntryAsRead: (id: string) => {
+        set(state => ({
+          entries: state.entries.map(entry =>
+            entry.id === id
+              ? { ...entry, isNew: false }
+              : entry
+          )
+        }));
+      },
+      
+      // Mark all entries as read
+      markAllEntriesAsRead: () => {
+        set(state => ({
+          entries: state.entries.map(entry => ({ ...entry, isNew: false }))
+        }));
+      },
+      
+      // Update active filters
+      updateFilters: (filters: Partial<JournalState['activeFilters']>) => {
+        set(state => ({
+          activeFilters: {
+            ...state.activeFilters,
+            ...filters
           }
-        );
+        }));
       },
       
-      setCurrentPage: (page) => set({
-        currentPage: page
-      }),
+      // Toggle journal open/closed
+      setJournalOpen: (isOpen: boolean) => {
+        set({ isJournalOpen: isOpen });
+      },
       
-      // Special items - focused on Kapoor for vertical slice
-      addKapoorReferenceSheets: () => {
-        set({
-          hasKapoorReferenceSheets: true
+      // Set the active entry
+      setActiveEntry: (id: string | null) => {
+        set({ activeEntryId: id });
+        
+        // If opening an entry, mark it as read
+        if (id) {
+          get().markEntryAsRead(id);
+        }
+      },
+      
+      // Upgrade the journal to a new tier
+      upgradeJournal: (tier: JournalTier) => {
+        const currentTier = get().currentUpgrade;
+        const tierValues = { base: 1, technical: 2, annotated: 3 };
+        
+        // Only allow upgrades (no downgrades)
+        if (tierValues[tier] <= tierValues[currentTier]) {
+          console.warn(`Cannot downgrade journal from ${currentTier} to ${tier}`);
+          return false;
+        }
+        
+        set({ 
+          currentUpgrade: tier,
+          hasJournal: true
         });
         
-        // Add entry about reference sheets
-        get().addEntry({
-          id: 'kapoor-reference-sheets',
-          title: 'Calibration Reference Sheets',
-          date: new Date().toISOString(),
-          content: 'Dr. Kapoor has provided standard reference sheets for calibration procedures. These include baseline values, tolerance tables, and correction factor references.',
-          tags: ['kapoor', 'reference', 'calibration']
+        // Dispatch event
+        safeDispatch(GameEventType.JOURNAL_ACQUIRED, { 
+          tier, 
+          character: 'player',
+          source: 'upgrade'
+        }, 'journalStore');
+        
+        return true;
+      },
+      
+      // Get count of unread entries
+      getNewEntryCount: () => {
+        return get().entries.filter(entry => entry.isNew).length;
+      },
+      
+      // Get entries filtered by active filters
+      getFilteredEntries: () => {
+        const { entries, activeFilters } = get();
+        
+        return entries.filter(entry => {
+          // Category filter
+          if (activeFilters.categories.length > 0 && !activeFilters.categories.includes(entry.category)) {
+            return false;
+          }
+          
+          // Tag filter
+          if (activeFilters.tags.length > 0 && !activeFilters.tags.some(tag => entry.tags.includes(tag))) {
+            return false;
+          }
+          
+          // Search term
+          if (activeFilters.searchTerm) {
+            const searchLower = activeFilters.searchTerm.toLowerCase();
+            return (
+              entry.title.toLowerCase().includes(searchLower) ||
+              entry.content.toLowerCase().includes(searchLower) ||
+              entry.tags.some(tag => tag.toLowerCase().includes(searchLower))
+            );
+          }
+          
+          return true;
         });
       },
       
-      addKapoorAnnotatedNotes: () => {
-        set({
-          hasKapoorAnnotatedNotes: true
-        });
-        
-        // Add entry about annotated notes
-        get().addEntry({
-          id: 'kapoor-annotated-notes',
-          title: 'Annotated Protocol Notes',
-          date: new Date().toISOString(),
-          content: 'Dr. Kapoor has shared his own annotated protocol notes, with insights from years of experience. These annotations highlight common pitfalls and efficiency improvements not found in standard documentation.',
-          tags: ['kapoor', 'protocols', 'advanced']
-        });
+      // Get an entry by ID
+      getEntryById: (id: string) => {
+        return get().entries.find(entry => entry.id === id) || null;
       },
+      
+      // Clear the journal (for development/testing)
+      clearJournal: () => {
+        set({
+          entries: [],
+          characterNotes: [],
+          customAnnotations: [],
+          activeEntryId: null
+        });
+      }
     }),
     {
       name: 'rogue-resident-journal', // Local storage key
@@ -234,59 +342,41 @@ export const useJournalStore = create<JournalState>()(
         entries: state.entries,
         characterNotes: state.characterNotes,
         customAnnotations: state.customAnnotations,
-        hasKapoorReferenceSheets: state.hasKapoorReferenceSheets,
-        hasKapoorAnnotatedNotes: state.hasKapoorAnnotatedNotes,
       }),
     }
   )
 );
 
-// Critical progression guarantor - ensures journal is available if required progression is met
-export const ensureJournalProgression = () => {
-  // This would be called at critical checkpoints like loading a saved game
-  // or after completing critical nodes, to ensure progression items exist
-  
-  const currentState = useJournalStore.getState();
-  const eventBus = useEventBus.getState();
-  
-  // Check for completed Kapoor node in recent event history
-  const recentNodeCompletions = eventBus.getEventHistory(GameEventType.NODE_COMPLETED, 20);
-  const hasCompletedKapoorNode = recentNodeCompletions.some(event => {
-    const payload = event.payload as any;
-    return payload.character === 'kapoor' && payload.result?.isJournalAcquisition;
-  });
-  
-  // If we've completed a Kapoor journal node but don't have a journal, fix it
-  if (hasCompletedKapoorNode && !currentState.hasJournal) {
-    console.warn('[JournalProgression] Critical progression issue detected: Kapoor node completed but no journal found');
-    
-    // Fix by initializing journal
-    currentState.initializeJournal('technical');
-    
-    // Report fix through event system
-    safeDispatch(
-      GameEventType.JOURNAL_ACQUIRED,
-      {
-        tier: 'technical',
-        character: 'kapoor',
-        source: 'progression_recovery',
-        forced: true
-      },
-      'journal_progression_recovery'
-    );
-    
-    return true; // Repairs were needed
-  }
-  
-  return false; // No repairs needed
-};
-
-// Helper for other systems to easily check journal state
-export const getJournalState = () => {
-  return {
-    hasJournal: useJournalStore.getState().hasJournal,
-    currentUpgrade: useJournalStore.getState().currentUpgrade
+// Optional: Add window debugging for non-production environments
+if (process.env.NODE_ENV !== 'production' && typeof window !== 'undefined') {
+  (window as any).__JOURNAL_DEBUG__ = {
+    getState: () => useJournalStore.getState(),
+    addTestEntry: (category: JournalCategory = 'Log') => {
+      const sampleTitles = [
+        'First Observations in Kapoor Wing',
+        'Unusual Readings from Chamber A-7',
+        'Conversation with Dr. Quinn',
+        'Calibration Procedure Notes',
+        'Thoughts on Electron Equilibrium'
+      ];
+      
+      const sampleTags = [
+        ['observation', 'kapoor', 'first-day'],
+        ['anomaly', 'measurements', 'chamber-a7'],
+        ['personnel', 'conversation', 'radiation-physics'],
+        ['procedure', 'calibration', 'technical'],
+        ['theory', 'electrons', 'physics']
+      ];
+      
+      const randomIndex = Math.floor(Math.random() * sampleTitles.length);
+      
+      useJournalStore.getState().addEntry({
+        title: sampleTitles[randomIndex],
+        content: `This is a test journal entry for development purposes. Generated at ${new Date().toLocaleTimeString()}.`,
+        category,
+        tags: sampleTags[randomIndex]
+      });
+    },
+    reset: () => useJournalStore.getState().clearJournal()
   };
-};
-
-export default useJournalStore;
+}

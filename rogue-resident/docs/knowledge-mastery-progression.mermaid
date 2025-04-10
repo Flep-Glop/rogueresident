@@ -1,0 +1,103 @@
+flowchart TB
+    %% Knowledge Mastery Progression System
+    
+    subgraph conceptStages["Concept Mastery Stages"]
+        direction TB
+        Unknown["Unknown\n(0% Mastery)"] --> Discovery["Discovery\n(25% Mastery)"]
+        Discovery --> Application["Application\n(50% Mastery)"]
+        Application --> Connection["Connection\n(75% Mastery)"]
+        Connection --> Synthesis["Synthesis\n(100% Mastery)"]
+    end
+    
+    subgraph masteryActions["Mastery-Building Actions"]
+        direction TB
+        FoundInDialogue["Found In Dialogue\n+25% (Initial Discovery)"]
+        CorrectApplication["Correct Application\n+5-15% (Per Challenge)"]
+        FormConnection["Form Connection\n+5% (Per Connection)"]
+        PatternComplete["Complete Pattern\n+15-25% (Per Pattern)"]
+        CrossDomainLink["Cross-Domain Link\n+10% (To Both Concepts)"]
+    end
+    
+    subgraph visualEffects["Visual Representation"]
+        direction TB
+        DimStar["Dim Star\n(25-49% Mastery)"]
+        BrightStar["Bright Star\n(50-74% Mastery)"]
+        GlowingStar["Glowing Star\n(75-99% Mastery)"]
+        PulsingStar["Pulsing Star\n(100% Mastery)"]
+        
+        ThinLine["Thin Connection\n(New Connection)"]
+        MediumLine["Medium Connection\n(Reinforced Connection)"]
+        ThickLine["Thick Connection\n(Strong Connection)"]
+        PulsingLine["Pulsing Connection\n(Pattern-Critical Connection)"]
+    end
+    
+    subgraph domainMastery["Domain Mastery Effects"]
+        direction TB
+        Level1["Domain Level 1 (25%)\n- Basic terminology\n- Simple applications"]
+        Level2["Domain Level 2 (50%)\n- Unlock strategic actions\n- Access to mid-level concepts"]
+        Level3["Domain Level 3 (75%)\n- Mentor relationship bonuses\n- Special dialogue options"]
+        Level4["Domain Level 4 (100%)\n- Expert challenge modes\n- Cross-domain synthesis"]
+    end
+    
+    subgraph patternRecognition["Constellation Pattern Recognition"]
+        direction TB
+        Pattern1["ALARA Pattern\n(3 concepts, 2 connections)"]
+        Pattern2["Quality Assurance Pattern\n(4 concepts, 3 connections)"]
+        Pattern3["Treatment Planning Pattern\n(5 concepts, 4 connections)"]
+        Pattern4["Multi-Domain Pattern\n(6+ concepts across domains)"]
+    end
+    
+    %% Connection mechanisms between stages and progression
+    
+    FoundInDialogue --> Discovery
+    CorrectApplication --> Application
+    FormConnection --> Connection
+    PatternComplete --> Synthesis
+    CrossDomainLink --> Connection
+    
+    Discovery --> DimStar
+    Application --> BrightStar
+    Connection --> GlowingStar
+    Synthesis --> PulsingStar
+    
+    FormConnection --> ThinLine
+    CorrectApplication --> MediumLine
+    CrossDomainLink --> ThickLine
+    PatternComplete --> PulsingLine
+    
+    %% Domain mastery progression
+    conceptStages -->|"25% of domain concepts"| Level1
+    conceptStages -->|"50% of domain concepts"| Level2
+    conceptStages -->|"75% of domain concepts"| Level3
+    conceptStages -->|"100% of domain concepts"| Level4
+    
+    %% Pattern recognition leads to rewards
+    Connection --> Pattern1
+    Connection --> Pattern2
+    Synthesis --> Pattern3
+    Synthesis --> Pattern4
+    
+    Pattern1 -->|"Reward"| Level1
+    Pattern2 -->|"Reward"| Level2
+    Pattern3 -->|"Reward"| Level3
+    Pattern4 -->|"Reward"| Level4
+    
+    %% Connection to gameplay loops
+    Day["Day Phase\n(Knowledge Acquisition)"] -->|"Challenge Success"| conceptStages
+    Night["Night Phase\n(Knowledge Integration)"] -->|"Constellation Building"| FormConnection
+    Night -->|"Pattern Recognition"| patternRecognition
+    
+    %% Style
+    classDef stageNode fill:#8c7ae6,stroke:#5f27cd,color:white,stroke-width:2px
+    classDef actionNode fill:#e1bee7,stroke:#7e57c2,color:black,stroke-width:2px
+    classDef visualNode fill:#48dbfb,stroke:#0abde3,color:black,stroke-width:2px
+    classDef domainNode fill:#10ac84,stroke:#0a8a6f,color:white,stroke-width:2px
+    classDef patternNode fill:#ff9ff3,stroke:#f368e0,color:black,stroke-width:2px
+    classDef phaseNode fill:#ff9f43,stroke:#e67e22,color:black,stroke-width:2px
+    
+    class Unknown,Discovery,Application,Connection,Synthesis stageNode
+    class FoundInDialogue,CorrectApplication,FormConnection,PatternComplete,CrossDomainLink actionNode
+    class DimStar,BrightStar,GlowingStar,PulsingStar,ThinLine,MediumLine,ThickLine,PulsingLine visualNode
+    class Level1,Level2,Level3,Level4 domainNode
+    class Pattern1,Pattern2,Pattern3,Pattern4 patternNode
+    class Day,Night phaseNode

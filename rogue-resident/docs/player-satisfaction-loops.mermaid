@@ -1,0 +1,59 @@
+flowchart TD
+    %% Core Satisfaction Loops at Different Timescales
+    
+    subgraph MicroLoop["Micro Loop (Seconds)"]
+        PlayerChoice["Player Choice\nDialogue Option"] -->|"Immediate"| FeedbackVisual["Visual Feedback\n(animations, colors)"]
+        FeedbackVisual -->|"~0.5s"| FeedbackAudio["Audio Feedback\n(response sounds)"]
+        FeedbackAudio -->|"~1s"| ResourceChange["Resource Change\n(+insight, +momentum)"]
+        ResourceChange -->|"~1.5s"| MentorResponse["Mentor Response\n(character reaction)"]
+        MentorResponse --> PlayerChoice
+    end
+    
+    subgraph ChallengeLoop["Challenge Loop (Minutes)"]
+        ChallengeStart["Challenge Start\n(conversation intro)"] -->|"30-90s"| ResourceDecisions["Strategic Action Decisions\n(Reframe, Extrapolate)"]
+        ResourceDecisions -->|"2-3 mins"| ActionOutcomes["Action Outcomes\n(success/failure)"]
+        ActionOutcomes -->|"1-2 mins"| ChallengeComplete["Challenge Complete\n(mastery gained)"]
+        ChallengeComplete -->|"Resolution"| JournalEntry["Journal Update\n(knowledge documented)"]
+        JournalEntry -->|"Next Challenge"| ChallengeStart
+    end
+    
+    subgraph SessionLoop["Session Loop (15-30 minutes)"]
+        DayStart["Day Phase Start\n(map exploration)"] -->|"3-4 challenges"| DayComplete["Day Completion\n(challenges exhausted)"]
+        DayComplete -->|"Transition"| NightStart["Night Phase Start\n(quiet reflection)"]
+        NightStart -->|"Knowledge transfer"| StarFormation["Star Formation\n(concepts illuminate)"]
+        StarFormation -->|"Connection making"| PatternRecognition["Pattern Recognition\n(constellations form)"]
+        PatternRecognition -->|"New day"| DayStart
+    end
+    
+    subgraph MetaLoop["Meta Loop (Hours/Days)"]
+        StartingState["Beginning Knowledge\n(few concepts, low mastery)"] -->|"Multiple sessions"| GrowingMastery["Growing Mastery\n(diverse domains)"]
+        GrowingMastery -->|"Late game"| CrossDomainSynthesis["Cross-Domain Synthesis\n(complex connections)"]
+        CrossDomainSynthesis -->|"Completion"| ExpertiseDevelopment["Expertise Development\n(full constellation)"]
+        ExpertiseDevelopment -->|"New character"| StartingState
+    end
+    
+    %% Emotional satisfaction at different timescales
+    
+    MicroLoop -.-> |"Creates"| ImmediateSatisfaction["Immediate Satisfaction\n(dopamine hits)"]
+    ChallengeLoop -.-> |"Creates"| AccomplishmentFeeling["Accomplishment Feeling\n(serotonin reward)"]
+    SessionLoop -.-> |"Creates"| ProgressionSatisfaction["Progression Satisfaction\n(visible growth)"]
+    MetaLoop -.-> |"Creates"| MasteryFulfillment["Mastery Fulfillment\n(educational value)"]
+    
+    %% Recursive loop linking
+    
+    MicroLoop -.- ChallengeLoop
+    ChallengeLoop -.- SessionLoop
+    SessionLoop -.- MetaLoop
+    
+    %% Style
+    classDef micro fill:#ff9a8b,stroke:#ff7e68,color:black,stroke-width:2px
+    classDef challenge fill:#ffd28b,stroke:#ffba52,color:black,stroke-width:2px
+    classDef session fill:#90e0ff,stroke:#45aaf2,color:black,stroke-width:2px
+    classDef meta fill:#b892ff,stroke:#8c52ff,color:black,stroke-width:2px
+    classDef emotion fill:#a1efd3,stroke:#57d9a3,color:black,stroke-width:2px,style:dashed
+    
+    class PlayerChoice,FeedbackVisual,FeedbackAudio,ResourceChange,MentorResponse micro
+    class ChallengeStart,ResourceDecisions,ActionOutcomes,ChallengeComplete,JournalEntry challenge
+    class DayStart,DayComplete,NightStart,StarFormation,PatternRecognition session
+    class StartingState,GrowingMastery,CrossDomainSynthesis,ExpertiseDevelopment meta
+    class ImmediateSatisfaction,AccomplishmentFeeling,ProgressionSatisfaction,MasteryFulfillment emotion
