@@ -6,10 +6,11 @@
  * and character interactions that serves as both a narrative device and a
  * gameplay mechanic supporting knowledge acquisition.
  * 
- * Design Philosophy:
- * - Journal entries connect gameplay moments to knowledge context
- * - Entries evolve with the player's growing understanding
- * - Multiple sources (dialogue, observation, experiments) feed into journal
+ * MAJOR FIXES:
+ * 1. Consistent default values between server and client
+ * 2. Fixed property naming to match component expectations
+ * 3. Added missing methods needed by Journal.tsx
+ * 4. Improved type safety
  */
 
 import { create } from 'zustand';
@@ -20,7 +21,9 @@ import { GameEventType } from '@/app/core/events/EventTypes';
 
 // Journal entry categories to organize different types of notes
 export type JournalCategory = 'Log' | 'Observation' | 'Personal' | 'Objective';
+export type JournalPageType = 'knowledge' | 'characters' | 'notes' | 'references';
 
+// CRITICAL: Use consistent value for journal tier
 export type JournalTier = 'base' | 'technical' | 'annotated';
 
 // Core interfaces
@@ -55,13 +58,14 @@ export interface CustomAnnotation {
 
 interface JournalState {
   // Core state
-  hasJournal: boolean; // Whether player has acquired journal
+  hasJournal: boolean;
   currentUpgrade: JournalTier;
   entries: JournalEntry[];
   characterNotes: CharacterNote[];
   customAnnotations: CustomAnnotation[];
   isJournalOpen: boolean;
   activeEntryId: string | null;
+  currentPage: JournalPageType;
   
   // Filters
   activeFilters: {
@@ -71,6 +75,7 @@ interface JournalState {
   };
   
   // Methods
+  initializeJournal: (tier: JournalTier, source?: string) => boolean;
   addEntry: (entryData: Omit<JournalEntry, 'timestamp' | 'id'>) => void;
   addJournalEntry: (entryData: Omit<JournalEntry, 'timestamp' | 'id'>) => void; // Alias
   updateEntry: (id: string, content: string) => void;
@@ -81,8 +86,10 @@ interface JournalState {
   markAllEntriesAsRead: () => void;
   updateFilters: (filters: Partial<JournalState['activeFilters']>) => void;
   setJournalOpen: (isOpen: boolean) => void;
+  toggleJournal: () => void; // Added to match Journal.tsx expectations
   setActiveEntry: (id: string | null) => void;
   upgradeJournal: (tier: JournalTier) => boolean;
+  setCurrentPage: (page: JournalPageType) => void; // Added to match Journal.tsx expectations
   
   // Queries
   getNewEntryCount: () => number;
@@ -96,18 +103,63 @@ interface JournalState {
 export const useJournalStore = create<JournalState>()(
   persist(
     (set, get) => ({
-      // Initial state
+      // Initial state with consistent default values
       hasJournal: false,
-      currentUpgrade: 'base',
+      currentUpgrade: 'base', // CRITICAL: Default must match what's used in components
       entries: [],
       characterNotes: [],
       customAnnotations: [],
       isJournalOpen: false,
       activeEntryId: null,
+      currentPage: 'knowledge', // Default page
       activeFilters: {
         categories: [],
         tags: [],
         searchTerm: ''
+      },
+      
+      // Initialize journal
+      initializeJournal: (tier: JournalTier = 'base', source: string = 'debug'): boolean => {
+        console.log(`Initializing journal with tier: ${tier}, source: ${source}`);
+        
+        // If already has journal, check if upgrade is valid
+        if (get().hasJournal) {
+          const currentTier = get().currentUpgrade;
+          const tierValues = { base: 1, technical: 2, annotated: 3 };
+          
+          // Only allow upgrades (no downgrades)
+          if (tierValues[tier] <= tierValues[currentTier]) {
+            console.warn(`Cannot downgrade journal from ${currentTier} to ${tier}`);
+            return false;
+          }
+        }
+        
+        set({ 
+          hasJournal: true,
+          currentUpgrade: tier
+        });
+        
+        // Add an initial entry to explain the journal
+        const initialEntries = get().entries;
+        if (initialEntries.length === 0) {
+          const entryCopy = {
+            title: 'Journal Acquired',
+            content: `You've acquired a new journal to document your findings as a medical physics resident. This will help you track your learning and organize your knowledge.`,
+            tags: ['tutorial', 'journal', 'first-entry'],
+            category: 'Log' as JournalCategory
+          };
+          
+          get().addEntry(entryCopy);
+        }
+        
+        // Dispatch event
+        safeDispatch(GameEventType.JOURNAL_ACQUIRED, { 
+          tier, 
+          character: 'player',
+          source
+        }, 'journalStore');
+        
+        return true;
       },
       
       // Add a new journal entry
@@ -242,9 +294,14 @@ export const useJournalStore = create<JournalState>()(
         }));
       },
       
-      // Toggle journal open/closed
+      // Set journal open/closed
       setJournalOpen: (isOpen: boolean) => {
         set({ isJournalOpen: isOpen });
+      },
+      
+      // Toggle journal open/closed (added for Journal.tsx compatibility)
+      toggleJournal: () => {
+        set(state => ({ isJournalOpen: !state.isJournalOpen }));
       },
       
       // Set the active entry
@@ -255,6 +312,11 @@ export const useJournalStore = create<JournalState>()(
         if (id) {
           get().markEntryAsRead(id);
         }
+      },
+      
+      // Set the current journal page
+      setCurrentPage: (page: JournalPageType) => {
+        set({ currentPage: page });
       },
       
       // Upgrade the journal to a new tier
@@ -333,7 +395,7 @@ export const useJournalStore = create<JournalState>()(
       }
     }),
     {
-      name: 'rogue-resident-journal', // Local storage key
+      name: 'rogue-resident-journal',
       storage: createJSONStorage(() => localStorage),
       // Only persist these keys
       partialize: (state) => ({
@@ -351,6 +413,9 @@ export const useJournalStore = create<JournalState>()(
 if (process.env.NODE_ENV !== 'production' && typeof window !== 'undefined') {
   (window as any).__JOURNAL_DEBUG__ = {
     getState: () => useJournalStore.getState(),
+    initializeJournal: (tier: JournalTier = 'base') => {
+      return useJournalStore.getState().initializeJournal(tier, 'debug_panel');
+    },
     addTestEntry: (category: JournalCategory = 'Log') => {
       const sampleTitles = [
         'First Observations in Kapoor Wing',
@@ -377,6 +442,11 @@ if (process.env.NODE_ENV !== 'production' && typeof window !== 'undefined') {
         tags: sampleTags[randomIndex]
       });
     },
-    reset: () => useJournalStore.getState().clearJournal()
+    reset: () => useJournalStore.getState().clearJournal(),
+    getInfo: () => ({
+      hasJournal: useJournalStore.getState().hasJournal,
+      currentUpgrade: useJournalStore.getState().currentUpgrade,
+      entriesCount: useJournalStore.getState().entries.length
+    })
   };
 }

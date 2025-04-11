@@ -535,6 +535,108 @@ export function useDialogueFlow({
     updateLocalState, 
     updateProgressionStatus
   ]);
+
+  // CRITICAL FIX: Forward-declare completeDialogue to avoid circular reference
+  const completeDialogue = useCallback(() => {
+    if (!isMountedRef.current) return;
+    
+    try {
+      // Mark as completed for tracking
+      updateProgressionStatus({
+        completed: true,
+        endTime: Date.now(),
+        lastEvent: {
+          type: 'dialogue_completed',
+          timestamp: Date.now(),
+          details: { stageId: localState.currentStage?.id }
+        }
+      });
+      
+      // Complete in state machine if available
+      if (dialogueFunctions.completeFlow) {
+        dialogueFunctions.completeFlow();
+      }
+      
+      // Signal completion via event system
+      try {
+        safeDispatch(
+          GameEventType.DIALOGUE_COMPLETED,
+          {
+            dialogueId,
+            characterId,
+            nodeId: nodeId || null,
+            completed: true,
+            reason: 'natural_completion'
+          },
+          'useDialogueFlow_completion'
+        );
+      } catch (error) {
+        console.error('Failed to dispatch completion event:', error);
+      }
+      
+      console.log(`[DialogueFlow] Completed ${characterId} flow`);
+    } catch (error) {
+      console.error('[DialogueFlow] Error completing dialogue:', error);
+      
+      updateProgressionStatus({ 
+        errorCount: progressionStatusRef.current.errorCount + 1,
+        lastEvent: {
+          type: 'dialogue_completion_error',
+          timestamp: Date.now(),
+          details: { error: String(error) }
+        }
+      });
+      
+      // Special recovery for the important Kapoor journal flow
+      if (characterId === 'kapoor' && !progressionStatusRef.current.journalAcquired && !hasJournal) {
+        try {
+          console.warn('[DialogueFlow] Attempting critical path recovery for journal acquisition');
+          
+          // Try to force journal acquisition directly
+          if (typeof initializeJournal === 'function') {
+            console.warn('[DialogueFlow] Forcing journal acquisition');
+            initializeJournal('technical');
+            
+            updateProgressionStatus({ 
+              journalAcquired: true,
+              recoveryAttempted: true,
+              lastEvent: {
+                type: 'journal_recovery',
+                timestamp: Date.now()
+              }
+            });
+            
+            // Log emergency recovery action
+            try {
+              safeDispatch(
+                GameEventType.JOURNAL_ACQUIRED,
+                {
+                  tier: 'technical',
+                  character: characterId,
+                  source: 'dialogue_hook_recovery',
+                  forced: true
+                },
+                'critical_path_recovery'
+              );
+            } catch (error) {
+              console.debug('Failed to dispatch journal acquisition event:', error);
+            }
+          }
+        } catch (recoveryError) {
+          console.error('[DialogueFlow] Critical path recovery failed:', recoveryError);
+        }
+      }
+    }
+  }, [
+    dialogueId, 
+    characterId, 
+    nodeId, 
+    localState.currentStage, 
+    dialogueFunctions, 
+    hasJournal, 
+    initializeJournal, 
+    updateProgressionStatus
+  ]);
   
   // Handle dialogue continuation
   const handleContinue = useCallback(() => {
@@ -648,108 +750,6 @@ export function useDialogueFlow({
     updateLocalState,
     updateProgressionStatus,
     completeDialogue
-  ]);
-  
-  // Complete dialogue flow
-  const completeDialogue = useCallback(() => {
-    if (!isMountedRef.current) return;
-    
-    try {
-      // Mark as completed for tracking
-      updateProgressionStatus({
-        completed: true,
-        endTime: Date.now(),
-        lastEvent: {
-          type: 'dialogue_completed',
-          timestamp: Date.now(),
-          details: { stageId: localState.currentStage?.id }
-        }
-      });
-      
-      // Complete in state machine if available
-      if (dialogueFunctions.completeFlow) {
-        dialogueFunctions.completeFlow();
-      }
-      
-      // Signal completion via event system
-      try {
-        safeDispatch(
-          GameEventType.DIALOGUE_COMPLETED,
-          {
-            dialogueId,
-            characterId,
-            nodeId: nodeId || null,
-            completed: true,
-            reason: 'natural_completion'
-          },
-          'useDialogueFlow_completion'
-        );
-      } catch (error) {
-        console.error('Failed to dispatch completion event:', error);
-      }
-      
-      console.log(`[DialogueFlow] Completed ${characterId} flow`);
-    } catch (error) {
-      console.error('[DialogueFlow] Error completing dialogue:', error);
-      
-      updateProgressionStatus({ 
-        errorCount: progressionStatusRef.current.errorCount + 1,
-        lastEvent: {
-          type: 'dialogue_completion_error',
-          timestamp: Date.now(),
-          details: { error: String(error) }
-        }
-      });
-      
-      // Special recovery for the important Kapoor journal flow
-      if (characterId === 'kapoor' && !progressionStatusRef.current.journalAcquired && !hasJournal) {
-        try {
-          console.warn('[DialogueFlow] Attempting critical path recovery for journal acquisition');
-          
-          // Try to force journal acquisition directly
-          if (typeof initializeJournal === 'function') {
-            console.warn('[DialogueFlow] Forcing journal acquisition');
-            initializeJournal('technical');
-            
-            updateProgressionStatus({ 
-              journalAcquired: true,
-              recoveryAttempted: true,
-              lastEvent: {
-                type: 'journal_recovery',
-                timestamp: Date.now()
-              }
-            });
-            
-            // Log emergency recovery action
-            try {
-              safeDispatch(
-                GameEventType.JOURNAL_ACQUIRED,
-                {
-                  tier: 'technical',
-                  character: characterId,
-                  source: 'dialogue_hook_recovery',
-                  forced: true
-                },
-                'critical_path_recovery'
-              );
-            } catch (error) {
-              console.debug('Failed to dispatch journal acquisition event:', error);
-            }
-          }
-        } catch (recoveryError) {
-          console.error('[DialogueFlow] Critical path recovery failed:', recoveryError);
-        }
-      }
-    }
-  }, [
-    dialogueId, 
-    characterId, 
-    nodeId, 
-    localState.currentStage, 
-    dialogueFunctions, 
-    hasJournal, 
-    initializeJournal, 
-    updateProgressionStatus
   ]);
   
   // ===== ACCESSOR FUNCTIONS =====

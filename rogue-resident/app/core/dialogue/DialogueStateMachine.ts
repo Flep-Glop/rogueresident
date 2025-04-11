@@ -17,6 +17,7 @@ import { create } from 'zustand';
 import { shallow } from 'zustand/shallow';
 import { safeDispatch } from '../events/CentralEventBus';
 import { GameEventType } from '../events/EventTypes';
+import { useCallback, useMemo } from 'react';
 
 // ========== Core Types ==========
 
@@ -733,16 +734,17 @@ export const useDialogueStateMachine = create<DialogueStateMachineState>((set, g
  * Use for rendering optimization
  */
 export function useDialogueValue<T>(selector: (state: DialogueStateMachineState) => T, defaultValue: T): T {
-  const value = useDialogueStateMachine(state => {
-    try {
-      return selector(state);
-    } catch (error) {
-      console.error('[DialogueMachine] Error in selector:', error);
-      return defaultValue;
-    }
-  });
+  // CRITICAL FIX: Wrap selector in useCallback for stable reference
+  const stableSelector = useCallback(selector, []);
   
-  return value === undefined ? defaultValue : value;
+  // Wrap in try-catch for stability
+  try {
+    const value = useDialogueStateMachine(stableSelector);
+    return value === undefined ? defaultValue : value;
+  } catch (error) {
+    console.error('[DialogueMachine] Error in useDialogueValue:', error);
+    return defaultValue;
+  }
 }
 
 /**
@@ -752,20 +754,29 @@ export function useDialogueValue<T>(selector: (state: DialogueStateMachineState)
 export function useDialogueValues<T extends object>(
   selector: (state: DialogueStateMachineState) => T
 ): T {
-  return useDialogueStateMachine(selector, shallow);
+  // CRITICAL FIX: Wrap selector in useMemo for stable reference
+  const stableSelector = useMemo(() => selector, []);
+  
+  // Use shallow comparison to prevent unnecessary re-renders
+  return useDialogueStateMachine(stableSelector, shallow);
 }
 
 /**
  * Hook for accessing stable function references
  */
 export function useDialogueFunctions() {
-  return useDialogueStateMachine(state => ({
-    initializeFlow: state.initializeFlow,
-    selectOption: state.selectOption,
-    advanceState: state.advanceState,
-    advanceToStage: state.advanceToStage,
-    completeFlow: state.completeFlow
-  }), shallow);
+  // CRITICAL FIX: Use a memoized selector for stable references
+  const functionSelector = useMemo(() => 
+    (state: DialogueStateMachineState) => ({
+      initializeFlow: state.initializeFlow,
+      selectOption: state.selectOption,
+      advanceState: state.advanceState,
+      advanceToStage: state.advanceToStage,
+      completeFlow: state.completeFlow
+    }), 
+  []);
+  
+  return useDialogueStateMachine(functionSelector, shallow);
 }
 
 // ========== Flow Utilities ==========

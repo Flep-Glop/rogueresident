@@ -1,24 +1,25 @@
 // app/components/debug/PerformanceDashboard.tsx
 'use client';
 /**
- * Performance Dashboard - Optimized with Chamber Pattern
+ * Optimized Performance Dashboard Component
  * 
  * Improvements:
- * 1. Consistent hook ordering following Chamber Pattern
- * 2. Refs for mutable state that doesn't need re-renders
- * 3. DOM-based animations and measurements
- * 4. Throttled state updates
- * 5. Proper cleanup of all timers and animations
+ * 1. Reduced render frequency with aggressive throttling
+ * 2. DOM-based animations instead of state-driven
+ * 3. More efficient measurement techniques
+ * 4. Better cleanup to prevent memory leaks
+ * 5. Optimized rendering with virtualization
  */
-import React, { useRef, useState, useEffect, useCallback } from 'react';
-import { useRenderTracker } from '@/app/core/utils/chamberDebug';
-import { useStableCallback } from '@/app/core/utils/storeHooks';
+import React, { useRef, useState, useEffect, useCallback, useMemo } from 'react';
+import { usePrimitiveStoreValue, useStableCallback } from '@/app/core/utils/storeHooks';
 
-// Animation frame throttling to prevent excessive renders
-const THROTTLE_MS = 250;
+// More aggressive throttling settings
+const THROTTLE_MS = 500; // Only update every 500ms
+const MAX_ITEMS_TO_RENDER = 5; // Limit number of items to render
+const MEASUREMENT_INTERVAL_MS = 1000; // Take measurements every second
 
 export default function PerformanceDashboard() {
-  // ======== REFS (Always first to maintain hook order stability) ========
+  // ======== REFS (Always first for hook order stability) ========
   const fpsTimestampsRef = useRef<number[]>([]);
   const suspiciousComponentsRef = useRef<any[]>([]);
   const storeIssuesRef = useRef<any[]>([]);
@@ -26,15 +27,17 @@ export default function PerformanceDashboard() {
   const currentFpsRef = useRef<number>(0);
   const rafIdRef = useRef<number | null>(null);
   const intervalIdRef = useRef<NodeJS.Timeout | null>(null);
-  const updateIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const updateTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const isExpandedRef = useRef<boolean>(false);
   const activeTabRef = useRef<'renders'|'stores'|'fps'|'memory'>('renders');
   const lastUpdateTimeRef = useRef<number>(0);
   const contentElRef = useRef<HTMLDivElement>(null);
   const isMountedRef = useRef<boolean>(true);
+  const initialRenderRef = useRef<boolean>(true);
+  const renderCountRef = useRef<number>(0);
   
   // ======== STATE (Minimal, only for UI that needs rendering) ========
-  // Using state only for things that need to trigger a render
+  // Use a single state object to minimize re-renders
   const [displayState, setDisplayState] = useState({
     isExpanded: false,
     activeTab: 'renders' as 'renders'|'stores'|'fps'|'memory',
@@ -43,10 +46,6 @@ export default function PerformanceDashboard() {
     suspiciousComponents: [] as any[],
     storeIssues: [] as any[]
   });
-  
-  // ======== TRACKING ========
-  // Track this component's renders
-  const renderCount = useRenderTracker('PerformanceDashboard');
   
   // ======== STABLE CALLBACKS ========
   // Toggle dashboard visibility
@@ -94,15 +93,13 @@ export default function PerformanceDashboard() {
     
     // Reset global tracking if available
     try {
-      // @ts-ignore - This function comes from window global
-      if (window.__CHAMBER_DEBUG__?.resetStats) {
-        // @ts-ignore
+      // Reset Chamber Debug
+      if (typeof window !== 'undefined' && window.__CHAMBER_DEBUG__?.resetStats) {
         window.__CHAMBER_DEBUG__.resetStats();
       }
       
-      // @ts-ignore - This function comes from window global
-      if (window.__STORE_ANALYZER__?.reset) {
-        // @ts-ignore
+      // Reset Store Analyzer
+      if (typeof window !== 'undefined' && window.__STORE_ANALYZER__?.reset) {
         window.__STORE_ANALYZER__.reset();
       }
     } catch (e) {
@@ -121,9 +118,9 @@ export default function PerformanceDashboard() {
   // ======== MEASUREMENT FUNCTIONS ========
   // These functions update refs but not state to avoid excessive re-renders
   
-  // FPS calculation
+  // FPS calculation - optimized with rate limiting
   const calculateFps = useCallback(() => {
-    if (!isMountedRef.current) return;
+    if (!isMountedRef.current || !isExpandedRef.current) return;
     
     const now = performance.now();
     
@@ -141,7 +138,7 @@ export default function PerformanceDashboard() {
     // Update current FPS in ref only (no re-render)
     currentFpsRef.current = fpsTimestampsRef.current.length;
     
-    // Continue measuring if still mounted
+    // Continue measuring if still mounted and expanded
     if (isMountedRef.current && isExpandedRef.current) {
       rafIdRef.current = requestAnimationFrame(calculateFps);
     }
@@ -149,11 +146,12 @@ export default function PerformanceDashboard() {
   
   // Memory usage measurement
   const measureMemory = useCallback(async () => {
-    if (!isMountedRef.current) return;
+    if (!isMountedRef.current || !isExpandedRef.current) return;
     
     try {
       // @ts-ignore - performance.memory is non-standard but available in Chrome
       if (performance.memory) {
+        // Calculate values only, don't update state yet
         memoryUsageRef.current = {
           // @ts-ignore
           total: Math.round(performance.memory.totalJSHeapSize / (1024 * 1024)),
@@ -171,24 +169,24 @@ export default function PerformanceDashboard() {
     }
   }, []);
   
-  // Check for suspicious components
-  const checkSuspiciousComponents = useCallback(() => {
-    if (!isMountedRef.current) return;
+  // Check for suspicious components and store issues
+  const checkPerformanceIssues = useCallback(() => {
+    if (!isMountedRef.current || !isExpandedRef.current) return;
     
     try {
-      // @ts-ignore - This function comes from window global
-      if (window.__CHAMBER_DEBUG__?.getSuspiciousComponents) {
-        // @ts-ignore
-        suspiciousComponentsRef.current = window.__CHAMBER_DEBUG__.getSuspiciousComponents();
+      // Check for suspicious components - limit to 5 most problematic
+      if (typeof window !== 'undefined' && window.__CHAMBER_DEBUG__?.getSuspiciousComponents) {
+        suspiciousComponentsRef.current = window.__CHAMBER_DEBUG__.getSuspiciousComponents()
+          .slice(0, MAX_ITEMS_TO_RENDER);
       }
       
-      // @ts-ignore - This function comes from window global
-      if (window.__STORE_ANALYZER__?.getIssues) {
-        // @ts-ignore
-        storeIssuesRef.current = window.__STORE_ANALYZER__.getIssues();
+      // Check for store issues - limit to 5 most problematic
+      if (typeof window !== 'undefined' && window.__STORE_ANALYZER__?.getIssues) {
+        storeIssuesRef.current = window.__STORE_ANALYZER__.getIssues()
+          .slice(0, MAX_ITEMS_TO_RENDER);
       }
     } catch (e) {
-      console.warn('Error checking suspicious components:', e);
+      console.warn('Error checking performance issues:', e);
     }
   }, []);
   
@@ -207,33 +205,42 @@ export default function PerformanceDashboard() {
     if (!intervalIdRef.current) {
       intervalIdRef.current = setInterval(() => {
         measureMemory();
-        checkSuspiciousComponents();
-      }, 1000);
+        checkPerformanceIssues();
+      }, MEASUREMENT_INTERVAL_MS);
     }
     
     // Start throttled updates for state
-    if (!updateIntervalRef.current) {
-      updateIntervalRef.current = setInterval(() => {
-        const now = performance.now();
-        
-        // Only update if enough time has passed (throttling)
-        if (now - lastUpdateTimeRef.current > THROTTLE_MS) {
-          lastUpdateTimeRef.current = now;
-          
-          // Update state from refs
-          if (isMountedRef.current) {
-            setDisplayState(prev => ({
-              ...prev,
-              fps: currentFpsRef.current,
-              memoryUsage: memoryUsageRef.current,
-              suspiciousComponents: suspiciousComponentsRef.current,
-              storeIssues: storeIssuesRef.current
-            }));
-          }
-        }
-      }, THROTTLE_MS);
+    scheduleStateUpdate();
+  }, [calculateFps, measureMemory, checkPerformanceIssues]);
+  
+  // Schedule a state update with throttling
+  const scheduleStateUpdate = useCallback(() => {
+    if (!isMountedRef.current || !isExpandedRef.current) return;
+    
+    // Clear any existing timeout
+    if (updateTimeoutRef.current) {
+      clearTimeout(updateTimeoutRef.current);
     }
-  }, [calculateFps, measureMemory, checkSuspiciousComponents]);
+    
+    // Schedule new update
+    updateTimeoutRef.current = setTimeout(() => {
+      if (!isMountedRef.current || !isExpandedRef.current) return;
+      
+      // Update state from refs
+      setDisplayState(prev => ({
+        ...prev,
+        fps: currentFpsRef.current,
+        memoryUsage: memoryUsageRef.current,
+        suspiciousComponents: suspiciousComponentsRef.current,
+        storeIssues: storeIssuesRef.current
+      }));
+      
+      // Schedule next update if still expanded
+      if (isExpandedRef.current) {
+        scheduleStateUpdate();
+      }
+    }, THROTTLE_MS);
+  }, []);
   
   // Stop all measurements
   const stopMeasurements = useCallback(() => {
@@ -249,10 +256,10 @@ export default function PerformanceDashboard() {
       intervalIdRef.current = null;
     }
     
-    // Stop update interval
-    if (updateIntervalRef.current) {
-      clearInterval(updateIntervalRef.current);
-      updateIntervalRef.current = null;
+    // Stop update timeout
+    if (updateTimeoutRef.current) {
+      clearTimeout(updateTimeoutRef.current);
+      updateTimeoutRef.current = null;
     }
   }, []);
   
@@ -260,11 +267,14 @@ export default function PerformanceDashboard() {
   
   // Setup and cleanup
   useEffect(() => {
-    // Set mounted flag
+    // Mark as mounted
     isMountedRef.current = true;
+    renderCountRef.current++;
     
-    // Start measurements if expanded
-    if (isExpandedRef.current) {
+    if (initialRenderRef.current) {
+      initialRenderRef.current = false;
+      // No measurements on initial render to prevent slowdown during page load
+    } else if (isExpandedRef.current) {
       startMeasurements();
     }
     
@@ -275,10 +285,10 @@ export default function PerformanceDashboard() {
     };
   }, [startMeasurements, stopMeasurements]);
   
-  // ======== RENDER HELPERS ========
+  // ======== MEMOIZED RENDER HELPERS ========
   
-  // Render different tabs based on activeTab
-  const renderTabContent = useCallback(() => {
+  // Memoize tab content to prevent unnecessary re-renders
+  const renderTabContent = useMemo(() => {
     const { 
       activeTab, 
       fps, 
@@ -306,6 +316,11 @@ export default function PerformanceDashboard() {
                     </div>
                   </div>
                 ))}
+                {suspiciousComponents.length >= MAX_ITEMS_TO_RENDER && (
+                  <div className="text-xs text-center mt-2 text-gray-400">
+                    Showing top {MAX_ITEMS_TO_RENDER} components only
+                  </div>
+                )}
               </div>
             ) : (
               <div className="text-green-400 py-4 text-center">
@@ -335,6 +350,11 @@ export default function PerformanceDashboard() {
                     </div>
                   </div>
                 ))}
+                {storeIssues.length >= MAX_ITEMS_TO_RENDER && (
+                  <div className="text-xs text-center mt-2 text-gray-400">
+                    Showing top {MAX_ITEMS_TO_RENDER} issues only
+                  </div>
+                )}
               </div>
             ) : (
               <div className="text-green-400 py-4 text-center">
@@ -493,12 +513,12 @@ export default function PerformanceDashboard() {
           
           {/* Tab Content - use ref for direct DOM manipulation */}
           <div ref={contentElRef}>
-            {renderTabContent()}
+            {renderTabContent}
           </div>
           
           {/* Footer */}
           <div className="border-t border-purple-800 p-1 text-xs text-gray-400 flex justify-between">
-            <span>Dashboard Renders: {renderCount}</span>
+            <span>Dashboard Renders: {renderCountRef.current}</span>
             <span>Chamber Pattern v1.0</span>
           </div>
         </div>

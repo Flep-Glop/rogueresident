@@ -10,6 +10,42 @@ import { ConceptNode, KnowledgeDomain } from '@/app/store/knowledgeStore';
 
 // Medical physics concepts for the game
 export const medicalPhysicsConcepts: ConceptNode[] = [
+  // Node IDs from SimplifiedKapoorMap for prototype testing
+  // These node IDs must match what's used in SimplifiedKapoorMap.tsx
+  {
+    id: 'node-1',
+    name: 'Calibration Basics',
+    domain: 'quality-assurance' as KnowledgeDomain,
+    description: 'Fundamental principles of calibrating radiation equipment for accuracy and safety.',
+    mastery: 0,
+    connections: ['node-2', 'output-calibration'],
+    discovered: false,
+    position: { x: 100, y: 100 },
+    lastPracticed: Date.now()
+  },
+  {
+    id: 'node-2',
+    name: 'Dosimetry Principles',
+    domain: 'radiation-physics' as KnowledgeDomain,
+    description: 'Methods and concepts for accurately measuring radiation dose in various contexts.',
+    mastery: 0,
+    connections: ['node-1', 'node-3', 'radiation-dosimetry'],
+    discovered: false,
+    position: { x: 300, y: 150 },
+    lastPracticed: Date.now()
+  },
+  {
+    id: 'node-3',
+    name: 'Radiation Safety',
+    domain: 'radiation-protection' as KnowledgeDomain,
+    description: 'Protocols and principles that ensure radiation is used safely in medical contexts.',
+    mastery: 0,
+    connections: ['node-2', 'radiation-safety'],
+    discovered: false,
+    position: { x: 500, y: 100 },
+    lastPracticed: Date.now()
+  },
+  
   // Radiation Physics Domain
   {
     id: 'electron-equilibrium',

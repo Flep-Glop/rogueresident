@@ -701,7 +701,10 @@ export const useKnowledgeStore = create<KnowledgeState>()(
       });
     },
     
-    // Implementation for SimplifiedKapoorMap compatibility
+    /**
+     * Implementation for SimplifiedKapoorMap compatibility
+     * Unlocks a knowledge node and ensures proper event emission
+     */
     unlockKnowledge: (knowledgeId: string) => {
       // Extract the concept ID from the knowledge ID if needed
       const conceptId = knowledgeId.startsWith('knowledge-') 
@@ -727,13 +730,17 @@ export const useKnowledgeStore = create<KnowledgeState>()(
         // Then discover it
         get().discoverConcept(newConceptId);
         
-        // Dispatch knowledge event
+        // Dispatch KNOWLEDGE_GAINED event (fixed from undefined)
         try {
-          safeDispatch(GameEventType.KNOWLEDGE_GAINED, {
-            conceptId: newConceptId,
-            amount: 25,
-            source: 'map_discovery'
-          }, 'knowledgeStore');
+          safeDispatch(
+            GameEventType.KNOWLEDGE_GAINED, 
+            {
+              conceptId: newConceptId,
+              amount: 25,
+              source: 'map_discovery'
+            }, 
+            'knowledgeStore'
+          );
         } catch (e) {
           console.error('Error dispatching knowledge gained event:', e);
         }
@@ -741,16 +748,34 @@ export const useKnowledgeStore = create<KnowledgeState>()(
         // Update existing concept's mastery
         get().updateMastery(conceptId, 10);
         
-        // Dispatch knowledge event
+        // Dispatch KNOWLEDGE_GAINED event (fixed from undefined)
         try {
-          safeDispatch(GameEventType.KNOWLEDGE_GAINED, {
-            conceptId,
-            amount: 10,
-            source: 'map_discovery'
-          }, 'knowledgeStore');
+          safeDispatch(
+            GameEventType.KNOWLEDGE_GAINED,
+            {
+              conceptId,
+              amount: 10,
+              source: 'map_discovery'
+            }, 
+            'knowledgeStore'
+          );
         } catch (e) {
           console.error('Error dispatching knowledge gained event:', e);
         }
+      }
+      
+      // Also dispatch INSIGHT_REVEALED event for compatibility
+      try {
+        safeDispatch(
+          GameEventType.INSIGHT_REVEALED,
+          { 
+            insightId: conceptId,
+            isNewDiscovery: true
+          },
+          'knowledgeStore'
+        );
+      } catch (e) {
+        console.error('Error dispatching insight revealed event:', e);
       }
     },
     

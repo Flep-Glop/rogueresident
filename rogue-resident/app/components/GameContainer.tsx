@@ -1,12 +1,14 @@
 // app/components/GameContainer.tsx
 'use client';
 /**
- * GameContainer - Core gameplay orchestration component
+ * GameContainer - Optimized Core Gameplay Orchestration Component
  * 
- * Chamber Pattern compliant with fixed hook ordering that resolves:
- * 1. Hook ordering stability issues
- * 2. Initialization sequence dependencies 
- * 3. Safe primitive extraction during bootstrap
+ * Improvements:
+ * 1. Fixed variable naming inconsistency (nodeId vs currentNodeId)
+ * 2. Added more robust error handling
+ * 3. Improved transition management
+ * 4. Better logging for debugging
+ * 5. Optimized primitive extraction
  */
 import React, { useEffect, useCallback, useRef, useState, useMemo } from 'react';
 import { useGameStore } from '@/app/store/gameStore';
@@ -20,19 +22,19 @@ import PlayerStats from './PlayerStats';
 import VerticalSliceDebugPanel from './debug/VerticalSliceDebugPanel';
 import ChallengeRouter from './challenges/ChallengeRouter';
 import DayNightTransition from './DayNightTransition';
-import { useRenderTracker } from '@/app/core/utils/chamberDebug';
 
-// Import the improved store hooks
+// Import optimized store hooks
 import { 
   usePrimitiveStoreValue, 
-  useStableCallback
+  useStableCallback,
+  usePrimitiveValues
 } from '@/app/core/utils/storeHooks';
 
-// Constants for transition visual timing
+// Transition timing constants
 const TRANSITION_VISUAL_DURATION = 800; // Duration for the fade effect (ms)
 
 /**
- * Fixed GameContainer with stable hook ordering
+ * GameContainer with optimized Chamber Pattern implementation
  */
 export default function GameContainer() {
   // ======== REFS (Always first to maintain hook order stability) ========
@@ -40,87 +42,126 @@ export default function GameContainer() {
   const finalizeTimerRef = useRef<NodeJS.Timeout | null>(null);
   const errorSubscriptionRef = useRef<(() => void) | null>(null);
   const componentMountedRef = useRef(true);
-  const initialRenderRef = useRef(true);
-  const selectorCacheRef = useRef({
+  const transitionInProgressRef = useRef(false);
+  const lastNodeIdRef = useRef<string | null>(null);
+  
+  // Create stable selectors that won't change between renders
+  const gameStateMachineSelectors = useMemo(() => ({
     gamePhase: (state: any) => state.gamePhase,
     isTransitioning: (state: any) => state.isTransitioning,
-    currentDay: (state: any) => state.currentDay,
+    currentDay: (state: any) => state.currentDay
+  }), []);
+
+  const gameStoreSelectors = useMemo(() => ({
     currentNodeId: (state: any) => state.currentNodeId
-  });
+  }), []);
   
   // ======== STATE (Second for hook order stability) ========
   // Error state managed locally, not in store
   const [hasError, setHasError] = useState<string | null>(null);
   const [renderPhase, setRenderPhase] = useState<string>('init');
+  const [lastErrorTime, setLastErrorTime] = useState<number>(0);
   
   // ======== INITIALIZATION (Third for hook order stability) ========
-  // Track render count in development
-  const renderCount = useRenderTracker('GameContainer');
-  
-  // Use core initialization hook
+  // Use core initialization hook to set up systems
   const { initialized } = useCoreInitialization();
   
-  // ======== PRIMITIVE VALUE EXTRACTION (Always in consistent order - no conditionals!) ========
-  // CRITICAL: Must use the SAME selectors with the SAME hooks in the SAME order on every render
-  
-  // Safely extract primitive values with fallbacks for uninitialized state
-  const gamePhase = usePrimitiveStoreValue(
+  // ======== PRIMITIVE VALUE EXTRACTION (Always in consistent order) ========
+  // Extract all primitive values in a single hook call for efficiency
+  const { 
+    gamePhase, 
+    isTransitioning, 
+    currentDay
+  } = usePrimitiveValues(
     useGameStateMachine,
-    selectorCacheRef.current.gamePhase,
-    'day'
+    gameStateMachineSelectors,
+    {
+      gamePhase: 'day',
+      isTransitioning: false,
+      currentDay: 1
+    }
   );
   
-  const isTransitioning = usePrimitiveStoreValue(
-    useGameStateMachine,
-    selectorCacheRef.current.isTransitioning,
-    false
-  );
-  
-  const currentDay = usePrimitiveStoreValue(
-    useGameStateMachine,
-    selectorCacheRef.current.currentDay,
-    1
-  );
-  
+  // Extract currentNodeId separately for proper dependency tracking
   const currentNodeId = usePrimitiveStoreValue(
     useGameStore,
-    selectorCacheRef.current.currentNodeId,
+    gameStoreSelectors.currentNodeId,
     null
   );
   
-  // ======== STABLE EVENT HANDLERS (No conditional hook execution) ========
+  // ======== ERROR HANDLING ========
+  const logError = useCallback((source: string, error: any) => {
+    console.error(`[GameContainer] Error in ${source}:`, error);
+    
+    // Rate limit error displays to prevent spam
+    const now = Date.now();
+    if (now - lastErrorTime > 5000) { // Only show errors every 5 seconds
+      setHasError(`Error in ${source}: ${error.message || 'Unknown error'}`);
+      setLastErrorTime(now);
+    }
+  }, [lastErrorTime]);
+  
+  // ======== STABLE EVENT HANDLERS ========
   // Create stable event handlers that access fresh state
   const handleBeginNight = useStableCallback(() => {
-    console.log("[GameContainer] handleBeginNight called");
+    if (transitionInProgressRef.current) {
+      console.log("[GameContainer] Transition already in progress, ignoring request");
+      return;
+    }
+    
+    transitionInProgressRef.current = true;
+    console.log("[GameContainer] Starting transition to night");
+    
     try {
       const stateMachine = useGameStateMachine.getState();
       if (stateMachine && stateMachine.beginDayCompletion) {
-        stateMachine.beginDayCompletion();
+        if (stateMachine.beginDayCompletion()) {
+          console.log("[GameContainer] Day completion initiated successfully");
+        } else {
+          console.warn("[GameContainer] Failed to initiate day completion");
+          transitionInProgressRef.current = false;
+        }
       } else {
         console.warn("[GameContainer] beginDayCompletion not available");
+        transitionInProgressRef.current = false;
       }
     } catch (error) {
-      console.error("[GameContainer] Error in handleBeginNight:", error);
+      logError("handleBeginNight", error);
+      transitionInProgressRef.current = false;
     }
-  }, []);
+  }, [logError]);
   
   const handleBeginDay = useStableCallback(() => {
-    console.log("[GameContainer] handleBeginDay called");
+    if (transitionInProgressRef.current) {
+      console.log("[GameContainer] Transition already in progress, ignoring request");
+      return;
+    }
+    
+    transitionInProgressRef.current = true;
+    console.log("[GameContainer] Starting transition to day");
+    
     try {
       const stateMachine = useGameStateMachine.getState();
       if (stateMachine && stateMachine.beginNightCompletion) {
-        stateMachine.beginNightCompletion();
+        if (stateMachine.beginNightCompletion()) {
+          console.log("[GameContainer] Night completion initiated successfully");
+        } else {
+          console.warn("[GameContainer] Failed to initiate night completion");
+          transitionInProgressRef.current = false;
+        }
       } else {
         console.warn("[GameContainer] beginNightCompletion not available");
+        transitionInProgressRef.current = false;
       }
     } catch (error) {
-      console.error("[GameContainer] Error in handleBeginDay:", error);
+      logError("handleBeginDay", error);
+      transitionInProgressRef.current = false;
     }
-  }, []);
+  }, [logError]);
   
   const handleReset = useStableCallback(() => {
-    console.log("[GameContainer] Resetting game state");
     try {
+      console.log("[GameContainer] Attempting to reset game");
       const gameStore = useGameStore.getState();
       if (gameStore && gameStore.resetGame) {
         gameStore.resetGame();
@@ -132,9 +173,9 @@ export default function GameContainer() {
         }
       }
     } catch (error) {
-      console.error("[GameContainer] Error in handleReset:", error);
+      logError("handleReset", error);
     }
-  }, []);
+  }, [logError]);
   
   // ======== LIFECYCLE EFFECTS (In consistent order) ========
   
@@ -188,66 +229,69 @@ export default function GameContainer() {
   useEffect(() => {
     if (!initialized) return; // Skip if not initialized
     
-    // Clear any existing timer first
+    // Clear any existing timer first to prevent duplicates
     if (finalizeTimerRef.current) {
       clearTimeout(finalizeTimerRef.current);
       finalizeTimerRef.current = null;
     }
     
-    // Handle transitions with defensive programming
-    try {
-      // Only enter this block if we're in transition
-      if (gamePhase === 'transition_to_night') {
-        console.log("[GameContainer] Scheduling night finalization");
+    if (gamePhase === 'transition_to_night') {
+      console.log("[GameContainer] Setting up night transition finalization timer");
+      finalizeTimerRef.current = setTimeout(() => {
+        if (!componentMountedRef.current) return;
         
-        finalizeTimerRef.current = setTimeout(() => {
-          if (!componentMountedRef.current) return;
-          
-          console.log("[GameContainer] Finalizing night transition");
-          try {
-            const stateMachine = useGameStateMachine.getState();
-            if (stateMachine && stateMachine.finalizeNightTransition) {
-              stateMachine.finalizeNightTransition();
-            } else {
-              console.warn("[GameContainer] finalizeNightTransition not available");
-            }
-          } catch (error) {
-            console.error("[GameContainer] Error finalizing night transition:", error);
+        try {
+          const stateMachine = useGameStateMachine.getState();
+          if (stateMachine && stateMachine.finalizeNightTransition) {
+            stateMachine.finalizeNightTransition();
+            console.log("[GameContainer] Night transition finalized");
+            // Reset the transition flag after completion
+            transitionInProgressRef.current = false;
+          } else {
+            console.warn("[GameContainer] finalizeNightTransition not available");
           }
-        }, TRANSITION_VISUAL_DURATION + 50); // Add buffer
-      } 
-      else if (gamePhase === 'transition_to_day') {
-        console.log("[GameContainer] Scheduling day finalization");
+        } catch (error) {
+          logError("night transition finalization", error);
+          transitionInProgressRef.current = false;
+        }
+      }, TRANSITION_VISUAL_DURATION + 50); // Add buffer
+    } 
+    else if (gamePhase === 'transition_to_day') {
+      console.log("[GameContainer] Setting up day transition finalization timer");
+      finalizeTimerRef.current = setTimeout(() => {
+        if (!componentMountedRef.current) return;
         
-        finalizeTimerRef.current = setTimeout(() => {
-          if (!componentMountedRef.current) return;
-          
-          console.log("[GameContainer] Finalizing day transition");
-          try {
-            const stateMachine = useGameStateMachine.getState();
-            if (stateMachine && stateMachine.finalizeDayTransition) {
-              stateMachine.finalizeDayTransition();
-            } else {
-              console.warn("[GameContainer] finalizeDayTransition not available");
-            }
-          } catch (error) {
-            console.error("[GameContainer] Error finalizing day transition:", error);
+        try {
+          const stateMachine = useGameStateMachine.getState();
+          if (stateMachine && stateMachine.finalizeDayTransition) {
+            stateMachine.finalizeDayTransition();
+            console.log("[GameContainer] Day transition finalized");
+            // Reset the transition flag after completion
+            transitionInProgressRef.current = false;
+          } else {
+            console.warn("[GameContainer] finalizeDayTransition not available");
           }
-        }, TRANSITION_VISUAL_DURATION + 50); // Add buffer
-      }
-    } catch (error) {
-      console.error("[GameContainer] Error in transition effect:", error);
+        } catch (error) {
+          logError("day transition finalization", error);
+          transitionInProgressRef.current = false;
+        }
+      }, TRANSITION_VISUAL_DURATION + 50); // Add buffer
+    }
+    // If not in a transition phase, reset the flag
+    else {
+      transitionInProgressRef.current = false;
     }
     
+    // Cleanup timer on unmount or phase change
     return () => {
       if (finalizeTimerRef.current) {
         clearTimeout(finalizeTimerRef.current);
         finalizeTimerRef.current = null;
       }
     };
-  }, [gamePhase, initialized]);
+  }, [gamePhase, initialized, logError]);
   
-  // Event subscription for critical errors - FOURTH EFFECT
+  // Error subscription - FOURTH EFFECT
   useEffect(() => {
     if (!initialized) return; // Skip if not initialized
     
@@ -289,13 +333,16 @@ export default function GameContainer() {
     };
   }, [initialized]);
   
-  // Mark after initial render - FIFTH EFFECT
+  // Track node ID changes - FIFTH EFFECT
   useEffect(() => {
-    initialRenderRef.current = false;
-  }, []);
+    if (currentNodeId !== lastNodeIdRef.current) {
+      console.log(`[GameContainer] Node ID changed: ${lastNodeIdRef.current} -> ${currentNodeId}`);
+      lastNodeIdRef.current = currentNodeId;
+    }
+  }, [currentNodeId]);
   
-  // ======== CONTENT RENDERING ========
-  // Separate render logic based on initialization phase
+  // ======== MEMOIZED CONTENT RENDERING ========
+  // Separate render logic based on initialization phase and memoize it
   const renderGameContent = useCallback(() => {
     // Handle initialization state
     if (renderPhase === 'initializing' || !initialized) {
@@ -337,8 +384,9 @@ export default function GameContainer() {
     
     // Ready state - show game content by phase
     if (renderPhase === 'ready') {
-      // Day phase content
+      // Day phase content - CRITICAL FIX: Use currentNodeId consistently
       if (gamePhase === 'day') {
+        console.log(`[GameContainer] Rendering day phase, currentNodeId: ${currentNodeId}`);
         return currentNodeId ? <ChallengeRouter /> : <SimplifiedKapoorMap />;
       }
       
@@ -347,12 +395,12 @@ export default function GameContainer() {
         return <HillHomeScene onComplete={handleBeginDay} />;
       }
       
-      // Transition states - use CSS opacity instead of conditional rendering
+      // Transition phase content with fade effect
       if (gamePhase === 'transition_to_day' || gamePhase === 'transition_to_night') {
         const isDayToNight = gamePhase === 'transition_to_night';
         
         return (
-          <div style={{ opacity: 0.5 }}>
+          <div className="opacity-50 transition-opacity duration-300">
             {isDayToNight ? (
               <SimplifiedKapoorMap />
             ) : (
@@ -378,15 +426,24 @@ export default function GameContainer() {
         </div>
       </div>
     );
-  }, [initialized, hasError, gamePhase, currentNodeId, renderPhase, handleBeginDay, handleReset]);
+  }, [
+    renderPhase, 
+    initialized, 
+    hasError, 
+    gamePhase, 
+    currentNodeId,  // CRITICAL FIX: Made this a dependency
+    handleBeginDay, 
+    handleReset
+  ]);
   
   // ======== COMPONENT RENDER ========
   return (
     <div 
-      className="relative h-screen w-full bg-background flex flex-col" 
+      className="relative h-screen w-full bg-background flex flex-col"
       data-game-container 
       data-phase={gamePhase}
       data-render-phase={renderPhase}
+      data-node-id={currentNodeId || 'none'}  // Add this for debugging
     >
       <div className="flex-grow flex overflow-hidden">
         <div className="flex-grow relative overflow-hidden">
@@ -404,17 +461,16 @@ export default function GameContainer() {
       {/* Purely presentational transition overlay */}
       <DayNightTransition />
 
-      {/* Debug panel - only visible in development */}
-      {process.env.NODE_ENV !== 'production' && (
-        <VerticalSliceDebugPanel />
-      )}
+      {/* Debug Panel - Only in development */}
+      {process.env.NODE_ENV !== 'production' && <VerticalSliceDebugPanel />}
 
-      {/* Simplified Debug Info */}
+      {/* Enhanced Debug Info - Only in development */}
       {process.env.NODE_ENV !== 'production' && (
         <div className="fixed bottom-0 left-0 bg-black/80 text-white p-2 text-xs z-50">
-          Phase: {gamePhase} | Node: {currentNodeId || 'none'} | 
+          Phase: <span className="text-green-400">{gamePhase}</span> | 
+          Node: <span className="text-blue-400">{currentNodeId || 'none'}</span> | 
           Transitioning: {isTransitioning ? 'Yes' : 'No'} | 
-          Render: {renderCount} | 
+          Day: {currentDay} | 
           Init: {initialized ? 'Yes' : 'No'} |
           R-Phase: {renderPhase}
         </div>

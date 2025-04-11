@@ -11,7 +11,8 @@ import { PixelText } from '../PixelThemeProvider';
 import {
   usePrimitiveStoreValue,
   useStableStoreValue,
-  createStableSelector
+  createStableSelector,
+  useStableCallback
 } from '@/app/core/utils/storeHooks';
 
 // Define valid page types to ensure type safety across the UI
@@ -54,6 +55,11 @@ const JournalReferencesPage = () => (
  * 2. DOM-based animations instead of React state
  * 3. Stable function references with minimal dependencies
  * 4. Refs for non-rendered state
+ * 
+ * FIXES:
+ * 1. CRITICAL: Using consistent default values to prevent hydration mismatch
+ * 2. Improved error handling for missing methods
+ * 3. Enhanced stability with better refs tracking
  */
 export default function Journal() {
   // PATTERN: DOM refs for direct manipulation
@@ -71,16 +77,30 @@ export default function Journal() {
     originalBodyOverflow: ''
   });
   
-  // PATTERN: Extract primitive values from journal store
-  const journalState = usePrimitiveStoreValue(
+  // PATTERN: Extract primitive values with CONSISTENT DEFAULTS to prevent hydration mismatch
+  const hasJournal = usePrimitiveStoreValue(
     useJournalStore,
-    createStableSelector(['isOpen', 'currentPage', 'hasJournal', 'currentUpgrade']),
-    {
-      isOpen: false,
-      currentPage: 'knowledge' as JournalPageType,
-      hasJournal: false,
-      currentUpgrade: 'base'
-    }
+    state => state.hasJournal,
+    false
+  );
+  
+  const isJournalOpen = usePrimitiveStoreValue(
+    useJournalStore,
+    state => state.isJournalOpen,
+    false
+  );
+  
+  // CRITICAL FIX: Always use 'base' as default for consistent hydration
+  const currentUpgrade = usePrimitiveStoreValue(
+    useJournalStore,
+    state => state.currentUpgrade,
+    'base'
+  );
+  
+  const currentPage = usePrimitiveStoreValue(
+    useJournalStore,
+    state => state.currentPage, 
+    'knowledge' as JournalPageType
   );
   
   // PATTERN: Extract game state primitives
@@ -90,20 +110,35 @@ export default function Journal() {
     'day'
   );
   
-  // PATTERN: Extract stable functions
-  const journalActions = useStableStoreValue(
-    useJournalStore,
-    state => ({
-      setCurrentPage: state.setCurrentPage,
-      toggleJournal: state.toggleJournal
-    })
-  );
+  // PATTERN: Safe store actions extraction with fallbacks
+  const toggleJournal = useCallback(() => {
+    try {
+      const journalStore = useJournalStore.getState();
+      if (journalStore.toggleJournal) {
+        journalStore.toggleJournal();
+      } else if (journalStore.setJournalOpen) {
+        // Fallback if toggleJournal is unavailable
+        journalStore.setJournalOpen(!isJournalOpen);
+      } else {
+        console.warn('Journal toggle functions not available');
+      }
+    } catch (e) {
+      console.error('Error toggling journal:', e);
+    }
+  }, [isJournalOpen]);
   
-  // Safely extract functions with fallbacks
-  const { 
-    setCurrentPage = (p: JournalPageType) => console.warn(`setCurrentPage not available for ${p}`),
-    toggleJournal = () => console.warn('toggleJournal not available')
-  } = journalActions;
+  const setCurrentPage = useCallback((page: JournalPageType) => {
+    try {
+      const journalStore = useJournalStore.getState();
+      if (journalStore.setCurrentPage) {
+        journalStore.setCurrentPage(page);
+      } else {
+        console.warn('setCurrentPage function not available');
+      }
+    } catch (e) {
+      console.error('Error setting journal page:', e);
+    }
+  }, []);
   
   // PATTERN: Cleanup timers helper with stable reference
   const clearAllTimers = useCallback(() => {
@@ -180,7 +215,7 @@ export default function Journal() {
   
   // PATTERN: Handle body overflow when journal is open
   useEffect(() => {
-    if (journalState.isOpen) {
+    if (isJournalOpen) {
       // Store original overflow
       internalStateRef.current.originalBodyOverflow = document.body.style.overflow;
       
@@ -196,18 +231,18 @@ export default function Journal() {
     
     // Unlock when closing
     return () => {
-      if (journalState.isOpen) {
+      if (isJournalOpen) {
         document.body.style.overflow = internalStateRef.current.originalBodyOverflow;
       }
     };
-  }, [journalState.isOpen, startJournalAnimation]);
+  }, [isJournalOpen, startJournalAnimation]);
   
   // PATTERN: Night phase particle effects
   useEffect(() => {
-    if (journalState.isOpen && gamePhase === 'night') {
+    if (isJournalOpen && gamePhase === 'night') {
       startParticleEffects();
     }
-  }, [journalState.isOpen, gamePhase, startParticleEffects]);
+  }, [isJournalOpen, gamePhase, startParticleEffects]);
   
   // PATTERN: Event subscription for journal acquisition
   useEventSubscription(
@@ -323,8 +358,15 @@ export default function Journal() {
     };
   }, [clearAllTimers]);
   
+  // DEBUGGING: Log key states to help track hydration mismatches
+  useEffect(() => {
+    if (process.env.NODE_ENV !== 'production') {
+      console.log('[Journal] Render with tier:', currentUpgrade, 'hasJournal:', hasJournal, 'isOpen:', isJournalOpen);
+    }
+  }, [currentUpgrade, hasJournal, isJournalOpen]);
+  
   // Floating journal button when closed
-  if (journalState.hasJournal && !journalState.isOpen && internalStateRef.current.showFloatingButton) {
+  if (hasJournal && !isJournalOpen && internalStateRef.current.showFloatingButton) {
     return (
       <div 
         ref={floatingButtonRef}
@@ -332,7 +374,7 @@ export default function Journal() {
       >
         <button
           className="px-4 py-2 bg-clinical text-white font-pixel hover:bg-clinical-light transition-colors shadow-lg"
-          onClick={() => toggleJournal()}
+          onClick={toggleJournal}
         >
           Open Journal
         </button>
@@ -341,17 +383,15 @@ export default function Journal() {
   }
   
   // Don't render anything if player doesn't have journal or it's not open
-  if (!journalState.hasJournal || !journalState.isOpen) return null;
+  if (!hasJournal || !isJournalOpen) return null;
   
   // Determine journal cover style based on upgrade level
   const getJournalCoverStyle = () => {
-    switch(journalState.currentUpgrade) {
+    switch(currentUpgrade) {
       case 'base': return 'bg-gradient-to-b from-amber-800 to-amber-900';
       case 'technical': return 'bg-gradient-to-b from-clinical-dark to-clinical';
       case 'annotated': return 'bg-gradient-to-b from-clinical-dark to-clinical-light';
-      case 'indexed': return 'bg-gradient-to-b from-blue-900 to-blue-700';
-      case 'integrated': return 'bg-gradient-to-b from-educational-dark to-educational';
-      default: return 'bg-gradient-to-b from-amber-800 to-amber-900';
+      default: return 'bg-gradient-to-b from-amber-800 to-amber-900'; // Fallback to base
     }
   };
   
@@ -425,7 +465,7 @@ export default function Journal() {
                 {['knowledge', 'characters', 'notes', 'references'].map((tabId) => (
                   <div
                     key={tabId}
-                    className={`w-full cursor-pointer transition-colors relative z-30 ${journalState.currentPage === tabId ? 'bg-clinical text-white' : 'hover:bg-surface'}`}
+                    className={`w-full cursor-pointer transition-colors relative z-30 ${currentPage === tabId ? 'bg-clinical text-white' : 'hover:bg-surface'}`}
                     role="button"
                     tabIndex={0}
                     onClick={() => setCurrentPage(tabId as JournalPageType)}
@@ -442,11 +482,9 @@ export default function Journal() {
             <div className="absolute bottom-4 left-4 w-[180px]">
               <div className="p-2 bg-surface-dark/70 text-center">
                 <PixelText className="text-xs">
-                  {journalState.currentUpgrade === 'base' && "Basic Notebook"}
-                  {journalState.currentUpgrade === 'technical' && "Technical Journal"}
-                  {journalState.currentUpgrade === 'annotated' && "Annotated Journal"}
-                  {journalState.currentUpgrade === 'indexed' && "Indexed Compendium"}
-                  {journalState.currentUpgrade === 'integrated' && "Integrated Codex"}
+                  {currentUpgrade === 'base' && "Basic Notebook"}
+                  {currentUpgrade === 'technical' && "Technical Journal"}
+                  {currentUpgrade === 'annotated' && "Annotated Journal"}
                 </PixelText>
               </div>
             </div>
@@ -457,10 +495,10 @@ export default function Journal() {
             className="flex-1 bg-surface overflow-y-auto p-6 relative z-20"
             onClick={(e) => e.stopPropagation()}
           >
-            {journalState.currentPage === 'knowledge' && <JournalKnowledgePage />}
-            {journalState.currentPage === 'characters' && <JournalCharactersPage />}
-            {journalState.currentPage === 'notes' && <JournalNotesPage />}
-            {journalState.currentPage === 'references' && <JournalReferencesPage />}
+            {currentPage === 'knowledge' && <JournalKnowledgePage />}
+            {currentPage === 'characters' && <JournalCharactersPage />}
+            {currentPage === 'notes' && <JournalNotesPage />}
+            {currentPage === 'references' && <JournalReferencesPage />}
           </div>
         </div>
       </div>

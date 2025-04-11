@@ -1,35 +1,39 @@
 // app/core/init.ts
+/**
+ * Optimized Core Systems Initialization
+ * 
+ * Improvements:
+ * 1. More reliable initialization sequence
+ * 2. Reduced retry attempts with better error handling
+ * 3. Cleaner HMR integration
+ * 4. Proper cleanup on unmount
+ * 5. Better dependency tracking for React hooks
+ */
 import { useEffect, useState, useRef, useCallback } from 'react';
 
-// --- Core System Imports ---
-// Import both the singleton instance and store hook for the Event Bus
-import CentralEventBus, { useEventBus, safeDispatch, type EventCallback } from './events/CentralEventBus';
-import useGameStateMachine, { type GamePhase } from './statemachine/GameStateMachine';
+// Core System Imports - using consistent pattern
+import CentralEventBus, { useEventBus, safeDispatch } from './events/CentralEventBus';
+import useGameStateMachine from './statemachine/GameStateMachine';
 import { progressionResolver } from './progression/ProgressionResolver';
-// Import both the singleton instance and store hook for DialogueStateMachine
 import DialogueStateMachine, { useDialogueStateMachine } from './dialogue/DialogueStateMachine';
 import ActionIntegration from './dialogue/ActionIntegration';
-import type * as ActionIntegrationTypes from './dialogue/ActionIntegration';
 
-// --- Chamber Pattern Debugging ---
+// Chamber Pattern Debugging - only in development
 import { createTrackedStores } from '@/app/core/utils/storeAnalyzer';
 
-// --- Store Imports ---
+// Store Imports
 import { useGameStore } from '@/app/store/gameStore';
 import { useKnowledgeStore } from '@/app/store/knowledgeStore';
 import { useJournalStore } from '@/app/store/journalStore';
 import { useResourceStore } from '@/app/store/resourceStore';
 
-// --- Type Imports ---
-import type {
-    CombinedState,
-    GameState,
-    DialogueState,
-    EventBusState
-} from '@/app/types/game';
+// Type imports
 import type { GameEventType } from './events/EventTypes';
 
-// Type definition for the module object, including the optional 'hot' property for HMR
+// Development mode detection
+const IS_DEV = process.env.NODE_ENV !== 'production';
+
+// Type definition for module hot reloading
 interface NodeModule {
   hot?: {
     accept(path?: string, callback?: () => void): void;
@@ -39,185 +43,206 @@ interface NodeModule {
 
 declare const module: NodeModule;
 
-// Define types for refs using the state slice types
-type ProgressionResolverInstanceType = typeof progressionResolver;
-type ActionIntegrationModuleType = typeof ActionIntegration;
-type CentralEventBusInstanceType = typeof CentralEventBus;
-type DialogueStateMachineInstanceType = typeof DialogueStateMachine;
+// ======== INITIALIZATION CONFIG ========
 
-// Initialization state tracking at module level for better coordination
-let initializationInProgress = false;
-let initializationCompleted = false;
-let initializationAttempts = 0;
-const MAX_INIT_ATTEMPTS = 3;
-const INIT_RETRY_DELAY = 1000; // ms
+// Configuration settings
+const INIT_CONFIG = {
+  MAX_ATTEMPTS: 2,              // Reduced from 3 to 2
+  RETRY_DELAY: 800,             // Reduced from 1000ms to 800ms
+  CLEANUP_DELAY: 50,            // Small delay before reinitializing
+  ERROR_REPORTING_THRESHOLD: 2  // Log first N errors only
+};
+
+// Module-level state tracking
+let initializationState = {
+  inProgress: false,
+  completed: false,
+  attempts: 0,
+  errorCount: 0
+};
 
 /**
- * Enhanced initialization with retry logic and better error handling
+ * Log initialization message with appropriate styling
+ */
+function logInit(message: string, type: 'info' | 'success' | 'warning' | 'error' = 'info'): void {
+  if (!IS_DEV) return; // Only log in development
+  
+  const styles = {
+    info: 'color: blue',
+    success: 'color: green; font-weight: bold',
+    warning: 'color: orange',
+    error: 'color: red; font-weight: bold'
+  };
+  
+  console.log(`%c${message}`, styles[type]);
+}
+
+/**
+ * Main initialization hook with enhanced reliability
  */
 export function useCoreInitialization() {
+  // Component state
   const [initialized, setInitialized] = useState(false);
   const [initError, setInitError] = useState<string | null>(null);
-  const gameStoreReady = useGameStore((state: CombinedState) => !!state.initializeGame);
-
-  // Refs to hold instances
-  const eventBusRef = useRef<CentralEventBusInstanceType | null>(null);
-  const eventBusStoreRef = useRef<EventBusState | null>(null);
-  const dialogueStateMachineRef = useRef<DialogueStateMachineInstanceType | null>(null);
-  const dialogueStoreRef = useRef<DialogueState | null>(null);
-  const stateMachineRef = useRef<GameState | null>(null);
-  const progressionResolverRef = useRef<ProgressionResolverInstanceType | null>(null);
-  const actionIntegrationRef = useRef<ActionIntegrationModuleType | null>(null);
+  
+  // Critical references to prevent re-renders
+  const gameStoreReady = useGameStore(state => !!state.initializeGame);
+  
+  // Refs for cleanup and tracking
   const initTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const componentMountedRef = useRef(true);
-
+  const errorReportedRef = useRef(0);
+  
   // Get necessary store actions
-  const initializeGameAction = useGameStore((state: CombinedState) => state.initializeGame);
+  const initializeGameAction = useGameStore(state => state.initializeGame);
   const resetKnowledgeAction = useKnowledgeStore(state => state.resetKnowledge);
 
-  // --- Enhanced Initialization Logic ---
+  // ======== CORE INITIALIZATION LOGIC ========
+  
   const initializeSystems = useCallback(() => {
-    // Don't attempt to initialize if already successful at module level
-    if (initializationCompleted) {
-      console.log("%cCore systems already fully initialized.", "color: green");
+    // Skip if already fully initialized at module level
+    if (initializationState.completed) {
+      logInit("Core systems already fully initialized.", "success");
       setInitialized(true);
       return;
     }
     
     // Prevent concurrent initialization
-    if (initializationInProgress) {
-      console.log("%cInitialization already in progress, waiting...", "color: orange");
+    if (initializationState.inProgress) {
+      logInit("Initialization already in progress, waiting...", "warning");
       return;
     }
     
     // Track attempts to avoid infinite loops
-    initializationAttempts++;
-    if (initializationAttempts > MAX_INIT_ATTEMPTS) {
-      const errorMsg = `Max initialization attempts (${MAX_INIT_ATTEMPTS}) exceeded`;
-      console.error(errorMsg);
+    initializationState.attempts++;
+    initializationState.inProgress = true;
+    
+    // Check if we've exceeded max attempts
+    if (initializationState.attempts > INIT_CONFIG.MAX_ATTEMPTS) {
+      const errorMsg = `Max initialization attempts (${INIT_CONFIG.MAX_ATTEMPTS}) exceeded`;
+      logInit(errorMsg, "error");
       setInitError(errorMsg);
       setInitialized(false);
-      initializationInProgress = false;
+      initializationState.inProgress = false;
       return;
     }
     
-    console.log(`%cAttempting core system initialization (attempt ${initializationAttempts}/${MAX_INIT_ATTEMPTS})...`, "color: blue");
-    initializationInProgress = true;
+    logInit(`Attempting core system initialization (attempt ${initializationState.attempts}/${INIT_CONFIG.MAX_ATTEMPTS})...`, "info");
 
     try {
-      // 1. Get Event Bus instance AND store state - with error checking
-      try {
-        eventBusRef.current = CentralEventBus;
-        eventBusStoreRef.current = useEventBus.getState();
-        if (!eventBusRef.current || !eventBusStoreRef.current) {
-          throw new Error("Event Bus initialization failed");
-        }
-        console.log("✅ Event Bus referenced:", 
-                  eventBusRef.current ? "Instance OK" : "Instance Missing",
-                  eventBusStoreRef.current ? "Store OK" : "Store Missing");
-      } catch (e) {
-        throw new Error(`Event Bus initialization error: ${e.message}`);
+      // ======== SEQUENTIAL INITIALIZATION ========
+      
+      // 1. Initialize Event Bus
+      const eventBus = CentralEventBus;
+      const eventBusStore = useEventBus.getState();
+      
+      if (!eventBus || !eventBusStore) {
+        throw new Error("Event Bus initialization failed");
       }
+      
+      logInit("✅ Event Bus initialized");
 
-      // 2. Get Dialogue State Machine instance AND store state - with error checking
-      try {
-        dialogueStateMachineRef.current = DialogueStateMachine;
-        dialogueStoreRef.current = useDialogueStateMachine.getState();
-        if (!dialogueStateMachineRef.current || !dialogueStoreRef.current) {
-          throw new Error("Dialogue State Machine initialization failed");
-        }
-        console.log("✅ Dialogue State Machine referenced:", 
-                  dialogueStateMachineRef.current ? "Instance OK" : "Instance Missing",
-                  dialogueStoreRef.current ? "Store OK" : "Store Missing");
-      } catch (e) {
-        throw new Error(`Dialogue State Machine initialization error: ${e.message}`);
+      // 2. Initialize Dialogue State Machine
+      const dialogueStateMachine = DialogueStateMachine;
+      const dialogueStore = useDialogueStateMachine.getState();
+      
+      if (!dialogueStateMachine || !dialogueStore) {
+        throw new Error("Dialogue State Machine initialization failed");
       }
+      
+      logInit("✅ Dialogue State Machine initialized");
 
       // 3. Reference Action Integration module
-      try {
-        actionIntegrationRef.current = ActionIntegration;
-        if (!actionIntegrationRef.current) {
-          throw new Error("Action Integration module reference failed");
-        }
-        console.log("✅ Action Integration module referenced.");
-      } catch (e) {
-        throw new Error(`Action Integration error: ${e.message}`);
-      }
-
-      // 4. Get Game State Machine state slice
-      try {
-        stateMachineRef.current = useGameStateMachine.getState();
-        if (!stateMachineRef.current) {
-          throw new Error("Game State Machine reference failed");
-        }
-        console.log("✅ Game State Machine state referenced.");
-      } catch (e) {
-        throw new Error(`Game State Machine error: ${e.message}`);
-      }
-
-      // 5. Reference Progression Resolver instance
-      try {
-        progressionResolverRef.current = progressionResolver;
-        if (!progressionResolverRef.current) {
-          throw new Error("Progression Resolver reference failed");
-        }
-        console.log("✅ Progression Resolver referenced.");
-      } catch (e) {
-        throw new Error(`Progression Resolver error: ${e.message}`);
-      }
-
-      // 6. Initialize Game Store Slice - with better error handling
-      try {
-        if (!initializeGameAction) {
-          throw new Error("Game Store initialization action missing");
-        }
-        initializeGameAction({ startingMode: 'exploration' });
-        console.log("✅ Game Store slice initialized.");
-      } catch (e) {
-        throw new Error(`Game Store initialization error: ${e.message}`);
+      const actionIntegration = ActionIntegration;
+      
+      if (!actionIntegration) {
+        throw new Error("Action Integration module reference failed");
       }
       
-      // 7. Initialize Chamber Pattern diagnostics and tracking
-      if (process.env.NODE_ENV !== 'production') {
+      logInit("✅ Action Integration module referenced");
+
+      // 4. Initialize Game State Machine
+      const stateMachine = useGameStateMachine.getState();
+      
+      if (!stateMachine) {
+        throw new Error("Game State Machine reference failed");
+      }
+      
+      logInit("✅ Game State Machine initialized");
+
+      // 5. Reference Progression Resolver
+      if (!progressionResolver) {
+        throw new Error("Progression Resolver reference failed");
+      }
+      
+      logInit("✅ Progression Resolver referenced");
+
+      // 6. Initialize Resource Store
+      const resourceStore = useResourceStore.getState();
+      if (!resourceStore) {
+        throw new Error("Resource Store initialization failed");
+      }
+      
+      logInit("✅ Resource Store initialized");
+
+      // 7. Initialize Game Store
+      if (!initializeGameAction) {
+        throw new Error("Game Store initialization action missing");
+      }
+      
+      // Initialize game with exploration mode
+      initializeGameAction({ startingMode: 'exploration' });
+      logInit("✅ Game Store initialized");
+      
+      // 8. Initialize Chamber Pattern diagnostics in development
+      if (IS_DEV) {
         try {
-          console.log("📊 Initializing Chamber Pattern diagnostics...");
+          logInit("📊 Initializing Chamber Pattern diagnostics...");
           createTrackedStores();
         } catch (e) {
+          // Non-critical, just log warning
           console.warn("⚠️ Chamber Pattern diagnostics initialization failed:", e);
-          // Non-critical, so we continue
         }
       }
 
-      // If we made it here, initialization was successful
-      initializationCompleted = true;
-      initializationInProgress = false;
+      // Success! Mark initialization complete
+      initializationState.completed = true;
+      initializationState.inProgress = false;
       setInitialized(true);
       setInitError(null);
-      console.log("%c✅ Core systems initialization complete!", "color: green; font-weight: bold");
+      logInit("✅ Core systems initialization complete!", "success");
 
     } catch (error) {
+      // Get error message
       const errorMsg = error instanceof Error ? error.message : String(error);
-      console.error("%c❌ Error during core system initialization:", "color: red; font-weight: bold", error);
       
-      // Set error state but don't set initialized to false yet - give retries a chance
+      // Only log errors up to threshold to avoid spam
+      if (errorReportedRef.current < INIT_CONFIG.ERROR_REPORTING_THRESHOLD) {
+        logInit(`❌ Error during core system initialization: ${errorMsg}`, "error");
+        errorReportedRef.current++;
+      }
+      
+      // Set error state for UI
       setInitError(errorMsg);
       
-      // Try to report the error to the event system if possible
+      // Report error to event system if available
       try {
         safeDispatch('SYSTEM_ERROR' as any, { 
-          component: 'useCoreInitialization', 
+          component: 'initialization', 
           phase: 'initializeSystems', 
           message: errorMsg, 
           error 
         });
       } catch (e) {
-        // If event system is unavailable, log to console as fallback
-        console.error("Could not dispatch error event:", e);
+        // Fallback to console if event system unavailable
+        if (errorReportedRef.current < INIT_CONFIG.ERROR_REPORTING_THRESHOLD) {
+          console.error("Could not dispatch error event:", e);
+        }
       }
       
-      // Schedule retry with delay if not too many attempts
-      if (initializationAttempts < MAX_INIT_ATTEMPTS && componentMountedRef.current) {
-        console.log(`%c⏱️ Scheduling initialization retry in ${INIT_RETRY_DELAY}ms...`, "color: orange");
+      // Schedule retry if not too many attempts
+      if (initializationState.attempts < INIT_CONFIG.MAX_ATTEMPTS && componentMountedRef.current) {
+        logInit(`⏱️ Scheduling initialization retry in ${INIT_CONFIG.RETRY_DELAY}ms...`, "warning");
         
         // Clear any existing timeout
         if (initTimeoutRef.current) {
@@ -227,22 +252,23 @@ export function useCoreInitialization() {
         // Schedule retry
         initTimeoutRef.current = setTimeout(() => {
           if (componentMountedRef.current) {
-            console.log("%c🔄 Retrying initialization...", "color: blue");
-            initializationInProgress = false; // Reset flag to allow retry
+            logInit("🔄 Retrying initialization...", "info");
+            initializationState.inProgress = false; // Reset flag to allow retry
             initializeSystems();
           }
-        }, INIT_RETRY_DELAY);
+        }, INIT_CONFIG.RETRY_DELAY);
       } else {
-        // If max attempts reached, set initialized to false
-        initializationInProgress = false;
+        // Max attempts reached, mark as not in progress
+        initializationState.inProgress = false;
         setInitialized(false);
       }
     }
   }, [initializeGameAction]);
 
-  // --- Enhanced Teardown Logic ---
+  // ======== TEARDOWN LOGIC ========
+  
   const teardownSystems = useCallback(() => {
-    console.log("%c🧹 Tearing down core systems...", "color: blue");
+    logInit("🧹 Tearing down core systems...", "info");
 
     // Cancel any pending initialization retries
     if (initTimeoutRef.current) {
@@ -250,16 +276,19 @@ export function useCoreInitialization() {
       initTimeoutRef.current = null;
     }
 
-    // Reset module-level state to allow fresh initialization after teardown
-    initializationInProgress = false;
-    initializationCompleted = false;
-    initializationAttempts = 0;
+    // Reset module-level state for fresh initialization after teardown
+    initializationState = {
+      inProgress: false,
+      completed: false,
+      attempts: 0,
+      errorCount: 0
+    };
 
-    // Reset stores directly
+    // Reset stores directly - silently handle errors
     try {
       if (resetKnowledgeAction) {
         resetKnowledgeAction();
-        console.log("✅ Knowledge store reset.");
+        logInit("✅ Knowledge store reset");
       }
     } catch (e) { console.error("❌ Error resetting knowledge store:", e); }
 
@@ -267,7 +296,7 @@ export function useCoreInitialization() {
       const resourceStore = useResourceStore.getState();
       if (resourceStore && resourceStore.resetResources) {
         resourceStore.resetResources();
-        console.log("✅ Resource store reset.");
+        logInit("✅ Resource store reset");
       }
     } catch (e) { console.error("❌ Error resetting resource store:", e); }
 
@@ -275,7 +304,7 @@ export function useCoreInitialization() {
       const journalStore = useJournalStore;
       if (journalStore && journalStore.persist && journalStore.persist.clearStorage) {
         journalStore.persist.clearStorage();
-        console.log("✅ Journal store persistence cleared.");
+        logInit("✅ Journal store persistence cleared");
       }
     } catch (e) { console.error("❌ Error clearing journal store persistence:", e); }
     
@@ -291,26 +320,19 @@ export function useCoreInitialization() {
       } catch (e) { console.warn("⚠️ Error resetting Chamber Pattern diagnostics:", e); }
     }
 
-    // Clear refs
-    eventBusRef.current = null;
-    eventBusStoreRef.current = null;
-    dialogueStateMachineRef.current = null;
-    dialogueStoreRef.current = null;
-    stateMachineRef.current = null;
-    progressionResolverRef.current = null;
-    actionIntegrationRef.current = null;
-
+    // Reset component state
     setInitialized(false);
-    console.log("%c✅ Core systems teardown complete.", "color: green");
+    logInit("✅ Core systems teardown complete", "success");
   }, [resetKnowledgeAction]);
 
-  // --- Enhanced Reinitialization Function ---
+  // ======== REINITIALIZATION LOGIC ========
+  
   const reinitialize = useCallback(() => {
-    console.log("%c🔄 Reinitializing core systems...", "color: blue; font-weight: bold");
+    logInit("🔄 Reinitializing core systems...", "info");
     
     // Skip if initialization is already in progress
-    if (initializationInProgress) {
-      console.log("⚠️ Initialization in progress, deferring reinitialization...");
+    if (initializationState.inProgress) {
+      logInit("⚠️ Initialization in progress, deferring reinitialization...", "warning");
       return;
     }
     
@@ -325,111 +347,87 @@ export function useCoreInitialization() {
       if (componentMountedRef.current) {
         initializeSystems();
       }
-    }, 100);
+    }, INIT_CONFIG.CLEANUP_DELAY);
   }, [teardownSystems, initializeSystems]);
 
-  // --- Improved Effect for Initial Setup and HMR ---
+  // ======== EFFECT FOR LIFECYCLE MANAGEMENT ========
+  
   useEffect(() => {
+    // Track component mount state
     componentMountedRef.current = true;
     
-    // Check if we need to initialize
-    if (!initialized && !initializationInProgress && gameStoreReady) {
-      // Give the system a moment to stabilize before initialization
+    // Initialize if not already done
+    if (!initialized && !initializationState.inProgress && gameStoreReady) {
+      // Small delay to allow store hooks to stabilize
       setTimeout(() => {
-        if (componentMountedRef.current && !initialized && !initializationInProgress) {
+        if (componentMountedRef.current && !initialized && !initializationState.inProgress) {
           initializeSystems();
         }
       }, 50);
     }
 
-    // Expose emergency reinitialize function to window with better debugging
+    // Expose emergency reinitialize function
     if (typeof window !== 'undefined') {
       (window as any).__FORCE_REINITIALIZE__ = reinitialize;
+      
+      // Add more comprehensive debug interface
       (window as any).__CORE_SYSTEMS_DEBUG__ = {
         isInitialized: initialized,
-        isInitializing: initializationInProgress,
-        initAttempts: initializationAttempts,
-        maxAttempts: MAX_INIT_ATTEMPTS,
+        initState: { ...initializationState },
         initError,
         reinitialize,
         forceInitialize: () => {
-          // Reset module state to force a fresh initialization
-          initializationInProgress = false;
-          initializationCompleted = false;
-          initializationAttempts = 0;
+          // Reset module state to force fresh initialization
+          initializationState = {
+            inProgress: false,
+            completed: false,
+            attempts: 0,
+            errorCount: 0
+          };
           initializeSystems();
         },
-        refs: {
-          hasEventBus: !!eventBusRef.current,
-          hasDialogueStateMachine: !!dialogueStateMachineRef.current,
-          hasStateMachine: !!stateMachineRef.current,
-          hasProgressionResolver: !!progressionResolverRef.current,
-          hasActionIntegration: !!actionIntegrationRef.current
-        },
-        chamberPatternEnabled: true,
-        diagnosticsAvailable: !!(
-          typeof window !== 'undefined' && 
-          ((window as any).__CHAMBER_DEBUG__ || (window as any).__STORE_ANALYZER__)
-        ),
-        runDiagnostics: () => {
-          console.group('Chamber Pattern Diagnostics');
-          
-          try {
-            if ((window as any).__CHAMBER_DEBUG__?.getSuspiciousComponents) {
-              const suspicious = (window as any).__CHAMBER_DEBUG__.getSuspiciousComponents();
-              console.log('Suspicious components:', suspicious);
-            } else {
-              console.warn('Chamber Debug API not available');
-            }
-            
-            if ((window as any).__STORE_ANALYZER__?.getIssues) {
-              const issues = (window as any).__STORE_ANALYZER__.getIssues();
-              console.log('Store access issues:', issues);
-            } else {
-              console.warn('Store Analyzer API not available');
-            }
-          } catch (e) {
-            console.error('Error running diagnostics:', e);
-          }
-          
-          console.groupEnd();
+        diagnostic: {
+          hasEventBus: !!CentralEventBus,
+          hasDialogueStateMachine: !!DialogueStateMachine,
+          hasStateMachine: !!useGameStateMachine,
+          hasProgressionResolver: !!progressionResolver,
+          hasActionIntegration: !!ActionIntegration,
+          hasResourceStore: !!useResourceStore
         }
       };
     }
 
-    // Simplified HMR approach for Next.js compatibility
-    if (process.env.NODE_ENV === 'development') {
-      console.log("🔄 Setting up simplified HMR for core systems.");
+    // Handle HMR for Next.js - simplified approach
+    if (IS_DEV && module.hot) {
+      logInit("🔄 Setting up HMR for core systems");
       
-      if (module.hot) {
-        // Accept all changes to this module
-        module.hot.accept();
+      module.hot.accept();
+      
+      // Store state for HMR recovery
+      module.hot.dispose(data => {
+        logInit("♻️ HMR disposal - preserving state for refresh");
+        data.wasInitialized = initialized;
+        data.initState = { ...initializationState };
         
-        // Optional: Add dispose handler for cleaner transitions
-        module.hot.dispose(data => {
-          console.log("♻️ HMR disposal - cleaning up before refresh");
-          // Store critical state for recovery
-          data.wasInitialized = initialized;
-          data.initAttempts = initializationAttempts;
-          
-          // Clear any pending timeouts
-          if (initTimeoutRef.current) {
-            clearTimeout(initTimeoutRef.current);
-          }
-        });
-      }
+        // Clear pending timeouts
+        if (initTimeoutRef.current) {
+          clearTimeout(initTimeoutRef.current);
+        }
+      });
     }
 
+    // Cleanup function
     return () => {
-      console.log("🧹 Cleaning up core systems on unmount");
+      logInit("🧹 Cleaning up core systems on unmount");
       componentMountedRef.current = false;
       
-      // Clear any pending timeouts
+      // Clear pending timeouts
       if (initTimeoutRef.current) {
         clearTimeout(initTimeoutRef.current);
         initTimeoutRef.current = null;
       }
       
+      // Only teardown if we were initialized
       if (initialized) {
         try {
           teardownSystems();
@@ -440,5 +438,10 @@ export function useCoreInitialization() {
     };
   }, [initialized, gameStoreReady, initializeSystems, reinitialize, teardownSystems]);
 
-  return { initialized, reinitialize, initError };
+  // Return initialization state and control methods
+  return { 
+    initialized, 
+    reinitialize, 
+    initError 
+  };
 }
