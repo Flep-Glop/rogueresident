@@ -4,11 +4,13 @@
  * GameContainer - Optimized Core Gameplay Orchestration Component
  * 
  * Improvements:
- * 1. Fixed variable naming inconsistency (nodeId vs currentNodeId)
+ * 1. Fixed variable naming inconsistency
  * 2. Added more robust error handling
  * 3. Improved transition management
  * 4. Better logging for debugging
  * 5. Optimized primitive extraction
+ * 6. Added localStorage corruption recovery
+ * 7. Added emergency reset capabilities
  */
 import React, { useEffect, useCallback, useRef, useState, useMemo } from 'react';
 import { useGameStore } from '@/app/store/gameStore';
@@ -22,6 +24,7 @@ import PlayerStats from './PlayerStats';
 import VerticalSliceDebugPanel from './debug/VerticalSliceDebugPanel';
 import ChallengeRouter from './challenges/ChallengeRouter';
 import DayNightTransition from './DayNightTransition';
+import FontPreLoader from './FontPreLoader';
 
 // Import optimized store hooks
 import { 
@@ -32,6 +35,8 @@ import {
 
 // Transition timing constants
 const TRANSITION_VISUAL_DURATION = 800; // Duration for the fade effect (ms)
+const INIT_TIMEOUT = 10000; // Timeout for initialization (ms)
+const EMERGENCY_RESET_THRESHOLD = 3; // Number of errors before emergency reset
 
 /**
  * GameContainer with optimized Chamber Pattern implementation
@@ -44,6 +49,9 @@ export default function GameContainer() {
   const componentMountedRef = useRef(true);
   const transitionInProgressRef = useRef(false);
   const lastNodeIdRef = useRef<string | null>(null);
+  const initTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const errorCountRef = useRef(0);
+  const clearingLocalStorageRef = useRef(false);
   
   // Create stable selectors that won't change between renders
   const gameStateMachineSelectors = useMemo(() => ({
@@ -61,10 +69,11 @@ export default function GameContainer() {
   const [hasError, setHasError] = useState<string | null>(null);
   const [renderPhase, setRenderPhase] = useState<string>('init');
   const [lastErrorTime, setLastErrorTime] = useState<number>(0);
+  const [emergencyResetPerformed, setEmergencyResetPerformed] = useState(false);
   
   // ======== INITIALIZATION (Third for hook order stability) ========
   // Use core initialization hook to set up systems
-  const { initialized } = useCoreInitialization();
+  const { initialized, reinitialize, initError, initPhase, initProgress } = useCoreInitialization();
   
   // ======== PRIMITIVE VALUE EXTRACTION (Always in consistent order) ========
   // Extract all primitive values in a single hook call for efficiency
@@ -89,9 +98,51 @@ export default function GameContainer() {
     null
   );
   
+  // ======== EMERGENCY RECOVERY ========
+  /**
+   * Clear localStorage to recover from persistent corruption
+   */
+  const emergencyReset = useCallback(() => {
+    if (clearingLocalStorageRef.current) return; // Prevent multiple resets
+    
+    console.error("[GameContainer] EMERGENCY RESET - Clearing localStorage and reloading");
+    clearingLocalStorageRef.current = true;
+    
+    // Clear all localStorage items for our app
+    try {
+      localStorage.removeItem('rogue-resident-journal');
+      localStorage.removeItem('rogue-resident-knowledge');
+      localStorage.removeItem('rogue-resident-game-state');
+      localStorage.removeItem('init-failed');
+    } catch (e) {
+      console.warn("[GameContainer] Error clearing localStorage:", e);
+    }
+    
+    // Mark that we performed an emergency reset
+    setEmergencyResetPerformed(true);
+    
+    // Try reinitializing
+    if (typeof reinitialize === 'function') {
+      reinitialize();
+    } else if (typeof window !== 'undefined' && window.__FORCE_REINITIALIZE__) {
+      window.__FORCE_REINITIALIZE__();
+    }
+    
+    // Schedule reload if still not working after a delay
+    setTimeout(() => {
+      if (!initialized) {
+        window.location.reload();
+      }
+      clearingLocalStorageRef.current = false;
+    }, 3000);
+  }, [initialized, reinitialize]);
+  
   // ======== ERROR HANDLING ========
   const logError = useCallback((source: string, error: any) => {
     console.error(`[GameContainer] Error in ${source}:`, error);
+    
+    // Count errors for emergency reset threshold
+    errorCountRef.current++;
     
     // Rate limit error displays to prevent spam
     const now = Date.now();
@@ -99,7 +150,12 @@ export default function GameContainer() {
       setHasError(`Error in ${source}: ${error.message || 'Unknown error'}`);
       setLastErrorTime(now);
     }
-  }, [lastErrorTime]);
+    
+    // Perform emergency reset if we hit the threshold and haven't done it yet
+    if (errorCountRef.current >= EMERGENCY_RESET_THRESHOLD && !emergencyResetPerformed) {
+      emergencyReset();
+    }
+  }, [lastErrorTime, emergencyReset, emergencyResetPerformed]);
   
   // ======== STABLE EVENT HANDLERS ========
   // Create stable event handlers that access fresh state
@@ -185,6 +241,24 @@ export default function GameContainer() {
     mountedRef.current = true;
     componentMountedRef.current = true;
     
+    // Clear localStorage if we have init-failed flag
+    try {
+      if (localStorage.getItem('init-failed') === 'true' && !clearingLocalStorageRef.current) {
+        console.warn('[GameContainer] Found init-failed flag, clearing localStorage');
+        localStorage.removeItem('rogue-resident-journal');
+        localStorage.removeItem('rogue-resident-knowledge');
+        localStorage.removeItem('rogue-resident-game-state');
+        localStorage.removeItem('init-failed');
+      }
+    } catch (e) {
+      console.warn('[GameContainer] Error accessing localStorage:', e);
+    }
+    
+    // Add emergency reset function to window
+    if (typeof window !== 'undefined') {
+      window.__EMERGENCY_RESET__ = emergencyReset;
+    }
+    
     return () => {
       console.log('[GameContainer] Component unmounted');
       mountedRef.current = false;
@@ -196,34 +270,62 @@ export default function GameContainer() {
         finalizeTimerRef.current = null;
       }
       
+      if (initTimeoutRef.current) {
+        clearTimeout(initTimeoutRef.current);
+        initTimeoutRef.current = null;
+      }
+      
       // Clean up any event subscriptions
       if (errorSubscriptionRef.current) {
         errorSubscriptionRef.current();
         errorSubscriptionRef.current = null;
       }
     };
-  }, []);
+  }, [emergencyReset]);
   
   // Initialization tracking - SECOND EFFECT
   useEffect(() => {
     // Update render phase based on initialization status
     if (initialized) {
       setRenderPhase('ready');
+      // Clear init timeout if it exists
+      if (initTimeoutRef.current) {
+        clearTimeout(initTimeoutRef.current);
+        initTimeoutRef.current = null;
+      }
     } else {
       setRenderPhase('initializing');
       
       // If initialization fails after a reasonable timeout, set error
-      const initTimeout = setTimeout(() => {
-        if (!initialized && mountedRef.current && renderPhase !== 'error') {
-          console.error("[GameContainer] Initialization timeout exceeded");
-          setRenderPhase('error');
-          setHasError("Core systems failed to initialize (timeout)");
-        }
-      }, 5000); // 5 second timeout
-      
-      return () => clearTimeout(initTimeout);
+      if (!initTimeoutRef.current) {
+        initTimeoutRef.current = setTimeout(() => {
+          if (!initialized && mountedRef.current && renderPhase !== 'error') {
+            console.error("[GameContainer] Initialization timeout exceeded");
+            setRenderPhase('error');
+            setHasError("Core systems failed to initialize (timeout)");
+            
+            // Attempt emergency reset
+            if (!emergencyResetPerformed) {
+              emergencyReset();
+            }
+          }
+        }, INIT_TIMEOUT);
+      }
     }
-  }, [initialized, renderPhase]);
+    
+    // If initialization fails, check for error
+    if (initError && !hasError) {
+      setHasError(initError);
+      setRenderPhase('error');
+    }
+    
+    return () => {
+      if (initTimeoutRef.current) {
+        clearTimeout(initTimeoutRef.current);
+        initTimeoutRef.current = null;
+      }
+    };
+  }, [initialized, renderPhase, initError, hasError, emergencyReset, emergencyResetPerformed]);
   
   // Transition finalization - THIRD EFFECT
   useEffect(() => {
@@ -312,6 +414,12 @@ export default function GameContainer() {
               console.error(`[GameContainer] System error: ${event.payload?.message}`);
               setHasError(`System error: ${event.payload?.message}`);
               setRenderPhase('error');
+              errorCountRef.current++;
+              
+              // Check if we need to emergency reset
+              if (errorCountRef.current >= EMERGENCY_RESET_THRESHOLD && !emergencyResetPerformed) {
+                emergencyReset();
+              }
             }
           }
         );
@@ -331,7 +439,7 @@ export default function GameContainer() {
         console.warn('[GameContainer] Error cleaning up event subscription:', error);
       }
     };
-  }, [initialized]);
+  }, [initialized, emergencyReset, emergencyResetPerformed]);
   
   // Track node ID changes - FIFTH EFFECT
   useEffect(() => {
@@ -349,10 +457,59 @@ export default function GameContainer() {
       return (
         <div className="h-full w-full flex items-center justify-center bg-gray-900 text-white">
           <div className="text-center">
-            <h1 className="text-2xl mb-4">Initializing Rogue Resident...</h1>
-            <div className="w-48 h-2 bg-gray-800 rounded-full mx-auto overflow-hidden">
-              <div className="h-full bg-blue-500 animate-pulse" style={{ width: '60%' }}></div>
+            <h1 className="text-2xl mb-4">Rogue Resident Initialization</h1>
+            <div className="w-64 h-2 bg-gray-800 rounded-full mx-auto overflow-hidden">
+              <div 
+                className="h-full bg-blue-500 transition-all duration-300" 
+                style={{ width: `${Math.max(initProgress, 5)}%` }}
+              ></div>
             </div>
+            <p className="mt-2 text-gray-400">Initializing: {initPhase || 'pending'} ({Math.round(initProgress)}%)</p>
+            
+            {/* Show debug info for development */}
+            {process.env.NODE_ENV !== 'production' && (
+              <div className="mt-4 p-4 bg-gray-800 rounded text-xs text-left max-w-lg mx-auto">
+                <div className="overflow-auto max-h-36">
+                  <pre className="text-gray-400">
+                    {JSON.stringify({
+                      phase: initPhase,
+                      progress: initProgress,
+                      error: initError,
+                      initialized
+                    }, null, 2)}
+                  </pre>
+                </div>
+                
+                {/* Reinitialize button */}
+                <div className="mt-2 text-center">
+                  <button 
+                    className="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors text-xs"
+                    onClick={() => {
+                      if (typeof reinitialize === 'function') {
+                        reinitialize();
+                      } else if (typeof window !== 'undefined' && window.__FORCE_REINITIALIZE__) {
+                        window.__FORCE_REINITIALIZE__();
+                      }
+                    }}
+                  >
+                    Reinitialize
+                  </button>
+                  
+                  <button 
+                    className="ml-2 px-3 py-1 bg-red-600 text-white rounded hover:bg-red-700 transition-colors text-xs"
+                    onClick={() => {
+                      if (!emergencyResetPerformed) {
+                        emergencyReset();
+                      } else {
+                        window.location.reload();
+                      }
+                    }}
+                  >
+                    {emergencyResetPerformed ? 'Reload Page' : 'Emergency Reset'}
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       );
@@ -362,21 +519,50 @@ export default function GameContainer() {
     if (hasError || renderPhase === 'error') {
       return (
         <div className="h-full w-full flex items-center justify-center text-red-500 bg-gray-900">
-          <div className="text-center p-4 bg-gray-800 rounded-lg border border-red-500">
-            <h2 className="text-xl font-bold">Error</h2>
+          <div className="text-center p-4 bg-gray-800 rounded-lg border border-red-500 max-w-lg">
+            <h2 className="text-xl font-bold">System Error</h2>
             <p className="my-2">{hasError || "Unknown error during initialization"}</p>
-            <button 
-              className="mt-4 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
-              onClick={() => {
-                if (typeof window !== 'undefined' && window.__FORCE_REINITIALIZE__) {
-                  window.__FORCE_REINITIALIZE__();
-                } else {
-                  handleReset();
-                }
-              }}
-            >
-              Attempt Recovery
-            </button>
+            
+            {/* Error action buttons */}
+            <div className="flex justify-center gap-2 mt-4">
+              <button 
+                className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
+                onClick={() => {
+                  if (typeof reinitialize === 'function') {
+                    reinitialize();
+                  } else if (typeof window !== 'undefined' && window.__FORCE_REINITIALIZE__) {
+                    window.__FORCE_REINITIALIZE__();
+                  } else {
+                    handleReset();
+                  }
+                }}
+              >
+                Retry Initialization
+              </button>
+              
+              <button 
+                className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 transition-colors"
+                onClick={() => {
+                  if (!emergencyResetPerformed) {
+                    emergencyReset();
+                  } else {
+                    window.location.reload();
+                  }
+                }}
+              >
+                {emergencyResetPerformed ? 'Reload Page' : 'Emergency Reset'}
+              </button>
+            </div>
+            
+            {/* Debug info in development */}
+            {process.env.NODE_ENV !== 'production' && (
+              <div className="mt-4 text-xs text-left bg-gray-900 p-2 rounded">
+                <p>Phase: {initPhase}</p>
+                <p>Progress: {initProgress}%</p>
+                <p>Error Count: {errorCountRef.current}</p>
+                <p>Emergency Reset: {emergencyResetPerformed ? 'Yes' : 'No'}</p>
+              </div>
+            )}
           </div>
         </div>
       );
@@ -431,9 +617,15 @@ export default function GameContainer() {
     initialized, 
     hasError, 
     gamePhase, 
-    currentNodeId,  // CRITICAL FIX: Made this a dependency
+    currentNodeId,
+    initPhase,
+    initProgress,
+    initError,
+    reinitialize,
     handleBeginDay, 
-    handleReset
+    handleReset,
+    emergencyReset,
+    emergencyResetPerformed
   ]);
   
   // ======== COMPONENT RENDER ========
@@ -443,23 +635,31 @@ export default function GameContainer() {
       data-game-container 
       data-phase={gamePhase}
       data-render-phase={renderPhase}
-      data-node-id={currentNodeId || 'none'}  // Add this for debugging
+      data-node-id={currentNodeId || 'none'}
+      data-initialized={initialized ? 'true' : 'false'}
     >
+      {/* Preload critical fonts */}
+      <FontPreLoader />
+      
       <div className="flex-grow flex overflow-hidden">
         <div className="flex-grow relative overflow-hidden">
           <div className="absolute inset-0 overflow-auto">
             {renderGameContent()}
           </div>
         </div>
-        <div className="w-64 flex-shrink-0 border-l border-gray-800 overflow-hidden flex flex-col">
-          <div className="flex-1 overflow-y-auto overflow-x-hidden">
-            <PlayerStats />
+        
+        {/* Only render stats panel when fully initialized */}
+        {initialized && renderPhase === 'ready' && (
+          <div className="w-64 flex-shrink-0 border-l border-gray-800 overflow-hidden flex flex-col">
+            <div className="flex-1 overflow-y-auto overflow-x-hidden">
+              <PlayerStats />
+            </div>
           </div>
-        </div>
+        )}
       </div>
 
-      {/* Purely presentational transition overlay */}
-      <DayNightTransition />
+      {/* Purely presentational transition overlay - only when initialized */}
+      {initialized && <DayNightTransition />}
 
       {/* Debug Panel - Only in development */}
       {process.env.NODE_ENV !== 'production' && <VerticalSliceDebugPanel />}

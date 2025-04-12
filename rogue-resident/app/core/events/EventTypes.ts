@@ -20,6 +20,11 @@ export enum GameEventType {
   UI_BUTTON_CLICKED = 'ui:button:clicked',
   UI_OPTION_SELECTED = 'ui:option:selected',
   UI_NODE_CLICKED = 'ui:node:clicked',
+  UI_NODE_HOVERED = 'ui:node:hovered',             // Added for constellation interactions
+  UI_NODE_SELECTED = 'ui:node:selected',           // Added for constellation interactions
+  UI_NODE_SELECTION_CLEARED = 'ui:node:selection:cleared', // Added for constellation interactions
+  UI_NODE_HIGHLIGHTED = 'ui:node:highlighted',     // Added for constellation animations
+  UI_CONNECTION_STARTED = 'ui:connection:started', // Added for constellation connections
   
   // ===== Dialogue System Events =====
   DIALOGUE_SYSTEM_INITIALIZED = 'dialogue:system:initialized',
@@ -59,6 +64,7 @@ export enum GameEventType {
   INSIGHT_REVEALED = 'knowledge:insight:revealed',
   INSIGHT_CONNECTED = 'knowledge:insight:connected',
   CONSTELLATION_UPDATED = 'knowledge:constellation:updated',
+  KNOWLEDGE_CONNECTION_CREATED = 'knowledge:connection:created', // Added for constellation connections
   JOURNAL_ACQUIRED = 'journal:acquired',
   JOURNAL_ENTRY_TRIGGERED = 'journal:entry:triggered',
   JOURNAL_ENTRY_ADDED = 'journal:entry:added',
@@ -238,6 +244,36 @@ export interface RecoveryEventPayload {
   metadata?: Record<string, any>;
   successful: boolean;
   timestamp: number;
+}
+
+// ===== New Constellation Interaction Payloads =====
+
+export interface NodeInteractionPayload {
+  nodeId: string;
+  metadata?: Record<string, any>;
+}
+
+export interface NodeSelectionClearedPayload {
+  previousNodeId?: string;
+  metadata?: Record<string, any>;
+}
+
+export interface NodeHighlightPayload {
+  nodeIds: string[];
+  metadata?: Record<string, any>;
+}
+
+export interface ConnectionStartedPayload {
+  nodeId: string;
+  metadata?: Record<string, any>;
+}
+
+export interface KnowledgeConnectionPayload {
+  source: string;
+  target: string;
+  strength?: number;
+  domain?: string;
+  metadata?: Record<string, any>;
 }
 
 // Type guard to check if an event is a specific game event type

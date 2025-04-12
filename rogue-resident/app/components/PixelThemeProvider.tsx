@@ -45,7 +45,7 @@ export function PixelText({
       {children}
     </div>
   );
-} // [source: 18, 1244]
+}
 
 /**
  * PixelButton - Interactive component with consistent tactile feedback
@@ -67,13 +67,13 @@ export function PixelButton({
     educational: "bg-educational border-educational-dark hover:bg-educational-light text-white",
     success: "bg-green-700 border-green-900 hover:bg-green-600 text-white",
     danger: "bg-red-700 border-red-900 hover:bg-red-600 text-white"
-  }; // [source: 19-20, 1245-1246]
+  };
 
   const sizeClasses = {
     sm: "px-2 py-1 text-xs",
     md: "px-4 py-2 text-sm",
     lg: "px-6 py-3 text-base"
-  }; // [source: 20, 1246]
+  };
 
   return (
     <motion.button
@@ -87,7 +87,7 @@ export function PixelButton({
       onClick={onClick}
       disabled={disabled}
       whileHover={disabled ? {} : { y: -2 }}
-      whileTap={disabled ? {} : { y: 1 }} // [source: 21-22, 1247-1248]
+      whileTap={disabled ? {} : { y: 1 }}
       style={{ boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.1)" }}
     >
       <div className="flex items-center justify-center">
@@ -96,7 +96,7 @@ export function PixelButton({
       </div>
     </motion.button>
   );
-} // [source: 19, 1245]
+}
 
 /**
  * PixelBox - Container with pixel-perfect borders
@@ -114,7 +114,7 @@ export function PixelBox({
     clinical: "bg-clinical bg-opacity-10",
     qa: "bg-qa bg-opacity-10",
     educational: "bg-educational bg-opacity-10"
-  }; // [source: 23, 1249]
+  };
 
   return (
     <div
@@ -128,7 +128,7 @@ export function PixelBox({
       {children}
     </div>
   );
-} // [source: 23, 1249]
+}
 
 /**
  * PixelThemeProvider - Context provider for consistent theming
@@ -144,15 +144,14 @@ export default function PixelThemeProvider({ children }: { children: React.React
         .text-rendering-pixelated {
           text-rendering: optimizeSpeed;
           -webkit-font-smoothing: none;
-        } // [source: 25, 1251]
+        }
 
         /* Custom pixel borders with inset highlight */
         .pixel-borders {
           position: relative;
           border: 2px solid #0f172a;
           box-shadow: 0 0 0 1px rgba(0,0,0,0.3);
-        } // [source: 26, 1252]
-
+        }
 
         .pixel-borders::after {
           content: '';
@@ -162,42 +161,41 @@ export default function PixelThemeProvider({ children }: { children: React.React
           width: 1px;
           height: 1px;
           background-color: rgba(255,255,255,0.2);
-        } // [source: 27, 1253]
-
+        }
 
         .pixel-borders-thin {
           position: relative;
           border: 1px solid #0f172a;
-        } // [source: 28, 1254]
+        }
 
         /* Thicker borders for emphasis */
         .pixel-borders-lg {
           position: relative;
-          border: 3px solid #0f172a; // [source: 29, 1255]
-          box-shadow: 0 0 0 1px rgba(0,0,0,0.4); // [source: 29, 1255]
-        } // [source: 28, 1254]
+          border: 3px solid #0f172a;
+          box-shadow: 0 0 0 1px rgba(0,0,0,0.4);
+        }
 
         .pixel-borders-lg::after {
           content: '';
-          position: absolute; // [source: 31, 1257]
+          position: absolute;
           top: 0;
           left: 0;
           width: 2px;
           height: 2px;
-          background-color: rgba(255,255,255,0.2); // [source: 31, 1257]
-        } // [source: 30, 1256]
+          background-color: rgba(255,255,255,0.2);
+        }
 
         /* Glow effects */
         .pixel-glow {
-          text-shadow: 0 0 4px currentColor; // [source: 32, 1258]
-        } // [source: 32, 1258]
+          text-shadow: 0 0 4px currentColor;
+        }
 
         /* Font size for tiny text */
         .text-2xs {
-          font-size: 0.625rem; // [source: 33, 1259]
-          line-height: 0.75rem; // [source: 34, 1260]
+          font-size: 0.625rem;
+          line-height: 0.75rem;
         }
       `}</style>
     </>
   );
-} // [source: 25, 1251]
+}

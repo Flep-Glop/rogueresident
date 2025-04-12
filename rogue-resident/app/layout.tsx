@@ -1,126 +1,75 @@
-import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
-import PixelThemeProvider from "./components/PixelThemeProvider";
-import "./globals.css";
+import './globals.css';
+import type { Metadata, Viewport } from 'next';
+import PixelThemeProvider from './components/PixelThemeProvider';
+import FontPreLoader from './components/FontPreLoader';
+import { Inter } from 'next/font/google';
+import ClientBuildInfo from './components/debug/ClientBuildInfo';
 
-// Import the client wrapper component
-import ClientDashboardWrapper from "./components/debug/ClientDashboardWrapper";
-
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-  display: "swap", // Use display swap to prevent FOUT
+// Optional: Using the Next.js built-in font system
+const inter = Inter({ 
+  subsets: ['latin'],
+  display: 'swap',
+  variable: '--font-inter',
 });
 
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-  display: "swap", // Use display swap to prevent FOUT
-});
-
-export const metadata: Metadata = {
-  title: "Rogue Resident: Medical Physics Residency",
-  description: "An educational roguelike game about medical physics",
+// Fixed: Move viewport-related settings to the viewport export
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  themeColor: '#000000',
+  colorScheme: 'dark'
 };
 
-// Static font preloading in the document head
-function FontPreloader() {
-  return (
-    <>
-      {/* Font Preloading */}
-      <link 
-        rel="preload" 
-        href="https://fonts.googleapis.com/css2?family=VT323&display=swap" 
-        as="style"
-        crossOrigin="anonymous"
-      />
-      <link 
-        rel="preload" 
-        href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" 
-        as="style"
-        crossOrigin="anonymous"
-      />
-      {/* Also preload the actual font files */}
-      <link 
-        rel="preload" 
-        href="https://fonts.gstatic.com/s/vt323/v17/pxiKyp0ihIEF2isfFJU.woff2" 
-        as="font"
-        type="font/woff2"
-        crossOrigin="anonymous"
-      />
-      <link 
-        rel="preload" 
-        href="https://fonts.gstatic.com/s/pressstart2p/v15/e3t4euO8T-267oIAQAu6jDQyK3nVivM.woff2" 
-        as="font"
-        type="font/woff2"
-        crossOrigin="anonymous"
-      />
-      {/* Add stylesheet links to ensure they load immediately */}
-      <link 
-        rel="stylesheet" 
-        href="https://fonts.googleapis.com/css2?family=VT323&display=swap" 
-      />
-      <link 
-        rel="stylesheet" 
-        href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" 
-      />
-    </>
-  );
-}
+export const metadata: Metadata = {
+  title: 'Rogue Resident: Vertical Slice',
+  description: 'Medical physics education through roguelike gameplay',
+  keywords: ['medical physics', 'education', 'game', 'roguelike'],
+  authors: [{ name: 'Rogue Resident Team' }],
+  robots: 'index, follow',
+};
 
 export default function RootLayout({
   children,
-}: Readonly<{
+}: {
   children: React.ReactNode;
-}>) {
-  // Determine if we're in development mode
-  const isDevelopment = process.env.NODE_ENV !== 'production';
-  
+}) {
   return (
-    <html lang="en">
+    <html lang="en" className={`${inter.variable}`}>
       <head>
-        <FontPreloader />
+        {/* Using non-blocking font loading with correct crossOrigin attributes */}
+        <link
+          rel="preconnect" 
+          href="https://fonts.googleapis.com"
+        />
+        <link
+          rel="preconnect" 
+          href="https://fonts.gstatic.com"
+          crossOrigin="anonymous"
+        />
+        <link
+          href="https://fonts.googleapis.com/css2?family=VT323&display=swap"
+          rel="stylesheet"
+          crossOrigin="anonymous"
+        />
+        <link
+          href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap"
+          rel="stylesheet"
+          crossOrigin="anonymous"
+        />
       </head>
-      <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
-      >
+      <body className="bg-black text-white antialiased">
         <PixelThemeProvider>
-          {/* Note: Systems initialization happens in the page component */}
-          {children}
+          {/* FontPreLoader is a client component that doesn't render anything visible */}
+          <FontPreLoader />
           
-          {/* Use our client wrapper component for the dashboard */}
-          {isDevelopment && <ClientDashboardWrapper />}
+          {/* Main content */}
+          <main>
+            {children}
+          </main>
+          
+          {/* Development debug component - imported directly as a client component */}
+          {process.env.NODE_ENV === 'development' && <ClientBuildInfo />}
         </PixelThemeProvider>
-        
-        {/* Development-only script tag - this is safe in server components */}
-        {isDevelopment && (
-          <script
-            dangerouslySetInnerHTML={{
-              __html: `
-                // Add error monitoring for Chamber Pattern violations
-                const originalError = console.error;
-                console.error = function(...args) {
-                  originalError.apply(console, args);
-                  
-                  // Check for React child errors that may indicate Chamber Pattern issues
-                  const errorMsg = args.join(' ');
-                  if (
-                    errorMsg.includes('Objects are not valid as a React child') || 
-                    errorMsg.includes('getSnapshot should be cached')
-                  ) {
-                    console.warn(
-                      '%c[ChamberPattern] Potential Chamber Pattern violation detected!', 
-                      'color: #ef4444; font-weight: bold'
-                    );
-                    console.warn(
-                      'Tip: Use usePrimitiveStoreValue to extract primitives instead of objects'
-                    );
-                  }
-                };
-              `
-            }}
-          />
-        )}
       </body>
     </html>
   );

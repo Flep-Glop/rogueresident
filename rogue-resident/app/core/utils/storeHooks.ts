@@ -213,7 +213,7 @@ export function createPrimitiveSelector<T, V extends string | number | boolean |
  * Extract a primitive value from a store with optimized performance 
  * and stable references - the core Chamber Pattern hook
  */
-export function usePrimitiveStoreValue<StoreType, ValueType extends string | number | boolean | undefined | null>(
+function usePrimitiveStoreValue<StoreType, ValueType extends string | number | boolean | undefined | null>(
   store: any,
   selector: (state: StoreType) => ValueType,
   fallback: ValueType
@@ -267,7 +267,7 @@ export function usePrimitiveStoreValue<StoreType, ValueType extends string | num
  * Extract a stable store value that may not be a primitive
  * Use with caution as this can cause unnecessary rerenders if objects change
  */
-export function useStableStoreValue<StoreType, ValueType>(
+function useStableStoreValue<StoreType, ValueType>(
   store: any,
   selector: (state: StoreType) => ValueType
 ): ValueType | null {
@@ -319,7 +319,7 @@ export function useStableStoreValue<StoreType, ValueType>(
  * Extract multiple primitive values from a store at once
  * with optimized performance
  */
-export function usePrimitiveValues<
+function usePrimitiveValues<
   StoreType,
   SelectorMap extends Record<string, (state: StoreType) => string | number | boolean | undefined | null>,
   Fallbacks extends Partial<Record<keyof SelectorMap, string | number | boolean | null | undefined>>
@@ -403,7 +403,7 @@ export function usePrimitiveValues<
  * Create stable callbacks that maintain reference equality
  * but can always access fresh state
  */
-export function useStableCallback<T extends (...args: any[]) => any>(
+function useStableCallback<T extends (...args: any[]) => any>(
   callback: T,
   deps: any[] = []
 ): T {
@@ -434,7 +434,7 @@ export function useStableCallback<T extends (...args: any[]) => any>(
  * Hook to observe changes to a store value and execute side effects
  * without triggering re-renders
  */
-export function useStoreValueObserver<T, U>(
+function useStoreValueObserver<T, U>(
   store: any,
   selector: (state: T) => U,
   onChange: (newValue: U, prevValue: U | undefined) => void,
@@ -495,7 +495,7 @@ export function useStoreValueObserver<T, U>(
 /**
  * Hook specifically for observing game phase changes safely
  */
-export function useGamePhaseObserver<StoreType>(
+function useGamePhaseObserver<StoreType>(
   store: any,
   onChange: (newPhase: string, oldPhase: string | undefined) => void,
   deps: any[] = []
@@ -555,7 +555,7 @@ export function useGamePhaseObserver<StoreType>(
 /**
  * Creates a callback that gets the latest store state when invoked
  */
-export function useStoreCallback<T, Args extends any[]>(
+function useStoreCallback<T, Args extends any[]>(
   store: any,
   callback: (state: T, ...args: Args) => void,
   deps: any[] = []
@@ -586,7 +586,7 @@ export function useStoreCallback<T, Args extends any[]>(
 /**
  * Reset error tracking - useful for testing
  */
-export function resetStoreHookErrors() {
+function resetStoreHookErrors() {
   errorConfig.resetErrorCounts();
   console.log('[storeHooks] Error counts reset');
 }
